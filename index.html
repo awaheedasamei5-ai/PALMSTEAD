@@ -212,6 +212,14 @@ a{color:var(--green2)}
   display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--ink);animation:badgePop .3s ease both}
 @keyframes badgePop{from{transform:scale(0)}to{transform:scale(1)}}
 .main{flex:1;padding:20px 16px 100px;max-width:1080px;width:100%;margin:0 auto}
+.bottomnav{position:fixed;left:0;right:0;bottom:0;z-index:150;display:flex;background:var(--card);border-top:1px solid var(--line);
+  padding:6px 4px calc(4px + env(safe-area-inset-bottom));box-shadow:0 -6px 20px rgba(0,0,0,.06);max-width:1080px;margin:0 auto}
+.bottomnav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:var(--muted);
+  padding:6px 2px 4px;cursor:pointer;position:relative;font-size:10.5px;font-weight:700;border-radius:12px;transition:.15s}
+.bottomnav button svg{width:21px;height:21px;display:block}
+.bottomnav button.on{color:var(--leaf)}
+.bottomnav .bnBadge{position:absolute;top:0;right:22%;min-width:15px;height:15px;padding:0 3px;border-radius:100px;
+  background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:8.5px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--card)}
 .pagehead{margin:2px 0 18px;display:flex;align-items:flex-start;justify-content:space-between;gap:14px;animation:fadeUp .4s ease both}
 .dashRefreshBtn{width:34px;height:34px;border-radius:100px;border:1px solid var(--line);background:var(--card);color:var(--muted);
   display:flex;align-items:center;justify-content:center;flex:0 0 auto;box-shadow:var(--shadow);cursor:pointer;transition:.15s}
@@ -668,12 +676,12 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
     <div class="whoami"><span id="tbAvatar" class="tb-avatar hidden"></span><span class="tb-name" id="tbName"></span>
       <button class="iconbtn" id="darkModeBtn" title="Toggle dark mode"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
       <button class="iconbtn" id="globalSearchBtn" title="Search"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-      <button class="iconbtn chatnavbtn" id="chatNavBtn" title="Chat"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 4h16v12H7l-3 3V4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span class="badge hidden" id="chatNavBadge"></span></button>
       <button class="iconbtn" id="accountBtn" title="Change password"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button class="iconbtn" id="logoutBtn" title="Sign out"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M15 12H4m0 0l4-4m-4 4l4 4M14 5h4a2 2 0 012 2v10a2 2 0 01-2 2h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>
   </header>
   <main class="main" id="view"></main>
+  <nav class="bottomnav" id="bottomnav"></nav>
 </section>
 
 <div id="toast"><span class="dot"></span><span id="toastMsg"></span></div>
@@ -707,7 +715,7 @@ const favicon = document.querySelector('link[rel="icon"]'); if(favicon) favicon.
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
-let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[]};
+let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[]};
 
 function cfg(){ let u=SUPABASE_URL,k=SUPABASE_ANON_KEY;
   if(!u||!k){ try{const s=JSON.parse(localStorage.getItem('pep_cfg')||'null'); if(s){u=s.url;k=s.key;}}catch(e){} }
@@ -1392,6 +1400,7 @@ async function apiLoadAll(){
     DB.agentMonthStats=await apiLoadAgentMonthStats();
     DB.tasks=await apiLoadTasks();
     DB.feedback=await apiLoadFeedback();
+    DB.downloads=await apiLoadDownloads();
     return;
   }
   const q=async t=>{const {data,error}=await sb.from(t).select('*').order('created_at',{ascending:false});if(error)throw error;return data||[];};
@@ -1422,7 +1431,7 @@ async function apiLoadAll(){
     q('leads'),q('enquiries'),q('complaints'),q('site_visits'),q('activity_log'),
     loadProfiles(),loadPayments(),loadPlots(),
     apiLoadAnnouncements(),apiLoadAllocations(),apiLoadMessages(),apiLoadTargetSelections(today().slice(0,7),PROFILE.role==='manager'),
-    apiLoadAgentMonthStats(),apiLoadTasks(),apiLoadFeedback()
+    apiLoadAgentMonthStats(),apiLoadTasks(),apiLoadFeedback(),apiLoadDownloads()
   ]);
   const [le,en,cm,sv,ac]=results;
   DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key||PROFILE.role==='manager').map(mapLead);
@@ -1432,6 +1441,7 @@ async function apiLoadAll(){
   DB.tasks=results[13];
   DB.agentMonthStats=results[12];
   DB.feedback=results[14];
+  DB.downloads=results[15];
 }
 async function apiInsertLead(l,c){
   if(DEMO_MODE){ const d=await demoLoad(); const row={id:uid(),agent:PROFILE.key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal,
@@ -1658,6 +1668,29 @@ async function apiInsertFeedback(category,body){
 async function apiDeleteFeedback(id){
   if(DEMO_MODE){ const d=await demoLoad(); d.feedback=(d.feedback||[]).filter(x=>x.id!==id); await demoSave(); return; }
   const {error}=await sb.from('feedback').delete().eq('id',id); if(error) throw error;
+}
+/* ---- download directory ---- */
+const mapDownload=r=>({id:r.id,userKey:r.user_key,userName:r.user_name,filename:r.filename,kind:r.kind,createdAt:r.created_at});
+async function apiLoadDownloads(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.downloads||[]).slice(); }
+  try{ const {data,error}=await sb.from('downloads').select('*').order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapDownload); }
+  catch(e){ return []; }
+}
+async function apiLogDownload(filename,kind){
+  const rec={id:uid(),userKey:PROFILE.key,userName:PROFILE.name,filename,kind,createdAt:new Date().toISOString()};
+  if(DEMO_MODE){ const d=await demoLoad(); d.downloads=d.downloads||[]; d.downloads.unshift(rec); await demoSave(); return rec; }
+  try{ const {data,error}=await sb.from('downloads').insert({user_key:PROFILE.key,user_name:PROFILE.name,filename,kind}).select().single();
+    if(error) throw error; return mapDownload(data); }
+  catch(e){ return rec; }
+}
+function logDownload(filename,kind){
+  DB.downloads=DB.downloads||[];
+  apiLogDownload(filename,kind).then(rec=>{ DB.downloads.unshift(rec); }).catch(()=>{});
+}
+function triggerDownload(url,filename,kind){
+  const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  logDownload(filename,kind);
 }
 async function apiInsertAnnouncement(title,body,image){
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),title,body,image:image||null,active:true,createdBy:PROFILE.name,createdAt:today()+' '+nowTime()};
@@ -2134,7 +2167,7 @@ document.getElementById('logoutBtn').onclick=async()=>{
   if(CHAT_CHANNEL){ try{ sb.removeChannel(CHAT_CHANNEL); }catch(e){} CHAT_CHANNEL=null; }
   const bub=document.getElementById('announceBubble'); if(bub) bub.remove();
   const ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
-  USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[]};
+  USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[]};
   document.getElementById('app').classList.add('hidden'); document.getElementById('login').classList.remove('hidden');
   document.getElementById('ddLabel').textContent='Choose your name';
   document.querySelectorAll('#ddPanel .dd-item').forEach(el=>el.classList.remove('sel'));
@@ -2150,7 +2183,6 @@ document.getElementById('darkModeBtn').onclick=()=>{
   document.body.classList.toggle('dark');
   try{ localStorage.setItem('pep_dark', document.body.classList.contains('dark')?'1':'0'); }catch(e){}
 };
-document.getElementById('chatNavBtn').onclick=()=>route('chat');
 document.getElementById('accountBtn').onclick=()=>route('account');
 
 /* config screen */
@@ -2251,14 +2283,45 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback,insights:viewSmartInsights}[name]||agentHome)(arg);
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,more:viewMore,downloads:viewDownloads}[name]||agentHome)(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && PROFILE){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
+  updateBottomNav(name);
 }
 function goBack(fallbackTo){
   if(window.history.state && window.history.state.routeName){ history.back(); }
   else{ route(fallbackTo); }
+}
+/* ---- persistent bottom tab bar ---- */
+let CURRENT_ROUTE_NAME='home';
+function tabForRoute(name){
+  if(['salesdesk','addlead','update','updateOne','myDataCheck','plots','pipeline'].includes(name)) return 'salesdesk';
+  if(name==='duties') return 'operations';
+  if(name==='chat'||name==='chatThread') return 'chat';
+  if(name==='home'||name==='mgr') return 'home';
+  return 'more';
+}
+function updateBottomNav(routeName){ CURRENT_ROUTE_NAME=routeName; renderBottomNavNow(); }
+function renderBottomNavNow(){
+  const nav=document.getElementById('bottomnav'); if(!nav||typeof PROFILE==='undefined'||!PROFILE) return;
+  const activeTab=tabForRoute(CURRENT_ROUTE_NAME);
+  const isMgr=PROFILE.role==='manager';
+  const openTasks=computeDutiesSummary((DB.tasks||[]).filter(t=>isMgr||t.assignedTo===PROFILE.key)).openCount;
+  const unread=totalUnread();
+  const tabDefs=[
+    {key:'home',label:'Home',icon:ic.home,r:isMgr?'mgr':'home'},
+    ...(isMgr?[]:[{key:'salesdesk',label:'Sales Desk',icon:ic.briefcase2,r:'salesdesk'}]),
+    {key:'operations',label:'Operations',icon:ic.check2,r:'duties',badge:openTasks},
+    {key:'chat',label:'Chat',icon:ic.chat,r:'chat',badge:unread,badgeId:'bnChatBadge'},
+    {key:'more',label:'More',icon:ic.more,r:'more'}
+  ];
+  nav.innerHTML=tabDefs.map(t=>{
+    const show=t.badge>0;
+    const needsBadge=t.badgeId||show;
+    return `<button class="${t.key===activeTab?'on':''}" data-navtab="${t.r}">${t.icon}${needsBadge?`<span class="bnBadge${show?'':' hidden'}"${t.badgeId?` id="${t.badgeId}"`:''}>${show?(t.badge>9?'9+':t.badge):''}</span>`:''}<span>${esc(t.label)}</span></button>`;
+  }).join('');
+  nav.querySelectorAll('[data-navtab]').forEach(b=>b.onclick=()=>route(b.dataset.navtab));
 }
 window.addEventListener('popstate',e=>{
   if(!PROFILE) return; // still on login screen — nothing app-side to navigate
@@ -2279,7 +2342,10 @@ const ic={
  complaint:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
  visit:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-5.3-7-11a7 7 0 0114 0c0 5.7-7 11-7 11z" stroke="currentColor" stroke-width="1.9"/><circle cx="12" cy="10" r="2.4" stroke="currentColor" stroke-width="1.9"/></svg>',
  grid:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>',
- spark:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
+ spark:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+ home:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 11l8-7 8 7v8a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1v-8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+ briefcase2:'<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="8" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 8V6a2 2 0 012-2h4a2 2 0 012 2v2" stroke="currentColor" stroke-width="1.8"/></svg>',
+ more:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>'
 };
 const kpiIc={
  grid:'<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="3" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="14" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.8"/></svg>',
@@ -2418,11 +2484,7 @@ function chartLegend(segments){
       <span style="color:var(--muted)">${s.value} · ${Math.round(s.value/total*100)}%</span>
     </div>`).join('')}</div>`;
 }
-function task(r,n,d,icon,cls=''){return `<button class="task c-${cls}" data-r="${r}"><span class="ic">${icon}</span><span class="tn">${n}</span><span class="td">${d}</span><svg class="arrow" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;}
-function taskWide(r,n,d,icon,cls){return `<button class="task wide c-${cls}" data-r="${r}"><span class="ic">${icon}</span><span><span class="tn">${n}</span><br><span class="td">${d}</span></span><svg class="arrow" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;}
 function bindTasks(){ V.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>route(b.dataset.r)); }
-function hubTile(hub,n,d,icon,cls=''){return `<button class="task c-${cls}" data-hub="${hub}"><span class="ic">${icon}</span><span class="tn">${n}</span><span class="td">${d}</span><svg class="arrow" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;}
-function bindHubTiles(){ V.querySelectorAll('[data-hub]').forEach(b=>b.onclick=()=>openAgentHub(b.dataset.hub)); }
 const AGENT_HUBS={
   salesdesk:{title:'Sales Desk',items:[
     {r:'addlead',fic:'addlead',label:'New lead'},
@@ -2455,6 +2517,52 @@ function viewSmartInsights(){
   const scope=PROFILE.role==='manager'?allAgentLists().flatMap(a=>a.list):DB.leads;
   V.innerHTML=`${back(homeRoute)}${renderSmartInsights(scope,DB.payments)}`;
   bindSmartInsights();
+}
+function viewSalesDesk(){
+  const hub=AGENT_HUBS.salesdesk;
+  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Sales Desk</div><h2>Leads &amp; pipeline</h2><p>Everything for managing your own book of clients</p></div></div>
+  <div class="appGrid">${hub.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`;
+  V.querySelectorAll('[data-hubroute]').forEach(b=>b.onclick=()=>route(b.dataset.hubroute));
+}
+function viewMore(){
+  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">More</div><h2>Everything else</h2><p>Additional tools and settings</p></div></div>
+  <div class="appGrid" id="moreGrid"></div>`;
+  const grid=document.getElementById('moreGrid');
+  if(PROFILE.role==='manager'){
+    const items=MGR_APPS.filter(a=>a.key!=='Duties');
+    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+    grid.querySelectorAll('[data-moreapp]').forEach(b=>b.onclick=()=>{
+      const key=b.dataset.moreapp;
+      if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else if(key==='Downloads') route('downloads'); else { mgrTab=key; managerView(); }
+    });
+  } else {
+    const items=[
+      {key:'crm',fic:'enquiry',label:'CRM Tools'},
+      {key:'feedback',fic:'chat',label:'Feedback'},
+      {key:'insights',fic:'target',label:'Smart Insights'},
+      ...(canManagePlots()?[{key:'allocations',fic:'allocation',label:'Allocations'}]:[]),
+      {key:'downloads',fic:'document',label:'Download Directory'},
+      {key:'account',fic:'settings',label:'Settings'}
+    ];
+    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+    grid.querySelectorAll('[data-moreapp]').forEach(b=>b.onclick=()=>{
+      const key=b.dataset.moreapp;
+      if(key==='crm') openAgentHub('crm'); else route(key);
+    });
+  }
+}
+let downloadsKindFilter='';
+function viewDownloads(){
+  const homeRoute=PROFILE.role==='manager'?'mgr':'home';
+  const all=(DB.downloads||[]);
+  const kinds=[...new Set(all.map(d=>d.kind))];
+  const list=downloadsKindFilter?all.filter(d=>d.kind===downloadsKindFilter):all;
+  const rowOf=d=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(d.filename)}</div><div class="meta">${esc((d.createdAt||'').slice(0,16).replace('T',' '))}${PROFILE.role==='manager'?(' · '+esc(d.userName)):''}</div></div>
+    <span class="tag ghost">${esc((d.kind||'').toUpperCase())}</span></div></div>`;
+  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Download Directory</div><h2>${all.length} file${all.length===1?'':'s'} downloaded</h2><p>${PROFILE.role==='manager'?'Every file downloaded by the team':'Everything you have downloaded from this account'}</p></div></div>
+  ${kinds.length>1?`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"><button class="chip ${!downloadsKindFilter?'on':''}" data-dlkind="">All</button>${kinds.map(k=>`<button class="chip ${downloadsKindFilter===k?'on':''}" data-dlkind="${esc(k)}">${esc(k.toUpperCase())}</button>`).join('')}</div>`:''}
+  <div class="list">${list.length?list.map(rowOf).join(''):emptyState(ic.doc,'Nothing downloaded yet','PDFs, Excel exports and backups you generate will show up here.')}</div>`;
+  V.querySelectorAll('[data-dlkind]').forEach(b=>b.onclick=()=>{ downloadsKindFilter=b.dataset.dlkind; viewDownloads(); });
 }
 function animateKpiCounts(container){
   (container||V).querySelectorAll('.kpi .v').forEach(el=>{
@@ -3016,14 +3124,9 @@ function agentHome(){ const k=kpisOf(DB.leads);
   const monthCollected=DB.payments.filter(p=>(p.date||'').slice(0,7)===thisMonth).reduce((s,p)=>s+num(p.amount),0);
   const target=num((CONFIG.targets||{})[PROFILE.key])||0;
   const pct=target? Math.min(100,Math.round(wonMonthVal/target*100)):0;
-  const pendingAlloc=canManagePlots()?(DB.allocations||[]).filter(a=>a.status==='Pending').length:0;
-  const myIssueCount=runDataIntegrityCheck(DB.leads).length;
   const myCommission=computeMyPersonalCommission(thisMonth);
-  const mySmartInsights=computeSmartInsights(DB.leads,DB.payments);
-  const salesDeskSub=myIssueCount?(myIssueCount+' record'+(myIssueCount===1?'':'s')+' need review'):'Leads, pipeline & plots';
   V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Welcome back</div><h2>${esc(PROFILE.name.split(' ')[0])}'s desk</h2><p>Royal Palm Enclave · Trulander JSF Limited</p></div>
   <div style="display:flex;gap:8px;flex:0 0 auto">
-  <button class="dashRefreshBtn" id="dutiesQuickBtn" title="Operations Tracker" style="position:relative">${ic.check2}${computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount?`<span class="badge" style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:100px;background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center">${computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount}</span>`:''}</button>
   <button class="dashRefreshBtn" id="dashRefreshBtn" title="Refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div></div>
   ${renderBannerSlideshow()}
@@ -3034,22 +3137,18 @@ function agentHome(){ const k=kpisOf(DB.leads);
     <div><div style="font-weight:700;font-size:13.5px">My commission — ${monthLabel(thisMonth)}</div><div class="mini">Personal only · your pool share is confirmed by Management on the 15th</div></div>
     <div style="margin-left:auto;font-size:22px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--text)">${ghs(myCommission)}</div></div>
   </div>
-  ${renderDutiesCard()}
   <div class="kpis">${kpi('Active leads',k.leads,'','pipeline')}${kpi('Pipeline value',ghs(k.val),'gold','pipeline')}${kpi('Collected',ghs(k.coll),'','paid')}${kpi('Outstanding',ghs(k.out),'gold','owed')}${kpi('Site visits',k.sv,'','visits')}${kpi('Fully paid',wonAll.length,'','donepaying')}${kpi('Monthly collected',ghs(monthCollected),'gold','monthlyclosed')}</div>
   ${renderTargetCard(wonMonth.length,target,wonMonthVal)}
   ${renderMonthlyPlanCard(DB.leads)}
   ${renderPipelineHealthCard(DB.leads)}
-  <div class="sectitle"><h3>What do you want to do?</h3></div>
-  <div class="tasks">${hubTile('salesdesk','Sales Desk',salesDeskSub,kpiIc.grid,myIssueCount?'cmp':'update')}${hubTile('crm','CRM Tools','Visits, enquiries & complaints',ic.phone,'enq')}${task('duties','Operations',computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount+' open',ic.check2,'grid')}${task('feedback','Feedback',(DB.feedback||[]).length+' posted',ic.chat,'cmp')}${task('insights','Smart Insights',mySmartInsights.length+(mySmartInsights.length===1?' insight':' insights'),ic.spark,'visit')}${canManagePlots()?task('allocations','Allocation requests',pendingAlloc+' pending',ic.lead,'lead'):''}</div>
   <div class="footer-note">${DEMO_MODE?'<span class="demoflag"><span class="d"></span>Demo data</span>':''} Signed in as ${esc(PROFILE.email)}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
-  bindTasks(); bindHubTiles(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow(); bindDutiesCard();
+  bindTasks(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow();
   document.getElementById('dashRefreshBtn').onclick=async(e)=>{
     const btn=e.currentTarget; btn.classList.add('spinning'); btn.disabled=true;
     try{ await apiLoadAll(); toast('Up to date'); agentHome(); }
     catch(err){ toast('Refresh failed'); btn.classList.remove('spinning'); btn.disabled=false; }
   };
-  document.getElementById('dutiesQuickBtn').onclick=()=>route('duties');
 }
 
 /* ================= PIPELINE ================= */
@@ -3117,9 +3216,9 @@ function buildPipelineBackup(clientIds){
 function downloadPipelineBackup(clientIds){
   const backup=buildPipelineBackup(clientIds);
   const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
-  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  const url=URL.createObjectURL(blob);
   const scope=clientIds.length===DB.leads.length?'AllClients':(clientIds.length===1?(DB.leads.find(l=>l.id===clientIds[0])||{name:'Client'}).name.replace(/\s+/g,'_'):clientIds.length+'Clients');
-  a.href=url; a.download='PEP_Pipeline_Backup_'+scope+'_'+today()+'.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  triggerDownload(url,'PEP_Pipeline_Backup_'+scope+'_'+today()+'.json','backup');
 }
 function openPipelineBackupModal(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
@@ -3651,7 +3750,8 @@ function buildAuthorizationPDF(a,plotsList,siteManagerName){
   doc.text(today()+' '+nowTime(),118,y+24);
 
   const uri=doc.output('datauristring');
-  doc.save('Authorization_'+(a.clientName||'client').replace(/\s+/g,'_')+'.pdf');
+  const fname='Authorization_'+(a.clientName||'client').replace(/\s+/g,'_')+'.pdf';
+  doc.save(fname); logDownload(fname,'pdf');
   return uri;
 }
 function buildAllocationPDF(a){
@@ -3674,7 +3774,7 @@ function buildAllocationPDF(a){
   y+=Math.max(h1,h2)*5+9;
   y=pdfSectionBar(doc,y,pageW,'TIMELINE');
   y=pdfFields(doc,y,[['Allocation requested',a.createdAt],['Allocation confirmed',a.resolvedAt||''],['Note',a.note||'—']]);
-  doc.save('Allocation_'+(a.clientName||'client').replace(/\s+/g,'_')+'.pdf');
+  { const fname='Allocation_'+(a.clientName||'client').replace(/\s+/g,'_')+'.pdf'; doc.save(fname); logDownload(fname,'pdf'); }
   return doc;
 }
 function staffKeyByName(name){
@@ -3761,8 +3861,8 @@ function openGlobalSearch(){
   input.addEventListener('input',runSearch);
 }
 function refreshChatNavBadge(){
-  const btn=document.getElementById('chatNavBtn'); if(!btn) return;
-  const n=totalUnread(); const badge=document.getElementById('chatNavBadge');
+  const badge=document.getElementById('bnChatBadge'); if(!badge) return;
+  const n=totalUnread();
   if(n>0){ badge.textContent=n>9?'9+':n; badge.classList.remove('hidden'); } else badge.classList.add('hidden');
 }
 function lastMsgPreview(m){
@@ -3844,8 +3944,7 @@ function renderChatLog(otherKey){
   }).join('');
 }
 function viewChat(){
-  const homeRoute=PROFILE.role==='manager'?'mgr':'home';
-  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Team chat</div><h2>Conversations</h2><p>${DEMO_MODE?'Demo mode — messages stay on this device only.':'Live · real-time'}</p></div></div>
+  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Team chat</div><h2>Conversations</h2><p>${DEMO_MODE?'Demo mode — messages stay on this device only.':'Live · real-time'}</p></div></div>
   <div class="convList">${renderConversationList()}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
   V.querySelectorAll('[data-openchat]').forEach(b=>b.onclick=()=>route('chatThread',b.dataset.openchat));
@@ -3921,6 +4020,7 @@ async function sendChatAttachment(otherKey,file){
 function downloadChatFile(m){
   const a=document.createElement('a'); a.href=m.attachData; a.download=m.attachName||'file';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  logDownload(m.attachName||'file','attachment');
 }
 function openForwardPicker(msgId){
   const m=DB.messages.find(x=>x.id===msgId); if(!m) return;
@@ -4133,26 +4233,12 @@ function computeDutiesSummary(tasks){
   const avgDays=done.length?Math.round(done.reduce((s,t)=>s+(daysBetween(t.createdAt,t.completedAt)||0),0)/done.length):null;
   return {openCount:open.length,overdueCount:overdue.length,doneCount:done.length,avgDaysToClose:avgDays};
 }
-function renderDutiesCard(){
-  const mine=(DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key);
-  const s=computeDutiesSummary(mine);
-  if(!(DB.tasks||[]).length) return '';
-  return `<div class="rowcard" style="margin-bottom:18px;padding:16px;cursor:pointer" data-goduties="1">
-    <div style="display:flex;align-items:center;gap:12px">
-      <span class="kpi-ic blue" style="margin-bottom:0">${kpiIc.check}</span>
-      <div style="flex:1"><div style="font-weight:700;font-size:13.5px">My tasks</div><div class="mini">${s.openCount} open${s.overdueCount?(' · '+s.overdueCount+' overdue'):''}</div></div>
-      <div style="text-align:right"><div class="mini">tap to view →</div></div>
-    </div>
-  </div>`;
-}
-function bindDutiesCard(){ const el=document.querySelector('[data-goduties]'); if(el) el.onclick=()=>route('duties'); }
 function viewDuties(){
-  const homeRoute=PROFILE.role==='manager'?'mgr':'home';
   const all=DB.tasks||[];
   const mine=all.filter(t=>t.assignedTo===PROFILE.key);
   const byMe=all.filter(t=>t.assignedBy===PROFILE.key&&t.assignedTo!==PROFILE.key);
   const teamSummary=computeDutiesSummary(all);
-  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Operations Tracker</div><h2>${teamSummary.openCount} open across the team</h2><p>${teamSummary.overdueCount} overdue${teamSummary.avgDaysToClose!=null?(' · avg '+teamSummary.avgDaysToClose+' day'+(teamSummary.avgDaysToClose===1?'':'s')+' to close'):''}</p></div></div>
+  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Operations Tracker</div><h2>${teamSummary.openCount} open across the team</h2><p>${teamSummary.overdueCount} overdue${teamSummary.avgDaysToClose!=null?(' · avg '+teamSummary.avgDaysToClose+' day'+(teamSummary.avgDaysToClose===1?'':'s')+' to close'):''}</p></div></div>
   <div class="kpis">${kpi('Open',teamSummary.openCount)}${kpi('Overdue',teamSummary.overdueCount)}${kpi('Completed',teamSummary.doneCount)}${kpi('Avg days to close',teamSummary.avgDaysToClose!=null?teamSummary.avgDaysToClose:'—')}</div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><button class="chip ${dutiesFilter==='mine'?'on':''}" data-dutiesfilter="mine">Mine (${mine.length})</button><button class="chip ${dutiesFilter==='byme'?'on':''}" data-dutiesfilter="byme">Assigned by me (${byMe.length})</button><button class="chip ${dutiesFilter==='all'?'on':''}" data-dutiesfilter="all">Team (${all.length})</button></div>
   <div class="searchbar" style="margin-bottom:10px"><input id="dutiesSearchInput" placeholder="Filter by name or title…" value="${esc(dutiesSearch)}"/>
@@ -4162,6 +4248,7 @@ function viewDuties(){
   <div class="list" id="dutiesList"></div>`;
   bindDutiesCtrls();
   paintDuties();
+  renderBottomNavNow();
 }
 function paintDuties(){
   const all=DB.tasks||[];
@@ -4356,7 +4443,7 @@ function buildFeedbackPDF(){
     const lines=doc.splitTextToSize(f.body,pageW-24);
     doc.text(lines,12,y); y+=lines.length*4.6+9;
   });
-  doc.save('PEP_Feedback_'+today()+'.pdf');
+  { const fname='PEP_Feedback_'+today()+'.pdf'; doc.save(fname); logDownload(fname,'pdf'); }
 }
 function viewAllocations(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
@@ -5004,7 +5091,7 @@ function buildEnquiryFormPDF(rec,asDataUri){
   y+=3; doc.setDrawColor(226,231,237); doc.line(12,y,pageW-12,y); y+=6;
   pdfFields(doc,y,[['Logged by',rec.agentName],['Logged at',rec.createdAt]]);
   if(asDataUri) return doc.output('datauristring');
-  doc.save('Enquiry_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf');
+  { const fname='Enquiry_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf'; doc.save(fname); logDownload(fname,'pdf'); }
 }
 function buildComplaintFormPDF(rec,asDataUri){
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
@@ -5035,7 +5122,7 @@ function buildComplaintFormPDF(rec,asDataUri){
   y+=3; doc.setDrawColor(226,231,237); doc.line(12,y,pageW-12,y); y+=6;
   pdfFields(doc,y,[['Logged by',rec.agentName],['Logged at',rec.createdAt]]);
   if(asDataUri) return doc.output('datauristring');
-  doc.save('Complaint_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf');
+  { const fname='Complaint_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf'; doc.save(fname); logDownload(fname,'pdf'); }
 }
 /* ---- Site visit PDF: sectioned form layout matching the real TSOPOLI request form ---- */
 function pdfSectionBar(doc,y,pageW,label){
@@ -5114,7 +5201,7 @@ function buildSiteVisitFormPDF(rec,asDataUri){
   doc.setDrawColor(226,231,237); doc.line(12,y,pageW-12,y); y+=6;
   pdfFields(doc,y,[['Status',rec.status],['Logged at',rec.createdAt]]);
   if(asDataUri) return doc.output('datauristring');
-  doc.save('SiteVisit_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf');
+  { const fname='SiteVisit_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf'; doc.save(fname); logDownload(fname,'pdf'); }
 }
 function downloadClientRecordPDF(name,contact,lead,payments,totalValue,totalPaid,totalBal){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load \u2014 check your connection.'); return; }
@@ -5160,7 +5247,7 @@ function downloadClientRecordPDF(name,contact,lead,payments,totalValue,totalPaid
       doc.text(String(p.date||''),12,y); doc.setTextColor(22,163,74); doc.text('+'+ghs(num(p.amount)),pageW-32,y); doc.setTextColor(20,20,20); y+=6.5;
     });
   }
-  doc.save('Client_'+name.replace(/\s+/g,'_')+'_Record.pdf');
+  { const fname='Client_'+name.replace(/\s+/g,'_')+'_Record.pdf'; doc.save(fname); logDownload(fname,'pdf'); }
 }
 function showSavedScreen(kind,rec,message){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
@@ -5354,32 +5441,14 @@ const MGR_APPS=[
   {key:'Insights',fic:'target',label:'Smart Insights'},
   {key:'Settings',fic:'settings',label:'Settings'},
   {key:'Activity',fic:'clipboard',label:'Activity'},
+  {key:'Downloads',fic:'document',label:'Download Directory'},
 ];
-function openMgrAppGrid(){
-  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
-  ov=document.createElement('div'); ov.id='announceOverlay';
-  ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div style="font-weight:800;font-size:16px">Management apps</div><button id="closeAppGrid" style="background:var(--paper);border:1px solid var(--line);border-radius:50%;color:var(--muted);width:30px;height:30px;display:grid;place-items:center;cursor:pointer;padding:0">${ic.close}</button></div>
-    <div class="appGrid">${MGR_APPS.map(a=>`<button class="appGridIcon" data-mgrapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
-  </div>`;
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
-  document.getElementById('closeAppGrid').onclick=()=>ov.remove();
-  ov.querySelectorAll('[data-mgrapp]').forEach(b=>b.onclick=()=>{
-    const key=b.dataset.mgrapp; ov.remove();
-    if(key==='Duties') route('duties'); else if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else { mgrTab=key; managerView(); }
-  });
-}
 async function managerView(){
   V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Management</div><h2>Team overview</h2><p>Live across all agents</p></div>
-  <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-  <button class="iconbtn" id="mgrDutiesBtn" title="Operations Tracker" style="background:#F1EFE7;border-color:var(--line);color:var(--ink);position:relative"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M5 12.5l4.5 4.5L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>${computeDutiesSummary(DB.tasks||[]).openCount?`<span class="badge" style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:100px;background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center">${computeDutiesSummary(DB.tasks||[]).openCount}</span>`:''}</button>
-  <button class="iconbtn" id="mgrAppGridBtn" title="More" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><circle cx="5" cy="5" r="1.8"/><circle cx="12" cy="5" r="1.8"/><circle cx="19" cy="5" r="1.8"/><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/><circle cx="5" cy="19" r="1.8"/><circle cx="12" cy="19" r="1.8"/><circle cx="19" cy="19" r="1.8"/></svg></button></div></div>
+  <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
   <div class="tabs" id="mtabs"><button data-t="overview" class="${mgrTab==='overview'?'on':''}">Overview</button>${mgrTab!=='overview'?`<button class="on">${esc((MGR_APPS.find(a=>a.key===mgrTab)||{label:mgrTab}).label)}</button>`:''}</div><div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   V.querySelectorAll('#mtabs button').forEach(b=>b.onclick=()=>{ if(b.dataset.t){ mgrTab=b.dataset.t; managerView(); } });
-  document.getElementById('mgrAppGridBtn').onclick=openMgrAppGrid;
   document.getElementById('mgrRefresh').onclick=async()=>{ toast('Refreshing…'); try{ await apiLoadAll(); managerView(); toast('Up to date'); }catch(e){ toast('Refresh failed'); } };
-  document.getElementById('mgrDutiesBtn').onclick=()=>route('duties');
   const body=document.getElementById('mbody');
   if(mgrTab==='overview'){ body.innerHTML=mgrOverview(); bindTasks(); bindOverviewCtrls(); animateKpiCounts(body); bindExpectedRevenueCard(); bindPipelineHealthCard(); bindBannerSlideshow(); }
   else if(mgrTab==='Data Check'){ const renderMgrDataCheck=()=>{ body.innerHTML=renderDataCheck(null); bindDataCheckCtrls(null,renderMgrDataCheck); }; renderMgrDataCheck(); }
@@ -5616,8 +5685,8 @@ function exportCSV(rows,cols,filename){
   const header=cols.map(c=>c[0]).join(',');
   const body=rows.map(r=>cols.map(c=>esc2(typeof c[1]==='function'?c[1](r):r[c[1]])).join(',')).join('\n');
   const blob=new Blob([header+'\n'+body],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob); const a=document.createElement('a');
-  a.href=url; a.download=filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  const url=URL.createObjectURL(blob);
+  triggerDownload(url,filename,'csv');
   toast('Downloaded '+filename);
 }
 function agentPoints(r){ return Math.round(r.totalCollected/500 + r.dealsClosedYear*20 + r.siteVisits*5); }
@@ -5758,8 +5827,8 @@ async function downloadMasterPipelineExcel(){
     writeLeadsIntoTemplate(wb,allLeads,true);
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='PEP_Landbank_Master_Pipeline_'+today()+'.xlsx'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    const url=URL.createObjectURL(blob);
+    triggerDownload(url,'PEP_Landbank_Master_Pipeline_'+today()+'.xlsx','excel');
     toast('Master pipeline downloaded — '+allLeads.length+' clients, A–Z');
   }catch(e){ toast('Could not build file: '+(e.message||e)); }
   btn.disabled=false; btn.textContent='⬇ Download Master Pipeline (.xlsx)';
@@ -5778,8 +5847,8 @@ function bindReportCtrls(){
       writeLeadsIntoTemplate(wb,sorted,false);
       const buf=await wb.xlsx.writeBuffer();
       const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-      const url=URL.createObjectURL(blob); const a=document.createElement('a');
-      a.href=url; a.download='Pipeline_'+agent.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+      const url=URL.createObjectURL(blob);
+      triggerDownload(url,'Pipeline_'+agent.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx','excel');
       toast('Downloaded');
     }catch(e){ toast('Could not build file: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='⬇ Download (.xlsx)';
@@ -5914,8 +5983,8 @@ async function downloadAgentPipelineExcel(){
     writeLeadsIntoTemplate(wb,DB.leads,false);
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='Pipeline_'+PROFILE.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    const url=URL.createObjectURL(blob);
+    triggerDownload(url,'Pipeline_'+PROFILE.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx','excel');
     toast('Pipeline downloaded');
   }catch(e){ toast('Could not build file: '+(e.message||e)); }
   if(btn){ btn.disabled=false; btn.textContent='⬇ Download my pipeline (.xlsx)'; }
@@ -6115,8 +6184,8 @@ async function downloadCompanyExcel(){
 
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='PEP_Landbank_Company_Report_'+today()+'.xlsx'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    const url=URL.createObjectURL(blob);
+    triggerDownload(url,'PEP_Landbank_Company_Report_'+today()+'.xlsx','excel');
     toast('Company report downloaded');
   }catch(e){ toast('Could not build report: '+(e.message||e)); }
   btn.disabled=false; btn.textContent='⬇ Download Company Report (.xlsx)';
@@ -6309,8 +6378,8 @@ function bindSettingsCtrls(){
         config:CONFIG
       };
       const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
-      const url=URL.createObjectURL(blob); const a=document.createElement('a');
-      a.href=url; a.download='PEP_Landbank_Backup_'+today()+'.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+      const url=URL.createObjectURL(blob);
+      triggerDownload(url,'PEP_Landbank_Backup_'+today()+'.json','backup');
       toast('Backup downloaded');
     }catch(e){ toast('Backup failed: '+(e.message||e)); }
     sysBackupBtn.disabled=false; sysBackupBtn.innerHTML=`<span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Download full data backup (.json)`;
@@ -6512,7 +6581,7 @@ function buildCommissionReportPDF(data){
   doc.setFont('helvetica','bold'); doc.setFontSize(10.5);
   doc.text('Total payable: '+ghs(grandTotal),12,y);
 
-  doc.save('PEP_Commission_'+data.monthKey+'.pdf');
+  { const fname='PEP_Commission_'+data.monthKey+'.pdf'; doc.save(fname); logDownload(fname,'pdf'); }
   return doc;
 }
 // Runs from a Management session only, same reasoning as birthdays: the eligibility
