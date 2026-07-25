@@ -4210,6 +4210,7 @@ function openNewTaskModal(){
 
 /* ================= FEEDBACK FORUM (bugs, suggestions, things to change) ================= */
 const FEEDBACK_CATEGORIES=['Bug','Suggestion','Feature Request','Other'];
+let FEEDBACK_COMMENTS_CACHE={};
 function viewFeedback(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
   const all=DB.feedback||[];
@@ -4217,7 +4218,8 @@ function viewFeedback(){
     <div class="top"><div><div class="nm">${esc(f.authorName)}</div><div class="meta">${esc((f.createdAt||'').slice(0,16).replace('T',' '))}</div></div>
     <span class="tag ${f.category==='Bug'?'dgr':f.category==='Suggestion'?'ok':'ghost'}">${esc(f.category)}</span></div>
     <div class="mini" style="margin-top:6px;line-height:1.5">${esc(f.body)}</div>
-    ${f.authorKey===PROFILE.key||PROFILE.role==='manager'?`<div class="foot"><button class="trashbtn" data-fbdel="${f.id}">${ic.trash}</button></div>`:''}
+    <div class="foot"><button class="chip" data-fbtogglecomments="${f.id}">💬 Comments</button>${f.authorKey===PROFILE.key||PROFILE.role==='manager'?`<button class="trashbtn" data-fbdel="${f.id}">${ic.trash}</button>`:''}</div>
+    <div id="fbCommentsSection_${f.id}" class="hidden"></div>
   </div>`;
   V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Feedback</div><h2>Suggestions &amp; bug reports</h2><p>${all.length} posted · visible to the whole team</p></div></div>
   <div class="formwrap" style="margin-bottom:16px">
@@ -4243,8 +4245,45 @@ function bindFeedbackCtrls(){
     try{ await apiDeleteFeedback(b.dataset.fbdel); DB.feedback=DB.feedback.filter(x=>x.id!==b.dataset.fbdel); toast('Deleted'); viewFeedback(); }
     catch(e){ toast('Failed: '+(e.message||e)); }
   });
+  document.querySelectorAll('[data-fbtogglecomments]').forEach(b=>b.onclick=()=>toggleFeedbackComments(b.dataset.fbtogglecomments));
   const pdfBtn=document.getElementById('fbDownloadPdf');
   if(pdfBtn) pdfBtn.onclick=buildFeedbackPDF;
+}
+async function toggleFeedbackComments(id){
+  const sec=document.getElementById('fbCommentsSection_'+id); if(!sec) return;
+  if(sec.classList.contains('hidden')){
+    sec.classList.remove('hidden');
+    if(!sec.dataset.loaded){ sec.innerHTML='<div class="mini" style="padding:6px 0">Loading…</div>'; await loadAndRenderFeedbackComments(id); sec.dataset.loaded='1'; }
+  } else { sec.classList.add('hidden'); }
+}
+async function loadAndRenderFeedbackComments(id){
+  let comments=FEEDBACK_COMMENTS_CACHE[id];
+  if(!comments){
+    if(DEMO_MODE){ comments=[]; }
+    else{ try{ const {data,error}=await sb.from('feedback_comments').select('*').eq('feedback_id',id).order('created_at',{ascending:true}); if(error) throw error;
+      comments=(data||[]).map(r=>({id:r.id,authorName:r.author_name,body:r.body,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')})); }catch(e){ comments=[]; } }
+    FEEDBACK_COMMENTS_CACHE[id]=comments;
+  }
+  const wrap=document.getElementById('fbCommentsSection_'+id); if(!wrap) return;
+  wrap.innerHTML=`<div>${comments.length?comments.map(c=>`<div class="commentItem"><b>${esc(c.authorName)}:</b> ${esc(c.body)}</div>`).join(''):'<div class="mini" style="padding:6px 0">No replies yet — be the first.</div>'}</div>
+    <div class="commentRow"><input id="fbCommentInput_${id}" placeholder="Write a reply…"/><button data-fbpostcomment="${id}">Send</button></div>`;
+  const input=document.getElementById('fbCommentInput_'+id);
+  input.onkeydown=e=>{ if(e.key==='Enter') postFeedbackComment(id); };
+  wrap.querySelector('[data-fbpostcomment]').onclick=()=>postFeedbackComment(id);
+}
+async function postFeedbackComment(id){
+  const input=document.getElementById('fbCommentInput_'+id); if(!input) return;
+  const body=input.value.trim(); if(!body) return;
+  input.value=''; input.disabled=true;
+  try{
+    let rec;
+    if(DEMO_MODE){ rec={id:uid(),authorName:PROFILE.name,body,createdAt:today()+' '+nowTime()}; }
+    else{ const {data,error}=await sb.from('feedback_comments').insert({feedback_id:id,author_key:PROFILE.key,author_name:PROFILE.name,body}).select().single(); if(error) throw error;
+      rec={id:data.id,authorName:data.author_name,body:data.body,createdAt:(data.created_at||'').slice(0,16).replace('T',' ')}; }
+    FEEDBACK_COMMENTS_CACHE[id]=(FEEDBACK_COMMENTS_CACHE[id]||[]).concat([rec]);
+    loadAndRenderFeedbackComments(id);
+  }catch(e){ toast('Reply failed to send'); }
+  input.disabled=false;
 }
 function buildFeedbackPDF(){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
