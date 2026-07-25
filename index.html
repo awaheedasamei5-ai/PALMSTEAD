@@ -753,35 +753,65 @@ function monthsElapsedSince(dateStr){
   if(isNaN(start)) return 1;
   return Math.max(1,(now.getFullYear()-start.getFullYear())*12+(now.getMonth()-start.getMonth())+1);
 }
+// The deposit (default 30% of grand total, editable per lead) must clear before
+// monthly-installment tracking begins. depositTarget is the ONLY extra state needed to
+// represent an agent's choice on an overpaid deposit: absorbing the whole overpay into
+// the deposit (see openDepositOverpayModal) simply raises depositTarget to match what
+// was actually paid, so the installment math below (grand - depositTarget) shrinks
+// naturally; capping it instead just leaves depositTarget where it was, and the excess
+// automatically flows into installment tracking via the running-total math below. No
+// individual payment record ever needs to be split or tagged.
+function computeDepositStatus(lead,paymentsForLead){
+  const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand;
+  const target=lead.depositTarget!=null?num(lead.depositTarget):Math.round(grand*0.3);
+  const sorted=(paymentsForLead||[]).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  let cum=0,clearedDate=null,overshoot=0;
+  for(const p of sorted){
+    const before=cum; cum+=num(p.amount);
+    if(before<target&&cum>=target){ clearedDate=p.date; overshoot=cum-target; }
+  }
+  const complete=target>0&&cum>=target;
+  return {target,paid:cum,complete,remaining:Math.max(0,target-cum),clearedDate,overshoot:complete?overshoot:0};
+}
 function scheduleAnchorDate(lead,paymentsForLead){
-  // Month 1 of an installment plan starts the day the client actually made their
-  // first payment (their deposit) -- not the day the lead record was created,
-  // which can be earlier (prospecting) or occasionally entered later (backfilled data).
-  const dated=(paymentsForLead||[]).map(p=>p.date).filter(Boolean).sort();
-  return dated[0]||lead.date||today();
+  // Month 1 of the installment phase starts the day the deposit actually clears --
+  // not the day of the lead's first payment, which might only be a partial deposit
+  // instalment, and not the lead's creation date either. Null while still incomplete:
+  // there is no installment schedule yet, by design.
+  const dep=computeDepositStatus(lead,paymentsForLead);
+  return dep.complete?dep.clearedDate:null;
 }
 function computeMonthlySchedule(lead,paymentsForLead){
   const planMonths=PLAN_MONTHS[lead.paymentPlan]; if(!planMonths) return null;
   const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand; if(!grand) return null;
-  const monthlyInstallment=Math.round(grand/planMonths);
-  const anchor=scheduleAnchorDate(lead,paymentsForLead);
+  const dep=computeDepositStatus(lead,paymentsForLead);
+  if(!dep.complete) return null;
+  const installmentTotal=Math.max(0,grand-dep.target);
+  const monthlyInstallment=Math.round(installmentTotal/planMonths);
+  const anchor=dep.clearedDate;
   const monthsElapsed=Math.min(planMonths,monthsElapsedSince(anchor));
-  const cumulativeThrough=n=>Math.min(grand,monthlyInstallment*Math.max(0,n));
+  const cumulativeThrough=n=>Math.min(installmentTotal,monthlyInstallment*Math.max(0,n));
   const thisMonthStart=today().slice(0,7)+'-01';
+  const totalPaid=(paymentsForLead||[]).reduce((s,p)=>s+num(p.amount),0);
   const paidBeforeThisMonth=(paymentsForLead||[]).filter(p=>(p.date||'')<thisMonthStart).reduce((s,p)=>s+num(p.amount),0);
-  const paidThisMonth=(paymentsForLead||[]).filter(p=>(p.date||'')>=thisMonthStart).reduce((s,p)=>s+num(p.amount),0);
+  // Everything paid beyond the deposit target flows into installment tracking as one
+  // running total -- this sidesteps having to know which individual payment row was
+  // "the deposit" vs "the first installment", including when both land the same day.
+  const installmentPaidTotal=Math.max(0,totalPaid-dep.target);
+  const installmentPaidBeforeThisMonth=Math.max(0,paidBeforeThisMonth-dep.target);
+  const installmentPaidThisMonth=installmentPaidTotal-installmentPaidBeforeThisMonth;
   // What this specific month's installment slot is worth (handles the last, possibly
   // uneven, installment correctly) -- capped so it can never exceed one month's amount.
   const thisMonthSlot=cumulativeThrough(monthsElapsed)-cumulativeThrough(monthsElapsed-1);
-  const expectedThisMonth=Math.max(0,Math.round(thisMonthSlot-paidThisMonth));
+  const expectedThisMonth=Math.max(0,Math.round(thisMonthSlot-installmentPaidThisMonth));
   // Arrears: unpaid installments from BEFORE this month only -- this is what used to
   // silently balloon "expected this month" up toward the client's entire remaining
   // balance for anyone who fell behind. Now tracked and shown separately.
-  const arrears=Math.max(0,Math.round(cumulativeThrough(monthsElapsed-1)-paidBeforeThisMonth));
+  const arrears=Math.max(0,Math.round(cumulativeThrough(monthsElapsed-1)-installmentPaidBeforeThisMonth));
   const monthsRemaining=Math.max(0,planMonths-monthsElapsed+1);
   const startDate=new Date(anchor);
   const nextDue=new Date(startDate.getFullYear(),startDate.getMonth()+monthsElapsed,startDate.getDate());
-  return {monthlyInstallment,planMonths,monthsElapsed,monthsRemaining,expectedThisMonth,arrears,nextDueDate:nextDue.toISOString().slice(0,10)};
+  return {monthlyInstallment,planMonths,monthsElapsed,monthsRemaining,expectedThisMonth,arrears,nextDueDate:nextDue.toISOString().slice(0,10),depositTarget:dep.target};
 }
 function ymAdd(year,month0,n){ const d=new Date(year,month0+n,1); return {y:d.getFullYear(),m:d.getMonth()}; }
 function ymKey(y,m0){ return y+'-'+String(m0+1).padStart(2,'0'); }
@@ -793,17 +823,27 @@ function ymLastDay(y,m0){ return new Date(y,m0+1,0).getDate(); }
 function buildInstallmentSchedule(lead,paymentsForLead){
   const planMonths=PLAN_MONTHS[lead.paymentPlan]; if(!planMonths) return null;
   const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand; if(!grand) return null;
-  const monthlyInstallment=Math.round(grand/planMonths);
-  const anchor=scheduleAnchorDate(lead,paymentsForLead);
+  const dep=computeDepositStatus(lead,paymentsForLead);
+  if(!dep.complete) return null;
+  const installmentTotal=Math.max(0,grand-dep.target);
+  const monthlyInstallment=Math.round(installmentTotal/planMonths);
+  const anchor=dep.clearedDate;
   const startDate=new Date(anchor);
-  const cumulativeThrough=n=>Math.min(grand,monthlyInstallment*Math.max(0,n));
+  const cumulativeThrough=n=>Math.min(installmentTotal,monthlyInstallment*Math.max(0,n));
   const thisMonthKey=today().slice(0,7);
   const slots=[];
   for(let i=1;i<=planMonths;i++){
     const {y,m}=ymAdd(startDate.getFullYear(),startDate.getMonth(),i-1);
     const slotKey=ymKey(y,m);
     const expected=Math.round(cumulativeThrough(i)-cumulativeThrough(i-1));
-    const paid=Math.round((paymentsForLead||[]).filter(p=>(p.date||'').slice(0,7)===slotKey).reduce((s,p)=>s+num(p.amount),0));
+    // Paid toward this slot = running installment total through this month, minus the
+    // running installment total through the PRIOR month -- same "total paid minus
+    // deposit target" logic as computeMonthlySchedule, so a deposit-clearing overpay
+    // landing the same calendar month as month 1 is still credited correctly.
+    const nextSlot=ymAdd(y,m,1);
+    const paidThroughThisMonth=Math.max(0,(paymentsForLead||[]).filter(p=>(p.date||'')<ymKey(nextSlot.y,nextSlot.m)+'-01').reduce((s,p)=>s+num(p.amount),0)-dep.target);
+    const paidThroughPriorMonth=Math.max(0,(paymentsForLead||[]).filter(p=>(p.date||'')<slotKey+'-01').reduce((s,p)=>s+num(p.amount),0)-dep.target);
+    const paid=Math.round(paidThroughThisMonth-paidThroughPriorMonth);
     let status;
     if(slotKey>thisMonthKey) status='future';
     else if(paid<=0) status=(slotKey===thisMonthKey?'due':'missed');
@@ -814,7 +854,7 @@ function buildInstallmentSchedule(lead,paymentsForLead){
   }
   const itemizedTotal=Math.round((paymentsForLead||[]).reduce((s,p)=>s+num(p.amount),0));
   const unassigned=Math.max(0,Math.round(num(lead.amtPaid)-itemizedTotal));
-  return {slots,monthlyInstallment,planMonths,anchor,unassigned,grand};
+  return {slots,monthlyInstallment,planMonths,anchor,unassigned,depositTarget:dep.target,depositPaid:dep.paid,grand};
 }
 function INTEREST(){ return {'Full Payment':0,'3 Months':num(CONFIG.int3),'6 Months':num(CONFIG.int6),
   '9 Months':num(CONFIG.int9),'12 Months':num(CONFIG.int12)}; }
@@ -835,7 +875,7 @@ function monthLabel(k){ if(!k) return '—'; const [y,m]=k.split('-'); return ne
 const mapLead=r=>({id:r.id,agent:r.agent_key,name:r.name,contact:r.contact,date:r.date_added,stage:r.stage,
   plotType:r.plot_type,noPlots:r.no_plots,unitPrice:r.unit_price,discount:r.discount,netTotal:r.net_total,
   paymentPlan:r.payment_plan,grandTotal:r.grand_total,siteVisit:r.site_visit,priority:r.priority,
-  amtPaid:r.amt_paid,balance:r.balance,nextAction:r.next_action,notes:r.notes,tags:r.tags});
+  amtPaid:r.amt_paid,balance:r.balance,nextAction:r.next_action,notes:r.notes,tags:r.tags,depositTarget:r.deposit_target});
 const mapEnq=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,name:r.name,contact:r.contact,location:r.location,
   types:(r.types||'').split(',').filter(Boolean),plot:r.plot,source:r.source,details:r.details,follow:r.follow,
   followDate:r.follow_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
@@ -1359,13 +1399,15 @@ async function apiLoadAll(){
   DB.agentMonthStats=results[12];
 }
 async function apiInsertLead(l,c){
-  if(DEMO_MODE){ const d=await demoLoad(); const row={id:uid(),agent:PROFILE.key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal};
+  if(DEMO_MODE){ const d=await demoLoad(); const row={id:uid(),agent:PROFILE.key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal,
+      depositTarget:l.depositTarget!=null&&l.depositTarget!==''?num(l.depositTarget):Math.round(c.grand*0.3)};
     d.leads[PROFILE.key]=d.leads[PROFILE.key]||[]; d.leads[PROFILE.key].unshift(row); await demoSave(); return row; }
   const row={agent_key:PROFILE.agent_key,name:l.name,contact:l.contact,date_added:l.date||today(),stage:l.stage,
     plot_type:l.plotType,no_plots:num(l.noPlots),unit_price:l.unitPrice?num(l.unitPrice):PRICING()[l.plotType].list,
     discount:l.discount==null?PRICING()[l.plotType].disc*num(l.noPlots):num(l.discount),net_total:c.net,
     payment_plan:l.paymentPlan,grand_total:c.grand,site_visit:l.siteVisit,priority:l.priority,
-    amt_paid:num(l.amtPaid),balance:c.bal,next_action:l.nextAction,notes:l.notes};
+    amt_paid:num(l.amtPaid),balance:c.bal,next_action:l.nextAction,notes:l.notes,
+    deposit_target:l.depositTarget!=null&&l.depositTarget!==''?num(l.depositTarget):Math.round(c.grand*0.3)};
   const {data,error}=await sb.from('leads').insert(row).select().single(); if(error) throw error; return mapLead(data);
 }
 async function apiUpdateLead(id,patch){
@@ -1380,6 +1422,7 @@ async function apiUpdateLead(id,patch){
   if('noPlots' in patch) dbPatch.no_plots=patch.noPlots; if('unitPrice' in patch) dbPatch.unit_price=patch.unitPrice;
   if('priority' in patch) dbPatch.priority=patch.priority; if('notes' in patch) dbPatch.notes=patch.notes;
   if('date' in patch) dbPatch.date_added=patch.date; if('tags' in patch) dbPatch.tags=patch.tags;
+  if('depositTarget' in patch) dbPatch.deposit_target=patch.depositTarget;
   const {error}=await sb.from('leads').update(dbPatch).eq('id',id); if(error) throw error;
 }
 async function apiInsertEnquiry(row){
@@ -4111,20 +4154,23 @@ function formAddLead(){
   <div class="grid2">${fld('Plot type',sel('f_plot',['Full Plot','Half Plot']))}${fld('No. of plots','<input id="f_plots" type="number" min="0" step="0.5" value="1"/>')}</div>
   <div class="grid2">${fld('Unit price (GHS)','<input id="f_unit" type="number" placeholder="auto"/>','Full '+CONFIG.fullPrice+' · Half '+CONFIG.halfPrice)}${fld('Discount (GHS)','<input id="f_disc" type="number" placeholder="auto"/>')}</div>
   <div class="grid2">${fld('Payment plan',sel('f_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}${fld('Site visit done?',sel('f_sv',['No','Yes']))}</div>
-  ${fld('Amount already paid (GHS)','<input id="f_paid" type="number" placeholder="0"/>')}
+  ${fld('Deposit target (GHS)','<input id="f_deptarget" type="number" placeholder="auto = 30%"/>','only matters on an installment plan — the monthly schedule begins once this is fully paid')}
+  ${fld('Amount already paid (GHS)','<input id="f_paid" type="number" placeholder="0"/>','the deposit or partial deposit, if they’ve already paid something')}
   <div class="calcbox" id="calc"></div>
   ${fld('Next action','<input id="f_next" placeholder="e.g. Follow up Monday"/>')}
   ${fld('Notes','<textarea id="f_notes" placeholder="Context, preferences, history…"></textarea>')}
   <div class="formactions"><button class="btn ghost" onclick="route('home')">Cancel</button><button class="btn primary" id="saveLead">Save lead</button></div></div>`;
-  ['f_plot','f_plots','f_unit','f_disc','f_plan','f_paid'].forEach(i=>document.getElementById(i).addEventListener('input',paintCalc));
+  ['f_plot','f_plots','f_unit','f_disc','f_plan','f_paid','f_deptarget'].forEach(i=>document.getElementById(i).addEventListener('input',paintCalc));
   paintCalc(); document.getElementById('saveLead').onclick=saveNewLead;
 }
 function readLeadForm(){return {name:val('f_name').trim(),contact:val('f_contact').trim(),date:val('f_date'),stage:val('f_stage'),
   priority:val('f_priority'),plotType:val('f_plot'),noPlots:val('f_plots'),unitPrice:val('f_unit')||null,
   discount:val('f_disc')===''?null:val('f_disc'),paymentPlan:val('f_plan'),siteVisit:val('f_sv'),
+  depositTarget:val('f_deptarget')||null,
   amtPaid:val('f_paid')||0,nextAction:val('f_next').trim(),notes:val('f_notes').trim()};}
 function paintCalc(){ const c=computeLead(readLeadForm());
-  document.getElementById('calc').innerHTML=`<div><div class="cl">Net total</div><div class="cv">${ghs(c.net)}</div></div><div><div class="cl">+ Interest</div><div class="cv">${ghs(c.interest)}</div></div><div><div class="cl">Grand total</div><div class="cv">${ghs(c.grand)}</div></div><div><div class="cl">Balance</div><div class="cv">${ghs(c.bal)}</div></div>`;
+  const depTarget=num(val('f_deptarget'))||Math.round(c.grand*0.3);
+  document.getElementById('calc').innerHTML=`<div><div class="cl">Net total</div><div class="cv">${ghs(c.net)}</div></div><div><div class="cl">+ Interest</div><div class="cv">${ghs(c.interest)}</div></div><div><div class="cl">Grand total</div><div class="cv">${ghs(c.grand)}</div></div><div><div class="cl">Balance</div><div class="cv">${ghs(c.bal)}</div></div><div><div class="cl">Deposit target</div><div class="cv">${ghs(depTarget)}</div></div>`;
 }
 async function saveNewLead(){ const l=readLeadForm();
   if(!l.name||!l.contact){ toast('Name and contact are required'); return; }
@@ -4151,7 +4197,9 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   const priceMismatch=Math.abs(num(l.unitPrice)-expectedUnit)>1 && num(l.unitPrice)>0;
   const overpaid=num(l.amtPaid)>g+1;
   const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const mySched=(PLAN_MONTHS[l.paymentPlan] && !isFullyPaid(l))?computeMonthlySchedule(l,myPayments):null;
+  const onPlan=PLAN_MONTHS[l.paymentPlan] && !isFullyPaid(l);
+  const myDep=onPlan?computeDepositStatus(l,myPayments):null;
+  const mySched=onPlan?computeMonthlySchedule(l,myPayments):null;
   V.innerHTML=`${back('update')}<div class="pagehead"><div><div class="eyebrow">Updating</div><h2>${esc(l.name)}</h2><p>${esc(l.contact||'')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''}</p></div></div>
   ${priceMismatch?`<div class="rowcard" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #B4472F"><div style="font-weight:700;font-size:13.5px;color:#B4472F">⚠ Price check</div><div class="mini" style="margin-top:2px">This lead's unit price (${ghs(num(l.unitPrice))}) doesn't match the current ${esc(l.plotType)} price (${ghs(expectedUnit)}). This can be legitimate (a past promo) — but worth confirming it's correct.</div></div>`:''}
   ${overpaid?`<div class="rowcard" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #B4472F"><div style="font-weight:700;font-size:13.5px;color:#B4472F">⚠ Amount paid exceeds grand total</div><div class="mini" style="margin-top:2px">Paid ${ghs(num(l.amtPaid))} against a grand total of ${ghs(g)}. Check the numbers below.</div></div>`:''}
@@ -4163,7 +4211,16 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   <div class="grid2">${fld('Plot type',sel('u_plottype',['Full Plot','Half Plot'],l.plotType))}${fld('No. of plots','<input id="u_noplots" type="number" step="0.5" min="0.5" value="'+num(l.noPlots)+'"/>')}</div>
   <div class="grid2">${fld('Unit price (GHS)','<input id="u_unitprice" type="number" value="'+num(l.unitPrice)+'"/>','current standard price: '+ghs(expectedUnit))}${fld('Discount given (GHS)','<input id="u_discount" type="number" value="'+num(l.discount)+'"/>')}</div>
   ${fld('Payment plan',sel('u_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months'],l.paymentPlan||'Full Payment'))}
+  ${onPlan?fld('Deposit target (GHS)','<input id="u_deptarget" type="number" value="'+num(myDep.target)+'"/>','default is 30% of grand total — edit if this deal has a different agreed deposit'):''}
   <div class="calcbox" id="u_calc"></div>
+  ${myDep&&!myDep.complete?`<div class="rowcard" style="margin:2px 0 14px;padding:14px 16px;background:linear-gradient(135deg,#FFF8EC,#F4F6F5);border:1px solid var(--line)">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div><div class="mini" style="font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:10.5px">Deposit in progress</div>
+      <div style="font-size:20px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-top:2px">${ghs(myDep.paid)} <span style="font-size:13px;font-weight:600;color:var(--muted)">of ${ghs(myDep.target)}</span></div></div>
+      <div style="text-align:right"><div class="mini">${ghs(myDep.remaining)} left</div></div>
+    </div>
+    <div class="mini" style="margin-top:9px;padding-top:9px;border-top:1px solid var(--line)">The monthly plan begins once this is fully paid — no installment schedule exists yet.</div>
+  </div>`:''}
   ${mySched?`<div class="rowcard" style="margin:2px 0 14px;padding:14px 16px;background:linear-gradient(135deg,#EEF4FF,#F4F6F5);border:1px solid var(--line)">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <div><div class="mini" style="font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:10.5px">This month's installment</div>
@@ -4175,7 +4232,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
     <button class="chip" id="viewSchedBtn" style="margin-top:10px;width:100%">View full month-by-month schedule →</button>
   </div>`:''}
   ${fld('Total paid to date (GHS)','<input id="u_paidtotal" type="number" value="'+num(l.amtPaid)+'"/>','edit directly to correct a mistake, or use the field below to just add a new payment')}
-  ${fld(mySched?"This month's payment (GHS)":'...or add a new payment now (GHS)','<input id="u_pay" type="number" placeholder="0"/>'+(mySched?'<div id="u_payCompare" class="mini" style="margin-top:7px;font-weight:700"></div>':''),mySched?('expected '+ghs(mySched.monthlyInstallment)+' this month — enter what they actually paid'):'adds on top of the total above')}
+  ${fld(mySched?"This month's payment (GHS)":(myDep&&!myDep.complete?'Deposit payment (GHS)':'...or add a new payment now (GHS)'),'<input id="u_pay" type="number" placeholder="0"/>'+(mySched?'<div id="u_payCompare" class="mini" style="margin-top:7px;font-weight:700"></div>':''),mySched?('expected '+ghs(mySched.monthlyInstallment)+' this month — enter what they actually paid'):(myDep&&!myDep.complete?(ghs(myDep.remaining)+' left on the deposit'):'adds on top of the total above'))}
   <div class="sectitle"><h3>Stage &amp; follow-up</h3></div>
   <div class="grid2">${fld('Move stage to',stageSel('u_stage',l.stage))}${fld('Contact method',sel('u_method',['Phone Call','WhatsApp','Email','In-person']))}</div>
   ${fld('What was discussed / outcome','<textarea id="u_disc" placeholder="Summary of the interaction"></textarea>')}
@@ -4212,10 +4269,45 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   };
   ['u_plottype','u_noplots','u_unitprice','u_discount','u_plan','u_paidtotal','u_pay'].forEach(id2=>document.getElementById(id2).addEventListener('input',paintUCalc));
   paintUCalc();
-  document.getElementById('saveUpd').onclick=()=>saveUpdate(id);
+  document.getElementById('saveUpd').onclick=()=>handleSaveUpdateClick(id,myDep);
   document.getElementById('delLead').onclick=()=>deleteLeadConfirm(id,l.name);
   document.getElementById('dlUpdPdf').onclick=()=>downloadClientRecordPDF(l.name,l.contact,l,myPayments,g,num(l.amtPaid),bal);
   const viewSchedBtn=document.getElementById('viewSchedBtn'); if(viewSchedBtn) viewSchedBtn.onclick=()=>route('paymentSchedule',id);
+}
+// Shown when a deposit payment would push the client's deposit total past the
+// target. Both options are just a choice of what depositTarget becomes -- no payment
+// record ever needs to be split. "Absorb" raises depositTarget to match what was
+// actually paid (so the installment math shrinks naturally); "cap" leaves it exactly
+// where it was, and the excess automatically flows into installment tracking via the
+// running-total math already in computeMonthlySchedule/buildInstallmentSchedule.
+function openDepositOverpayModal(myDep,payAmount,onDone){
+  const newTotal=myDep.paid+payAmount;
+  const overshoot=Math.round(newTotal-myDep.target);
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Deposit overpaid</div>
+    <div class="mini" style="margin-bottom:16px">This payment brings the deposit to ${ghs(newTotal)}, which is ${ghs(overshoot)} more than the ${ghs(myDep.target)} target. How should the extra be handled?</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="delReasonBtn" data-depopt="absorb">
+        <div style="font-weight:700;font-size:13.5px">Count it all as the deposit</div>
+        <div class="mini">Deposit becomes ${ghs(newTotal)}. The monthly installment recalculates lower for the rest of the plan.</div>
+      </button>
+      <button class="delReasonBtn" data-depopt="cap">
+        <div style="font-weight:700;font-size:13.5px">Cap the deposit at ${ghs(myDep.target)}</div>
+        <div class="mini">The extra ${ghs(overshoot)} carries forward as an early payment toward month 1 instead.</div>
+      </button>
+    </div>
+    <button class="btn ghost" id="cancelDepOpt" style="width:100%;margin-top:14px">Cancel</button>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('cancelDepOpt').onclick=()=>ov.remove();
+  ov.querySelectorAll('[data-depopt]').forEach(b=>b.onclick=()=>{
+    const choice=b.dataset.depopt;
+    ov.remove();
+    onDone(choice==='absorb'?Math.round(newTotal):myDep.target);
+  });
 }
 function deleteLeadConfirm(id,name){
   const l=DB.leads.find(x=>x.id===id);
@@ -4276,7 +4368,17 @@ function deleteLeadConfirm(id,name){
     }catch(e){ toast('Delete failed: '+(e.message||e)); b.disabled=false; b.textContent='Retry'; }
   });
 }
-async function saveUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l)return;
+// Intercepts the one case that needs a decision before saving: a deposit payment that
+// would overpay the deposit target. Everything else saves straight through.
+function handleSaveUpdateClick(id,myDep){
+  const pay=num(val('u_pay'));
+  if(myDep&&!myDep.complete&&pay>0){
+    const newTotal=myDep.paid+pay;
+    if(newTotal>myDep.target+0.5){ openDepositOverpayModal(myDep,pay,resolvedTarget=>saveUpdate(id,resolvedTarget)); return; }
+  }
+  saveUpdate(id);
+}
+async function saveUpdate(id,resolvedDepositTarget){ const l=DB.leads.find(x=>x.id===id); if(!l)return;
   const name=val('u_name').trim()||l.name; const contact=val('u_contact').trim();
   const plotType=val('u_plottype'); const noPlots=num(val('u_noplots'))||1; const unitPrice=num(val('u_unitprice'));
   const discount=num(val('u_discount')); const plan=val('u_plan'); const stage=val('u_stage');
@@ -4285,9 +4387,12 @@ async function saveUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l)return
   const pay=num(val('u_pay')); const newPaid=num(val('u_paidtotal'))+(pay>0?pay:0);
   const next=val('u_next').trim()||l.nextAction; const notes=val('u_notes').trim(); const tags=val('u_tags').trim();
   const sv=val('u_sv')==='Mark as visited'?'Yes':l.siteVisit; const bal=Math.max(cc.grand-newPaid,0);
+  const deptargetEl=document.getElementById('u_deptarget');
+  const depositTarget=resolvedDepositTarget!=null?resolvedDepositTarget:(deptargetEl?num(deptargetEl.value):undefined);
   const btn=document.getElementById('saveUpd'); btn.disabled=true; btn.textContent='Saving…';
   try{
     const patch={name,contact,plotType,noPlots,unitPrice,amtPaid:newPaid,stage,nextAction:next,notes,tags,siteVisit:sv,balance:bal,discount,paymentPlan:plan,netTotal:cc.net,grandTotal:cc.grand};
+    if(depositTarget!=null) patch.depositTarget=depositTarget;
     await apiUpdateLead(id,patch);
     Object.assign(l,patch);
     if(pay>0){ const prec=await apiInsertPayment(id,name,pay); if(prec) DB.payments.unshift(prec); }
@@ -4312,7 +4417,11 @@ function viewPaymentSchedule(id){
   const l=DB.leads.find(x=>x.id===id); if(!l){ route('home'); return; }
   const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const sched=buildInstallmentSchedule(l,myPayments);
-  if(!sched){ toast('This client is not on an installment plan'); route('updateOne',id); return; }
+  if(!sched){
+    const dep=PLAN_MONTHS[l.paymentPlan]?computeDepositStatus(l,myPayments):null;
+    toast(dep&&!dep.complete?'The deposit isn’t fully paid yet — the monthly schedule starts once it is':'This client is not on an installment plan');
+    route('updateOne',id); return;
+  }
   const rows=sched.slots.map(s=>{
     const meta=SCHED_STATUS_META[s.status];
     return `<div class="rowcard" style="margin-bottom:10px;padding:14px 16px">
