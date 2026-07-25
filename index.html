@@ -174,13 +174,15 @@ a{color:var(--green2)}
 .topbar .spacer{flex:1}
 .whoami{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
   padding:5px 7px 5px 13px;border-radius:100px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-  box-shadow:0 6px 18px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.08)}
+  box-shadow:0 6px 18px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.08);
+  min-width:0;max-width:100%;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+.whoami::-webkit-scrollbar{display:none}
 .tb-name{color:#EAF0EB;font-size:13px;font-weight:600;letter-spacing:.01em;padding-right:11px;margin-right:3px;
-  border-right:1px solid rgba(255,255,255,.16);white-space:nowrap}
+  border-right:1px solid rgba(255,255,255,.16);white-space:nowrap;flex:0 0 auto}
 .tb-avatar{width:26px;height:26px;border-radius:100px;overflow:hidden;flex:0 0 auto;display:inline-block;box-shadow:0 0 0 1.5px rgba(190,242,100,.55)}
 .tb-avatar img{width:100%;height:100%;object-fit:cover}
 .iconbtn{background:transparent;border:1px solid transparent;color:#C6D3E8;border-radius:50%;
-  width:35px;height:35px;display:grid;place-items:center;cursor:pointer;
+  width:35px;height:35px;flex:0 0 auto;display:grid;place-items:center;cursor:pointer;
   transition:background .18s ease,color .18s ease,transform .2s cubic-bezier(.34,1.56,.64,1)}
 .iconbtn svg{transition:transform .18s ease}
 .iconbtn:hover{background:rgba(255,255,255,.14);color:#fff;transform:translateY(-1px)}
@@ -190,6 +192,18 @@ a{color:var(--green2)}
 #logoutBtn:hover{background:rgba(180,71,47,.34);color:#fff}
 .chatnavbtn{border-radius:50%;position:relative;color:#fff;background:linear-gradient(150deg,rgba(132,204,22,.32),rgba(59,130,246,.32))}
 .chatnavbtn:hover{transform:translateY(-1px) scale(1.06);background:linear-gradient(150deg,rgba(132,204,22,.5),rgba(59,130,246,.5))}
+/* On narrow phones the full whoami pill (name + 5 icon buttons) can exceed the
+   viewport width -- shrink it so everything stays reachable without needing to
+   scroll sideways, which used to clip chat/settings/logout off-screen entirely. */
+@media (max-width:430px){
+  .topbar{gap:6px;padding-left:12px;padding-right:12px}
+  .topbar .tt{font-size:12.5px}
+  .topbar .ts{font-size:9px}
+  .tb-name{display:none}
+  .whoami{padding:4px 4px 4px 4px;gap:1px}
+  .iconbtn{width:31px;height:31px}
+  .iconbtn svg{width:15px;height:15px}
+}
 .chatnavbtn .badge{position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:100px;
   background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:9.5px;font-weight:800;
   display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--ink);animation:badgePop .3s ease both}
@@ -198,6 +212,7 @@ a{color:var(--green2)}
 .pagehead{margin:2px 0 18px;display:flex;align-items:flex-start;justify-content:space-between;gap:14px;animation:fadeUp .4s ease both}
 .dashRefreshBtn{width:34px;height:34px;border-radius:100px;border:1px solid var(--line);background:var(--card);color:var(--muted);
   display:flex;align-items:center;justify-content:center;flex:0 0 auto;box-shadow:var(--shadow);cursor:pointer;transition:.15s}
+.dashRefreshBtn svg{width:16px;height:16px;display:block}
 .dashRefreshBtn:hover{color:var(--ink);transform:rotate(45deg)}
 .dashRefreshBtn.spinning svg{animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -676,7 +691,7 @@ const favicon = document.querySelector('link[rel="icon"]'); if(favicon) favicon.
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
-let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[]};
+let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[]};
 
 function cfg(){ let u=SUPABASE_URL,k=SUPABASE_ANON_KEY;
   if(!u||!k){ try{const s=JSON.parse(localStorage.getItem('pep_cfg')||'null'); if(s){u=s.url;k=s.key;}}catch(e){} }
@@ -1360,6 +1375,7 @@ async function apiLoadAll(){
     DB.profiles=STAFF_LIST.filter(s=>s.role==='agent').map(s=>({name:s.name,role:'agent',agent_key:s.key,birthday:(d.profileBirthdays||{})[s.key]||null}));
     DB.agentMonthStats=await apiLoadAgentMonthStats();
     DB.tasks=await apiLoadTasks();
+    DB.feedback=await apiLoadFeedback();
     return;
   }
   const q=async t=>{const {data,error}=await sb.from(t).select('*').order('created_at',{ascending:false});if(error)throw error;return data||[];};
@@ -1390,7 +1406,7 @@ async function apiLoadAll(){
     q('leads'),q('enquiries'),q('complaints'),q('site_visits'),q('activity_log'),
     loadProfiles(),loadPayments(),loadPlots(),
     apiLoadAnnouncements(),apiLoadAllocations(),apiLoadMessages(),apiLoadTargetSelections(today().slice(0,7),PROFILE.role==='manager'),
-    apiLoadAgentMonthStats(),apiLoadTasks()
+    apiLoadAgentMonthStats(),apiLoadTasks(),apiLoadFeedback()
   ]);
   const [le,en,cm,sv,ac]=results;
   DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key||PROFILE.role==='manager').map(mapLead);
@@ -1399,6 +1415,7 @@ async function apiLoadAll(){
   DB.announcements=results[8]; DB.allocations=results[9]; DB.messages=results[10]; DB.targetSelections=results[11];
   DB.tasks=results[13];
   DB.agentMonthStats=results[12];
+  DB.feedback=results[14];
 }
 async function apiInsertLead(l,c){
   if(DEMO_MODE){ const d=await demoLoad(); const row={id:uid(),agent:PROFILE.key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal,
@@ -1597,6 +1614,24 @@ async function apiUpdateTaskStatus(id,status){
 async function apiDeleteTask(id){
   if(DEMO_MODE){ const d=await demoLoad(); d.tasks=(d.tasks||[]).filter(x=>x.id!==id); await demoSave(); return; }
   const {error}=await sb.from('tasks').delete().eq('id',id); if(error) throw error;
+}
+/* ---- feedback forum (bugs, suggestions, things people want changed) ---- */
+const mapFeedback=r=>({id:r.id,authorKey:r.author_key,authorName:r.author_name,category:r.category,body:r.body,createdAt:r.created_at});
+async function apiLoadFeedback(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.feedback||[]).slice(); }
+  try{ const {data,error}=await sb.from('feedback').select('*').order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapFeedback); }
+  catch(e){ return []; }
+}
+async function apiInsertFeedback(category,body){
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),authorKey:PROFILE.key,authorName:PROFILE.name,category,body,createdAt:new Date().toISOString()};
+    d.feedback=d.feedback||[]; d.feedback.unshift(rec); await demoSave(); return rec; }
+  const {data,error}=await sb.from('feedback').insert({author_key:PROFILE.key,author_name:PROFILE.name,category,body}).select().single();
+  if(error) throw error; return mapFeedback(data);
+}
+async function apiDeleteFeedback(id){
+  if(DEMO_MODE){ const d=await demoLoad(); d.feedback=(d.feedback||[]).filter(x=>x.id!==id); await demoSave(); return; }
+  const {error}=await sb.from('feedback').delete().eq('id',id); if(error) throw error;
 }
 async function apiInsertAnnouncement(title,body,image){
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),title,body,image:image||null,active:true,createdBy:PROFILE.name,createdAt:today()+' '+nowTime()};
@@ -2073,7 +2108,7 @@ document.getElementById('logoutBtn').onclick=async()=>{
   if(CHAT_CHANNEL){ try{ sb.removeChannel(CHAT_CHANNEL); }catch(e){} CHAT_CHANNEL=null; }
   const bub=document.getElementById('announceBubble'); if(bub) bub.remove();
   const ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
-  USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[]};
+  USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[]};
   document.getElementById('app').classList.add('hidden'); document.getElementById('login').classList.remove('hidden');
   document.getElementById('ddLabel').textContent='Choose your name';
   document.querySelectorAll('#ddPanel .dd-item').forEach(el=>el.classList.remove('sel'));
@@ -2190,7 +2225,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties}[name]||agentHome)(arg);
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback}[name]||agentHome)(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && PROFILE){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -2923,7 +2958,10 @@ function agentHome(){ const k=kpisOf(DB.leads);
   const myIssueCount=runDataIntegrityCheck(DB.leads).length;
   const myCommission=computeMyPersonalCommission(thisMonth);
   V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Welcome back</div><h2>${esc(PROFILE.name.split(' ')[0])}'s desk</h2><p>Royal Palm Enclave · Trulander JSF Limited</p></div>
-  <button class="dashRefreshBtn" id="dashRefreshBtn" title="Refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+  <div style="display:flex;gap:8px;flex:0 0 auto">
+  <button class="dashRefreshBtn" id="dutiesQuickBtn" title="Duties" style="position:relative">${ic.check2}${computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount?`<span class="badge" style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:100px;background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center">${computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount}</span>`:''}</button>
+  <button class="dashRefreshBtn" id="dashRefreshBtn" title="Refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  </div></div>
   ${renderBannerSlideshow()}
   ${renderAllocationBanners()}
   ${renderComplaintAssignBanners()}
@@ -2939,7 +2977,7 @@ function agentHome(){ const k=kpisOf(DB.leads);
   ${renderMonthlyPlanCard(DB.leads)}
   ${renderPipelineHealthCard(DB.leads)}
   <div class="sectitle"><h3>What do you want to do?</h3></div>
-  <div class="tasks">${task('addlead','New lead','Add to your pipeline',ic.lead,'lead')}${task('update','Update pipeline','Log payment · move stage',ic.update,'update')}${task('enquiry','Client enquiry','Log a new enquiry',ic.enquiry,'enq')}${task('complaint','Client complaint','Record &amp; assign',ic.complaint,'cmp')}${task('sitevisit','Site visit','Request for a client',ic.visit,'visit')}${task('plots','Plot availability','Check before you promise a plot',ic.grid,'grid')}${task('myDataCheck','Data check',myIssueCount?(myIssueCount+' to review'):'All clear',ic.complaint,myIssueCount?'cmp':'lead')}${task('duties','Duties',computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount+' open',ic.check2,'lead')}${canManagePlots()?task('allocations','Allocation requests',pendingAlloc+' pending',ic.lead,pendingAlloc?'update':'lead'):''}${taskWide('pipeline','View my full pipeline',k.leads+' leads on record',ic.grid,'grid')}</div>
+  <div class="tasks">${task('addlead','New lead','Add to your pipeline',ic.lead,'lead')}${task('update','Update pipeline','Log payment · move stage',ic.update,'update')}${task('enquiry','Client enquiry','Log a new enquiry',ic.enquiry,'enq')}${task('complaint','Client complaint','Record &amp; assign',ic.complaint,'cmp')}${task('sitevisit','Site visit','Request for a client',ic.visit,'visit')}${task('plots','Plot availability','Check before you promise a plot',ic.grid,'grid')}${task('myDataCheck','Data check',myIssueCount?(myIssueCount+' to review'):'All clear',ic.complaint,myIssueCount?'cmp':'lead')}${task('duties','Duties',computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount+' open',ic.check2,'lead')}${task('feedback','Feedback',(DB.feedback||[]).length+' posted',ic.chat,'enq')}${canManagePlots()?task('allocations','Allocation requests',pendingAlloc+' pending',ic.lead,pendingAlloc?'update':'lead'):''}${taskWide('pipeline','View my full pipeline',k.leads+' leads on record',ic.grid,'grid')}</div>
   <div class="footer-note">${DEMO_MODE?'<span class="demoflag"><span class="d"></span>Demo data</span>':''} Signed in as ${esc(PROFILE.email)}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
   bindTasks(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindSmartInsights(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow(); bindDutiesCard();
@@ -2948,6 +2986,7 @@ function agentHome(){ const k=kpisOf(DB.leads);
     try{ await apiLoadAll(); toast('Up to date'); agentHome(); }
     catch(err){ toast('Refresh failed'); btn.classList.remove('spinning'); btn.disabled=false; }
   };
+  document.getElementById('dutiesQuickBtn').onclick=()=>route('duties');
 }
 
 /* ================= PIPELINE ================= */
@@ -4109,6 +4148,63 @@ function openNewTaskModal(){
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Assign duty'; }
   };
 }
+
+/* ================= FEEDBACK FORUM (bugs, suggestions, things to change) ================= */
+const FEEDBACK_CATEGORIES=['Bug','Suggestion','Feature Request','Other'];
+function viewFeedback(){
+  const homeRoute=PROFILE.role==='manager'?'mgr':'home';
+  const all=DB.feedback||[];
+  const rowOf=f=>`<div class="rowcard">
+    <div class="top"><div><div class="nm">${esc(f.authorName)}</div><div class="meta">${esc((f.createdAt||'').slice(0,16).replace('T',' '))}</div></div>
+    <span class="tag ${f.category==='Bug'?'dgr':f.category==='Suggestion'?'ok':'ghost'}">${esc(f.category)}</span></div>
+    <div class="mini" style="margin-top:6px;line-height:1.5">${esc(f.body)}</div>
+    ${f.authorKey===PROFILE.key||PROFILE.role==='manager'?`<div class="foot"><button class="trashbtn" data-fbdel="${f.id}">${ic.trash}</button></div>`:''}
+  </div>`;
+  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Feedback</div><h2>Suggestions &amp; bug reports</h2><p>${all.length} posted · visible to the whole team</p></div></div>
+  <div class="formwrap" style="margin-bottom:16px">
+  <div class="sectitle" style="margin-top:0"><h3>New post</h3></div>
+  ${fld('Category',sel('fb_cat',FEEDBACK_CATEGORIES))}
+  ${fld('What’s on your mind?','<textarea id="fb_body" placeholder="A bug you hit, something you want changed, an idea…"></textarea>')}
+  <div class="formactions"><button class="btn primary" id="postFeedback" style="width:100%">Post</button></div>
+  </div>
+  ${PROFILE.role==='manager'&&all.length?`<div style="margin-bottom:16px"><button class="chip" id="fbDownloadPdf" style="width:100%">⬇ Download all feedback as PDF</button></div>`:''}
+  <div class="list">${all.length?all.map(rowOf).join(''):emptyState(ic.grid,'Nothing posted yet','Be the first to flag a bug or suggest something.')}</div>`;
+  bindFeedbackCtrls();
+}
+function bindFeedbackCtrls(){
+  const postBtn=document.getElementById('postFeedback');
+  if(postBtn) postBtn.onclick=async()=>{
+    const body=val('fb_body').trim(); if(!body){ toast('Write something first'); return; }
+    postBtn.disabled=true; postBtn.textContent='Posting…';
+    try{ const rec=await apiInsertFeedback(val('fb_cat'),body); DB.feedback.unshift(rec); toast('Posted'); viewFeedback(); }
+    catch(e){ toast('Failed: '+(e.message||e)); postBtn.disabled=false; postBtn.textContent='Post'; }
+  };
+  document.querySelectorAll('[data-fbdel]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Delete this post?')) return;
+    try{ await apiDeleteFeedback(b.dataset.fbdel); DB.feedback=DB.feedback.filter(x=>x.id!==b.dataset.fbdel); toast('Deleted'); viewFeedback(); }
+    catch(e){ toast('Failed: '+(e.message||e)); }
+  });
+  const pdfBtn=document.getElementById('fbDownloadPdf');
+  if(pdfBtn) pdfBtn.onclick=buildFeedbackPDF;
+}
+function buildFeedbackPDF(){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(); const pageH=doc.internal.pageSize.getHeight();
+  let y=pdfHeader(doc,'TEAM FEEDBACK'); y+=8;
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(11,30,61);
+  doc.text('All feedback & suggestions',12,y); y+=6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100,112,133);
+  doc.text(DB.feedback.length+' posts · generated '+today(),12,y); y+=10;
+  (DB.feedback||[]).forEach(f=>{
+    if(y>pageH-30){ doc.addPage(); y=16; }
+    y=pdfSectionBar(doc,y,pageW,f.category.toUpperCase()+' — '+f.authorName+' · '+(f.createdAt||'').slice(0,10));
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
+    const lines=doc.splitTextToSize(f.body,pageW-24);
+    doc.text(lines,12,y); y+=lines.length*4.6+9;
+  });
+  doc.save('PEP_Feedback_'+today()+'.pdf');
+}
 function viewAllocations(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
   const pending=(DB.allocations||[]).filter(a=>a.status==='Pending').sort((x,y)=>y.percent-x.percent);
@@ -5101,6 +5197,7 @@ const MGR_APPS=[
   {key:'News',fic:'announce',label:'News & Announcements'},
   {key:'Commission',fic:'savings',label:'Commission'},
   {key:'Duties',fic:'clipboard',label:'Duties'},
+  {key:'Feedback',fic:'chat',label:'Feedback'},
   {key:'Settings',fic:'settings',label:'Settings'},
   {key:'Activity',fic:'clipboard',label:'Activity'},
 ];
@@ -5116,17 +5213,19 @@ function openMgrAppGrid(){
   document.getElementById('closeAppGrid').onclick=()=>ov.remove();
   ov.querySelectorAll('[data-mgrapp]').forEach(b=>b.onclick=()=>{
     const key=b.dataset.mgrapp; ov.remove();
-    if(key==='Duties') route('duties'); else { mgrTab=key; managerView(); }
+    if(key==='Duties') route('duties'); else if(key==='Feedback') route('feedback'); else { mgrTab=key; managerView(); }
   });
 }
 async function managerView(){
   V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Management</div><h2>Team overview</h2><p>Live across all agents</p></div>
   <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <button class="iconbtn" id="mgrDutiesBtn" title="Duties" style="background:#F1EFE7;border-color:var(--line);color:var(--ink);position:relative"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M5 12.5l4.5 4.5L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>${computeDutiesSummary(DB.tasks||[]).openCount?`<span class="badge" style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:100px;background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center">${computeDutiesSummary(DB.tasks||[]).openCount}</span>`:''}</button>
   <button class="iconbtn" id="mgrAppGridBtn" title="More" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><circle cx="5" cy="5" r="1.8"/><circle cx="12" cy="5" r="1.8"/><circle cx="19" cy="5" r="1.8"/><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/><circle cx="5" cy="19" r="1.8"/><circle cx="12" cy="19" r="1.8"/><circle cx="19" cy="19" r="1.8"/></svg></button></div></div>
   <div class="tabs" id="mtabs"><button data-t="overview" class="${mgrTab==='overview'?'on':''}">Overview</button>${mgrTab!=='overview'?`<button class="on">${esc((MGR_APPS.find(a=>a.key===mgrTab)||{label:mgrTab}).label)}</button>`:''}</div><div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   V.querySelectorAll('#mtabs button').forEach(b=>b.onclick=()=>{ if(b.dataset.t){ mgrTab=b.dataset.t; managerView(); } });
   document.getElementById('mgrAppGridBtn').onclick=openMgrAppGrid;
   document.getElementById('mgrRefresh').onclick=async()=>{ toast('Refreshing…'); try{ await apiLoadAll(); managerView(); toast('Up to date'); }catch(e){ toast('Refresh failed'); } };
+  document.getElementById('mgrDutiesBtn').onclick=()=>route('duties');
   const body=document.getElementById('mbody');
   if(mgrTab==='overview'){ body.innerHTML=mgrOverview(); bindTasks(); bindOverviewCtrls(); animateKpiCounts(body); bindSmartInsights(); bindExpectedRevenueCard(); bindPipelineHealthCard(); bindBannerSlideshow(); }
   else if(mgrTab==='Data Check'){ const renderMgrDataCheck=()=>{ body.innerHTML=renderDataCheck(null); bindDataCheckCtrls(null,renderMgrDataCheck); }; renderMgrDataCheck(); }
@@ -5935,6 +6034,7 @@ function mgrSettings(){
     <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Records loaded</div><div class="mini">leads ${DB.leads.length} · enquiries ${DB.enquiries.length} · complaints ${DB.complaints.length} · site visits ${DB.sitevisits.length} · plots ${DB.plots.length} · payments ${DB.payments.length}</div></div></div></div>
     <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Signed in as</div><div class="mini">${esc(PROFILE.email)} · ${PROFILE.role}</div></div></div></div>
   </div>
+  <div class="mini" style="text-align:center;margin:-4px 0 16px;opacity:.7">System created by Abdul Waheed (Digital Operations) ©</div>
   <div style="margin:-6px 0 12px"><button class="chip" id="sysRefreshBtn" style="width:100%">↻ Reload all data from the database now</button></div>
   <div style="margin:0 0 20px"><button class="chip" id="sysBackupBtn" style="width:100%"><span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Download full data backup (.json)</button></div>
 
