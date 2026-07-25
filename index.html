@@ -256,12 +256,15 @@ a{color:var(--green2)}
 .msgActions{display:inline-flex;gap:5px;opacity:0;transition:.15s}
 .bubble:hover .msgActions{opacity:1}
 .msgActBtn{background:rgba(0,0,0,.08);border:none;border-radius:100px;width:18px;height:18px;font-size:9.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:inherit}
+.msgActBtn svg{width:10px;height:10px}
 .chatLink{color:#1D4ED8;text-decoration:underline;word-break:break-all}
 .bubblerow.me .chatLink{color:#0B1E3D}
 .chatImg{max-width:220px;width:100%;border-radius:10px;display:block;margin-bottom:4px;cursor:zoom-in}
 .fileCard{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.05);border-radius:10px;padding:8px 10px;margin-bottom:4px;min-width:180px}
-.fileIcon{font-size:22px;flex:0 0 auto}
-.fileDlBtn{background:none;border:none;color:#1D4ED8;font-size:16px;cursor:pointer;flex:0 0 auto}
+.fileIcon{flex:0 0 auto;color:var(--text);width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+.fileIcon svg{width:22px;height:22px}
+.fileDlBtn{background:none;border:none;color:#1D4ED8;cursor:pointer;flex:0 0 auto;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.fileDlBtn svg{width:16px;height:16px}
 .fwdBtn{background:none;border:none;color:inherit;opacity:.55;cursor:pointer;font-size:11px;padding:0}
 .chatinputbar{display:flex;gap:8px;padding:10px;background:#fff;border-top:1px solid var(--line)}
 .chatinputbar input{flex:1;border:1px solid var(--line);border-radius:100px;padding:11px 16px;font-size:14.5px;background:#F4F6F5}
@@ -272,13 +275,16 @@ a{color:var(--green2)}
 @keyframes recordPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
 @keyframes goldPulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.25)}}
 .voiceCard{display:flex;align-items:center;gap:8px;min-width:200px}
-.voiceIcon{font-size:16px;flex:0 0 auto}
+.voiceIcon{flex:0 0 auto;color:currentColor;width:18px;height:18px;display:inline-flex}
+.voiceIcon svg{width:16px;height:16px}
 .attachMenuGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 .attachMenuBtn{display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;cursor:pointer;padding:10px 4px;border-radius:14px;font-size:11.5px;font-weight:700;color:var(--text);transition:.15s}
 .attachMenuBtn:hover{background:#F4F6F5;transform:translateY(-2px)}
-.attachMenuIcon{width:50px;height:50px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff}
+.attachMenuIcon{width:50px;height:50px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:#fff}
+.attachMenuIcon svg{width:23px;height:23px}
 .locationCard{display:flex;align-items:center;gap:10px;text-decoration:none!important;color:inherit;min-width:180px}
-.locationMap{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#DCF8E7,#BEF264);display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto}
+.locationMap{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#DCF8E7,#BEF264);display:flex;align-items:center;justify-content:center;flex:0 0 auto;color:#166534}
+.locationMap svg{width:21px;height:21px}
 .eventCard{min-width:190px;border-radius:10px;overflow:hidden;border:1px solid rgba(0,0,0,.08)}
 .eventCardHeader{background:linear-gradient(120deg,#F59E0B,#B45309);color:#fff;padding:8px 12px;font-weight:700;font-size:12.5px}
 .eventCardBody{padding:8px 12px;background:rgba(0,0,0,.03);font-size:12.5px}
@@ -312,8 +318,12 @@ a{color:var(--green2)}
 .commentItem b{color:var(--text)}
 .appGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .appGridIcon{display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;cursor:pointer;padding:14px 6px;border-radius:16px;transition:.15s}
-.appGridIcon:hover{background:#F4F6F5;transform:translateY(-2px)}
-.appGridGlyph{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:24px}
+.appGridIcon:hover{background:#F4F6F5;transform:translateY(-4px)}
+.appGridIcon:hover .fic{transform:scale(1.06)}
+.appGridIcon:active{transform:translateY(-1px) scale(.97)}
+.appGridGlyph{width:52px;height:52px;display:flex;align-items:center;justify-content:center}
+.appGridGlyph .fic{width:100%;height:100%;transition:transform .2s cubic-bezier(.34,1.4,.64,1)}
+body.dark .appGridIcon:hover{background:#182541}
 .appGridLabel{font-size:11.5px;font-weight:700;color:var(--ink);text-align:center;line-height:1.25}
 .insightGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:11px;margin-bottom:22px}
 .insightCard{display:flex;align-items:center;gap:13px;text-align:left;width:100%;padding:14px 40px 14px 15px;border-radius:16px;cursor:pointer;
@@ -327,7 +337,8 @@ a{color:var(--green2)}
 .insightCard.warnt{color:#B8791E}
 .insightCard.dgr{color:#B4472F}
 body.dark .insightCard.ok{color:#A3E635}body.dark .insightCard.warnt{color:#FBBF4E}body.dark .insightCard.dgr{color:#F87171}
-.insightIcon{font-size:19px;flex:0 0 auto;position:relative;z-index:1;width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,currentColor 16%,transparent)}
+.insightIcon{flex:0 0 auto;position:relative;z-index:1;width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,currentColor 16%,transparent)}
+.insightIcon svg{width:19px;height:19px}
 .insightCard>div{position:relative;z-index:1;color:var(--text)}
 .delReasonBtn{display:block;width:100%;text-align:left;background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;transition:.12s}
 .delReasonBtn:hover{border-color:var(--leaf);background:#F4F8FF}
@@ -384,9 +395,10 @@ body.dark .insightCard.ok{color:#A3E635}body.dark .insightCard.warnt{color:#FBBF
 .nm-link{cursor:pointer;transition:.15s}
 .nm-link:hover{color:var(--leaf);text-decoration:underline}
 .contactLinks{display:inline-flex;gap:5px;margin-left:6px;vertical-align:middle}
-.contactIcoBtn{display:inline-flex;width:20px;height:20px;border-radius:100px;align-items:center;justify-content:center;font-size:11px;background:#EEF1F6;text-decoration:none!important;transition:.15s}
+.contactIcoBtn{display:inline-flex;width:20px;height:20px;border-radius:100px;align-items:center;justify-content:center;background:#EEF1F6;text-decoration:none!important;transition:.15s;color:#28405f}
+.contactIcoBtn svg{width:11px;height:11px}
 .contactIcoBtn:hover{transform:scale(1.12)}
-.contactIcoBtn.wa{background:#DCF8E7}
+.contactIcoBtn.wa{background:#DCF8E7;color:#166534}
 .tag.tagchip{background:linear-gradient(150deg,#F5B94F22,#B8791E22);color:#8A5F17;border:1px solid #F5B94F44}
 .rowcard .meta{font-size:12px;color:var(--muted);margin-top:2px}
 .rowcard .amt{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:14px;white-space:nowrap}
@@ -570,7 +582,7 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.7"/><path d="M12 8v5m0 3.5h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
       <span><b>Demo mode</b> — you're viewing this with sample data preloaded. Pick any name and tap Sign in (password not checked yet). Connect Supabase below to make it live for your real team.</span>
     </div>
-    <button class="linkbtn hidden" id="cfgLink">⚙ Portal settings — connect Supabase</button>
+    <button class="linkbtn hidden" id="cfgLink" style="display:inline-flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Portal settings — connect Supabase</button>
     <button class="linkbtn" id="resetDemoLink">↻ Reset demo sample data</button>
   </div>
 
@@ -665,7 +677,7 @@ function contactLinks(contact){
   if(!contact||!contact.trim()) return '';
   const digits=contact.replace(/[^\d+]/g,'');
   const waNum=digits.replace(/^\+?0/,'233').replace(/^\+/,'');
-  return `<span class="contactLinks"><a href="tel:${digits}" onclick="event.stopPropagation()" title="Call" class="contactIcoBtn">📞</a><a href="https://wa.me/${waNum}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="WhatsApp" class="contactIcoBtn wa">💬</a></span>`;
+  return `<span class="contactLinks"><a href="tel:${digits}" onclick="event.stopPropagation()" title="Call" class="contactIcoBtn">${ic.phone}</a><a href="https://wa.me/${waNum}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="WhatsApp" class="contactIcoBtn wa">${ic.chat}</a></span>`;
 }
 
 function resizeImageToB64(file,maxW,maxH,quality){
@@ -1947,6 +1959,76 @@ const kpiIc={
  flag:'<svg viewBox="0 0 24 24" fill="none"><path d="M5 21V4m0 1h12l-3 4 3 4H5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
  alert:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 };
+/* ---- extended line icons (inline, currentColor) ---- */
+Object.assign(ic,{
+ close:'<svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+ check2:'<svg viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ download:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ upload:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 20V9m0 0l-4 4m4-4l4 4M5 5h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ mail:'<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5.5" width="18" height="13" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M4 7l8 6 8-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+ edit:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 20h4L18.5 9.5a2 2 0 00-3-3L5 17v3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13.5 6.5l3 3" stroke="currentColor" stroke-width="1.8"/></svg>',
+ eye:'<svg viewBox="0 0 24 24" fill="none"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/></svg>',
+ trash:'<svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M10 7V5h4v2M6 7l1 13h10l1-13M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ camera:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg>',
+ mic:'<svg viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+ image:'<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2.5" stroke="currentColor" stroke-width="1.8"/><circle cx="8.5" cy="9.5" r="1.8" stroke="currentColor" stroke-width="1.6"/><path d="M4 17l5-4 4 3 3-2 4 3" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+ doc:'<svg viewBox="0 0 24 24" fill="none"><path d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3v5h4M9 13h6M9 17h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+ calendar:'<svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M4 9h16M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+ pin:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-5.3-7-11a7 7 0 0114 0c0 5.7-7 11-7 11z" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="2.4" stroke="currentColor" stroke-width="1.8"/></svg>',
+ tag:'<svg viewBox="0 0 24 24" fill="none"><path d="M3 12l9-9h8v8l-9 9-8-8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="16" cy="8" r="1.6" fill="currentColor"/></svg>',
+ broom:'<svg viewBox="0 0 24 24" fill="none"><path d="M14 4l6 6-6 3-3-3 3-6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M11 10l-7 7 3 3 7-7M8 20l-1 1M11 18l-1 1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ wave:'<svg viewBox="0 0 24 24" fill="none"><path d="M6 12V6.5a1.5 1.5 0 013 0V11m0-5a1.5 1.5 0 013 0v5m0-4a1.5 1.5 0 013 0v5a6 6 0 01-6 6h-1a5 5 0 01-4-2l-3-4a1.6 1.6 0 012.6-1.8L9 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ phone:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 5c0 9 6 15 15 15l-.5-4-4-1-2 2a12 12 0 01-5-5l2-2-1-4-4-.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+ chat:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16a1 1 0 011 1v10a1 1 0 01-1 1H9l-4 4v-4H4a1 1 0 01-1-1V6a1 1 0 011-1z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+ gear:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+ clock:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ alert:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ flag:'<svg viewBox="0 0 24 24" fill="none"><path d="M5 21V4m0 1h12l-3 4 3 4H5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ fire:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 3s5 4 5 9a5 5 0 01-10 0c0-2 1-3 1-3s0 2 2 2c1.5 0 1.5-2 0-4-1-1.5-1-3 2-6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+ snow:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v18M4.5 7.5l15 9M19.5 7.5l-15 9M12 6l-3-2m3 2l3-2M12 18l-3 2m3-2l3 2M6 9l-3.5.5M6 9l-.5-3.5M18 15l3.5-.5M18 15l.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ trendup:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 16l5-5 3 3 7-7m0 0h-5m5 0v5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ trenddown:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 8l5 5 3-3 7 7m0 0h-5m5 0v-5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+ crystal:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M6 20h12M9 11a3 3 0 013-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+ star:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2.6 5.6 6 .8-4.4 4.2 1.1 6-5.3-3-5.3 3 1.1-6L3.4 9.4l6-.8L12 3z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+ trophy:'<svg viewBox="0 0 24 24" fill="none"><path d="M8 4h8v4a4 4 0 01-8 0V4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 5H5a3 3 0 003 3M16 5h3a3 3 0 01-3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9 19h6M12 15v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+ party:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 20l5-14 9 9-14 5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 4h.01M18 8h.01M20 4l-1 1M8 4l.5 1M4 12l1 .5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+ save:'<svg viewBox="0 0 24 24" fill="none"><path d="M5 4h11l3 3v13H5V4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 4v5h7V4M8 20v-6h8v6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+ target:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></svg>',
+ medal:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="15" r="6" stroke="currentColor" stroke-width="1.8"/><path d="M9 3h6l-2 8h-2L9 3z" fill="currentColor"/></svg>'
+});
+/* ---- dimensional feature-chip icons (premium, gradient) ---- */
+const FIC_DEFS='<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>'
+ +'<linearGradient id="fic-gNavy" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e4278"/><stop offset="1" stop-color="#0B1E3D"/></linearGradient>'
+ +'<linearGradient id="fic-gBlue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4c95f0"/><stop offset="1" stop-color="#1D4ED8"/></linearGradient>'
+ +'<linearGradient id="fic-gLime" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a7e635"/><stop offset="1" stop-color="#4D7C0F"/></linearGradient>'
+ +'<linearGradient id="fic-gGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FCD34D"/><stop offset="1" stop-color="#D4880C"/></linearGradient>'
+ +'<radialGradient id="fic-hi" cx="0.5" cy="0.05" r="0.9"><stop offset="0" stop-color="#fff" stop-opacity="0.38"/><stop offset="0.55" stop-color="#fff" stop-opacity="0"/></radialGradient>'
+ +'<filter id="fic-soft" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="3" stdDeviation="3.2" flood-color="#0B1E3D" flood-opacity="0.42"/></filter>'
+ +'</defs></svg>';
+if(document.body) document.body.insertAdjacentHTML('afterbegin',FIC_DEFS);
+function ficChip(g){return '<rect x="4" y="3" width="48" height="48" rx="15" fill="url(#fic-'+g+')" filter="url(#fic-soft)"/><rect x="4" y="3" width="48" height="48" rx="15" fill="url(#fic-hi)"/><rect x="4.5" y="3.5" width="47" height="47" rx="14.5" fill="none" stroke="#fff" stroke-opacity="0.16"/>';}
+const FIC_GLYPHS={
+ leaderboard:{g:'gGold',p:'<path d="M20 15h16v5a8 8 0 01-16 0z" fill="#fff"/><path d="M20 17h-4v1a4 4 0 004 4M36 17h4v1a4 4 0 01-4 4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><rect x="26" y="28" width="4" height="6" fill="#fff"/><rect x="20" y="34" width="16" height="4.5" rx="1.6" fill="#fff"/>'},
+ announce:{g:'gLime',p:'<path d="M18 24l16-6v20l-16-6z" fill="#fff"/><rect x="14" y="24" width="5" height="8" rx="1.5" fill="#fff"/><path d="M20 33v5a2 2 0 004 0v-4" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round"/><path d="M37 26a5 5 0 010 6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>'},
+ target:{g:'gLime',p:'<circle cx="28" cy="27" r="11" fill="none" stroke="#fff" stroke-width="2.6"/><circle cx="28" cy="27" r="5.6" fill="none" stroke="#fff" stroke-width="2.6"/><circle cx="28" cy="27" r="1.9" fill="#fff"/>'},
+ analytics:{g:'gBlue',p:'<rect x="16" y="30" width="5.5" height="10" rx="1.4" fill="#fff"/><rect x="25.2" y="23" width="5.5" height="17" rx="1.4" fill="#fff"/><rect x="34.5" y="17" width="5.5" height="23" rx="1.4" fill="#fff"/>'},
+ allocation:{g:'gNavy',p:'<path d="M16.5 28l11.5-10.5L39.5 28" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/><path d="M20 27.5v11.5h16V27.5" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round"/><path d="M25.5 39v-6.5h5V39" fill="none" stroke="#fff" stroke-width="2.4"/>'},
+ chat:{g:'gBlue',p:'<path d="M16 21h24a3 3 0 013 3v10a3 3 0 01-3 3H27l-7 5.5V37h-4a3 3 0 01-3-3V24a3 3 0 013-3z" fill="#fff"/><circle cx="23" cy="29" r="1.9" fill="#1D4ED8"/><circle cx="30" cy="29" r="1.9" fill="#1D4ED8"/><circle cx="37" cy="29" r="1.9" fill="#1D4ED8"/>'},
+ datacheck:{g:'gNavy',p:'<path d="M28 15l11 4v8c0 7.2-4.8 11.4-11 13.4C21.8 38.4 17 34.2 17 27v-8z" fill="#fff"/><path d="M23 27.5l3.8 3.8L34 23.5" fill="none" stroke="#84CC16" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'},
+ access:{g:'gGold',p:'<circle cx="24" cy="24" r="6.4" fill="none" stroke="#fff" stroke-width="3.2"/><path d="M28.5 28.5L39 39" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/><path d="M35 35l3-3M38.5 38.5l2.5-2.5" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>'},
+ location:{g:'gBlue',p:'<path d="M28 16c-6 0-10 4.4-10 10 0 7 10 15 10 15s10-8 10-15c0-5.6-4-10-10-10z" fill="#fff"/><circle cx="28" cy="26" r="4.2" fill="#1D4ED8"/>'},
+ calendar:{g:'gNavy',p:'<rect x="16" y="19" width="24" height="21" rx="3.5" fill="#fff"/><rect x="16" y="19" width="24" height="7" rx="3.5" fill="#84CC16"/><rect x="22" y="15" width="3" height="7" rx="1.5" fill="#fff"/><rect x="31" y="15" width="3" height="7" rx="1.5" fill="#fff"/><rect x="21" y="30" width="4" height="4" rx="1" fill="#0B1E3D"/><rect x="31" y="30" width="4" height="4" rx="1" fill="#0B1E3D"/>'},
+ document:{g:'gNavy',p:'<path d="M21 16h9l7 7v17a1.5 1.5 0 01-1.5 1.5h-14A1.5 1.5 0 0120 40V17.5A1.5 1.5 0 0121.5 16z" fill="#fff"/><path d="M30 16v7h7" fill="none" stroke="#0B1E3D" stroke-width="2" stroke-linejoin="round"/><path d="M24 29h9M24 33h9M24 37h6" stroke="#0B1E3D" stroke-width="2" stroke-linecap="round"/>'},
+ savings:{g:'gLime',p:'<path d="M18 24a10 8 0 0120 0v8a2 2 0 01-2 2h-2v3h-4v-3h-4v3h-4v-3a10 8 0 01-4-6z" fill="#fff"/><circle cx="24" cy="26" r="1.8" fill="#4D7C0F"/><rect x="30" y="20" width="7" height="3" rx="1.5" fill="#fff"/>'},
+ map:{g:'gBlue',p:'<path d="M22 16l-6 3v21l6-3 12 3 6-3V16l-6 3-12-3z" fill="#fff"/><path d="M22 16v21M34 19v21" fill="none" stroke="#1D4ED8" stroke-width="2"/>'},
+ clipboard:{g:'gNavy',p:'<rect x="18" y="18" width="20" height="23" rx="3" fill="#fff"/><rect x="23" y="15" width="10" height="6" rx="2" fill="#84CC16"/><path d="M23 28h10M23 33h10M23 38h6" stroke="#0B1E3D" stroke-width="2" stroke-linecap="round"/>'},
+ briefcase:{g:'gNavy',p:'<rect x="15" y="23" width="26" height="17" rx="3" fill="#fff"/><path d="M23 23v-3a2 2 0 012-2h6a2 2 0 012 2v3" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M15 30h26" stroke="#0B1E3D" stroke-width="2"/><rect x="25" y="29" width="6" height="3" rx="1" fill="#84CC16"/>'},
+ backup:{g:'gLime',p:'<ellipse cx="28" cy="20" rx="11" ry="4" fill="#fff"/><path d="M17 20v6c0 2.2 5 4 11 4s11-1.8 11-4v-6" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M17 26v6c0 2.2 5 4 11 4s11-1.8 11-4v-6" fill="none" stroke="#fff" stroke-width="2.6"/>'},
+ alert:{g:'gGold',p:'<path d="M28 16l12 21a1.5 1.5 0 01-1.3 2.3H17.3A1.5 1.5 0 0116 37l12-21z" fill="#fff"/><path d="M28 25v6" stroke="#B45309" stroke-width="2.8" stroke-linecap="round"/><circle cx="28" cy="35" r="1.8" fill="#B45309"/>'},
+ settings:{g:'gNavy',p:'<circle cx="28" cy="27" r="4" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M28 15v4M28 35v4M16 27h4M36 27h4M19.5 18.5l2.8 2.8M33.7 32.7l2.8 2.8M36.5 18.5l-2.8 2.8M22.3 32.7l-2.8 2.8" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>'},
+ enquiry:{g:'gBlue',p:'<path d="M16 21h24a3 3 0 013 3v10a3 3 0 01-3 3H27l-7 5.5V37h-4a3 3 0 01-3-3V24a3 3 0 013-3z" fill="#fff"/><path d="M25 27a3 3 0 116 0c0 2-3 2-3 4M28 35h.01" stroke="#1D4ED8" stroke-width="2.4" stroke-linecap="round"/>'}
+};
+function fic(name,size){size=size||44;var G=FIC_GLYPHS[name];if(!G)return '';return '<svg class="fic" width="'+size+'" height="'+size+'" viewBox="0 0 56 56" style="vertical-align:middle;flex:0 0 auto">'+ficChip(G.g)+G.p+'</svg>';}
 const KPI_STYLE={
  'Active leads':{icon:'grid',color:'blue'}, 'Total leads':{icon:'grid',color:'blue'},
  'Pipeline value':{icon:'coins',color:'lime'},
@@ -2051,8 +2133,8 @@ async function openAnnounceModal(){
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <div style="font-weight:800;font-size:17px;color:var(--text)">📣 Announcements</div>
-      <button id="closeAnnounceModal" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:4px">✕</button>
+      <div style="font-weight:800;font-size:17px;color:var(--text);display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;color:var(--leaf)">${ic.mail}</span>Announcements</div>
+      <button id="closeAnnounceModal" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button>
     </div>
     <div id="announceCardsWrap">${active.map(a=>renderAnnounceCard(a)).join('')}</div>
   </div>`;
@@ -2110,8 +2192,8 @@ function renderComplaintAssignBanners(){
   const mine=(DB.complaints||[]).filter(c=>c.owner===PROFILE.name && c.status!=='Resolved' && !dismissed.includes('cmp_'+c.id));
   if(!mine.length) return '';
   return mine.map(c=>`<div class="rowcard" style="margin-bottom:14px;padding:16px;border-left:4px solid #B4472F;position:relative">
-    <button data-dismisscmp="${c.id}" style="position:absolute;top:10px;right:10px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:4px">✕</button>
-    <div style="font-weight:700;font-size:14.5px;margin-bottom:4px;padding-right:24px">🚩 Complaint assigned to you</div>
+    <button data-dismisscmp="${c.id}" style="position:absolute;top:10px;right:10px;background:none;border:none;color:var(--muted);cursor:pointer;line-height:1;padding:0;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center">${ic.close}</button>
+    <div style="font-weight:700;font-size:14.5px;margin-bottom:4px;padding-right:24px;display:flex;align-items:center;gap:7px"><span style="width:16px;height:16px;color:#B4472F">${ic.flag}</span>Complaint assigned to you</div>
     <div class="meta">${esc(c.name)} · ${esc(c.category||'')} · <span class="tag warnt" style="margin-left:2px">${esc(c.status)}</span></div>
   </div>`).join('');
 }
@@ -2122,7 +2204,7 @@ function renderAllocationBanners(){
   const mine=(DB.allocations||[]).filter(a=>a.agentKey===PROFILE.key && a.status==='Allocated' && !a.agentSeen);
   if(!mine.length) return '';
   return mine.map(a=>`<div class="rowcard" style="margin-bottom:14px;padding:16px;border-left:4px solid #16A34A;position:relative">
-    <button data-seenalloc="${a.id}" style="position:absolute;top:10px;right:10px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:4px">✕</button>
+    <button data-seenalloc="${a.id}" style="position:absolute;top:10px;right:10px;background:none;border:none;color:var(--muted);cursor:pointer;line-height:1;padding:0;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center">${ic.close}</button>
     <div style="font-weight:700;font-size:14.5px;margin-bottom:4px;padding-right:24px">🏠 Plot allocated for ${esc(a.clientName)}</div>
     <div class="meta">Plot ${esc(a.plotNumber||'—')} · allocated by ${esc(a.allocatedBy||'')}${a.note?(' · '+esc(a.note)):''}</div>
   </div>`).join('');
@@ -2356,12 +2438,12 @@ function renderTargetCard(closedCount,targetVal,closedVal){
   <div style="height:11px;background:#EEF1F6;border-radius:100px;overflow:hidden;position:relative">
     <div style="height:100%;width:${mainPct}%;background:linear-gradient(90deg,var(--leaf),var(--green));border-radius:100px;transition:width .8s cubic-bezier(.22,1,.36,1)"></div>
   </div>
-  ${exceeded?`<div style="margin-top:6px"><div class="mini" style="margin-bottom:4px;color:#8A6E12;font-weight:700">🥇 Past quota — extra plots this month</div>
+  ${exceeded?`<div style="margin-top:6px"><div class="mini" style="margin-bottom:4px;color:#8A6E12;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;display:inline-flex">${ic.medal}</span>Past quota — extra plots this month</div>
   <div style="height:9px;background:#FBF3DE;border-radius:100px;overflow:hidden"><div style="height:100%;width:${overPct}%;background:linear-gradient(90deg,var(--gold2),var(--gold));border-radius:100px;transition:width 1s cubic-bezier(.22,1,.36,1) .3s;animation:goldPulse 2s ease-in-out infinite"></div></div></div>`:''}
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
     <div><div style="font-weight:700;font-size:13px">Expected this month</div><div class="mini">${mySelections.length} client${mySelections.length===1?'':'s'} selected</div></div>
     <div style="text-align:right"><div style="font-size:17px;font-weight:800;font-family:'IBM Plex Mono',monospace">${ghs(expectedTotal)}</div>
-    <button class="chip" id="editTargetSelBtn" style="margin-top:4px;padding:5px 12px;font-size:11.5px">✎ Select clients</button></div>
+    <button class="chip" id="editTargetSelBtn" style="margin-top:4px;padding:5px 12px;font-size:11.5px;display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;display:inline-flex">${ic.edit}</span>Select clients</button></div>
   </div>
   </div>`;
 }
@@ -2375,7 +2457,7 @@ async function openTargetSelector(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:800;font-size:16px">Clients expected to close</div><button id="closeTargetSel" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:800;font-size:16px">Clients expected to close</div><button id="closeTargetSel" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     <div class="mini" style="margin-bottom:14px">Pick who you expect to close this month, and how — it feeds "Expected this month" on your dashboard.</div>
     <div id="targetSelList" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto">${active.map(l=>{
       const existing=mySelections.find(t=>t.leadId===l.id);
@@ -2431,11 +2513,11 @@ function computeSmartInsights(leads,paymentsForScope){
   const insights=[];
   const {cold,nearTrigger,stalledHigh,overdue}=getInsightLists(leads);
 
-  if(cold.length) insights.push({icon:'🧊',cls:'warnt',text:`${cold.length} lead${cold.length===1?'':'s'} ${cold.length===1?'has':'have'} no next action set and ${cold.length===1?'is':'are'} going cold`,detail:cold.slice(0,3).map(l=>l.name).join(', ')+(cold.length>3?` +${cold.length-3} more`:''),route:'insightList',arg:'cold'});
+  if(cold.length) insights.push({icon:ic.snow,cls:'warnt',text:`${cold.length} lead${cold.length===1?'':'s'} ${cold.length===1?'has':'have'} no next action set and ${cold.length===1?'is':'are'} going cold`,detail:cold.slice(0,3).map(l=>l.name).join(', ')+(cold.length>3?` +${cold.length-3} more`:''),route:'insightList',arg:'cold'});
 
-  if(nearTrigger.length) insights.push({icon:'🎯',cls:'ok',text:`${nearTrigger.length} client${nearTrigger.length===1?' is':'s are'} within reach of the 30% allocation mark`,detail:nearTrigger.slice(0,3).map(l=>l.name+' ('+l.__pct+'%)').join(', '),route:'insightList',arg:'nearTrigger'});
+  if(nearTrigger.length) insights.push({icon:ic.target,cls:'ok',text:`${nearTrigger.length} client${nearTrigger.length===1?' is':'s are'} within reach of the 30% allocation mark`,detail:nearTrigger.slice(0,3).map(l=>l.name+' ('+l.__pct+'%)').join(', '),route:'insightList',arg:'nearTrigger'});
 
-  if(stalledHigh.length) insights.push({icon:'🔥',cls:'dgr',text:`${stalledHigh.length} high-priority client${stalledHigh.length===1?'':'s'} ${stalledHigh.length===1?'has':'have'} no follow-up planned`,detail:stalledHigh.slice(0,3).map(l=>l.name).join(', '),route:'insightList',arg:'stalledHigh'});
+  if(stalledHigh.length) insights.push({icon:ic.fire,cls:'dgr',text:`${stalledHigh.length} high-priority client${stalledHigh.length===1?'':'s'} ${stalledHigh.length===1?'has':'have'} no follow-up planned`,detail:stalledHigh.slice(0,3).map(l=>l.name).join(', '),route:'insightList',arg:'stalledHigh'});
 
   // Momentum — this month vs last month collected
   const thisM=today().slice(0,7); const lastM=shiftMonth(thisM,-1);
@@ -2443,15 +2525,15 @@ function computeSmartInsights(leads,paymentsForScope){
   const lastVal=(paymentsForScope||[]).filter(p=>(p.date||'').slice(0,7)===lastM).reduce((s,p)=>s+num(p.amount),0);
   if(lastVal>0){
     const delta=Math.round((thisVal-lastVal)/lastVal*100);
-    if(delta<=-20) insights.push({icon:'📉',cls:'dgr',text:`Collections are down ${Math.abs(delta)}% vs last month`,detail:ghs(thisVal)+' so far vs '+ghs(lastVal)+' last month',route:'monthlyclosed'});
-    else if(delta>=20) insights.push({icon:'📈',cls:'ok',text:`Collections are up ${delta}% vs last month`,detail:ghs(thisVal)+' so far vs '+ghs(lastVal)+' last month',route:'monthlyclosed'});
+    if(delta<=-20) insights.push({icon:ic.trenddown,cls:'dgr',text:`Collections are down ${Math.abs(delta)}% vs last month`,detail:ghs(thisVal)+' so far vs '+ghs(lastVal)+' last month',route:'monthlyclosed'});
+    else if(delta>=20) insights.push({icon:ic.trendup,cls:'ok',text:`Collections are up ${delta}% vs last month`,detail:ghs(thisVal)+' so far vs '+ghs(lastVal)+' last month',route:'monthlyclosed'});
   }
 
   // Simple revenue forecast — linear trend over the last 3 months of real payments
   const fc=forecastNextMonth(paymentsForScope);
-  if(fc!=null) insights.push({icon:'🔮',cls:'ok',text:`Projected to collect ~${ghs(fc)} next month`,detail:'Based on the trend across your last 3 months of real payments — a projection, not a promise.',route:'monthlyclosed'});
+  if(fc!=null) insights.push({icon:ic.crystal,cls:'ok',text:`Projected to collect ~${ghs(fc)} next month`,detail:'Based on the trend across your last 3 months of real payments — a projection, not a promise.',route:'monthlyclosed'});
 
-  if(overdue.length) insights.push({icon:'⏰',cls:'warnt',text:`${overdue.length} follow-up${overdue.length===1?' is':'s are'} overdue`,detail:overdue.slice(0,3).map(l=>l.name).join(', '),route:'insightList',arg:'overdue'});
+  if(overdue.length) insights.push({icon:ic.clock,cls:'warnt',text:`${overdue.length} follow-up${overdue.length===1?' is':'s are'} overdue`,detail:overdue.slice(0,3).map(l=>l.name).join(', '),route:'insightList',arg:'overdue'});
 
   if(!insights.length) insights.push({icon:'✅',cls:'ok',text:'Nothing urgent right now — pipeline looks healthy',detail:'Smart insights re-scan every time you open this.',route:''});
   return insights;
@@ -2485,13 +2567,13 @@ function viewInsightList(kind){
     <div class="meta">${esc(l.contact||'—')}${l.agentDisplay?(' · '+esc(l.agentDisplay)):''}${l.__pct!=null?(' · '+l.__pct+'% paid'):''}</div></div>
     <div style="text-align:right"><div class="amt">${ghs(g)}</div><div class="meta">${l.nextAction?esc(l.nextAction):(l.followDate?('due '+esc(l.followDate)):'—')}</div></div></div>
     <div class="foot"><button class="chip" onclick="route('updateOne','${l.id}')">Update this lead →</button></div></div>`; }).join('');
-  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">✨ Smart Insight</div><h2>${esc(meta.title)}</h2><p>${esc(meta.desc)} · ${list.length} client${list.length===1?'':'s'}</p></div></div>
+  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Smart Insight</div><h2>${esc(meta.title)}</h2><p>${esc(meta.desc)} · ${list.length} client${list.length===1?'':'s'}</p></div></div>
   <div class="list">${rows||emptyState(ic.grid,'Nothing here right now','')}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
 }
 function renderSmartInsights(leads,paymentsForScope){
   const insights=computeSmartInsights(leads,paymentsForScope);
-  return `<div class="sectitle" style="margin-top:0"><h3>✨ Smart Insights</h3><span class="cnt">auto-generated from your live data</span></div>
+  return `<div class="sectitle" style="margin-top:0"><h3 style="display:flex;align-items:center;gap:8px"><span style="width:19px;height:19px;color:var(--leaf);display:inline-flex">${ic.spark}</span>Smart Insights</h3><span class="cnt">auto-generated from your live data</span></div>
   <div class="insightGrid">${insights.map(i=>`<button class="insightCard ${i.cls}" ${i.route?`data-insightroute="${i.route}" data-insightarg="${esc(i.arg||'')}"`:''}>
     <span class="insightIcon">${i.icon}</span>
     <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${esc(i.text)}</div>${i.detail?`<div class="mini" style="margin-top:2px">${esc(i.detail)}</div>`:''}</div>
@@ -3063,7 +3145,7 @@ function openGlobalSearch(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Search</div><button id="closeGlobalSearch" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Search</div><button id="closeGlobalSearch" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     <input id="globalSearchInput" placeholder="Search by client name or phone…" style="width:100%;padding:13px 16px;border:1.5px solid var(--line);border-radius:100px;font-size:15px;margin-bottom:14px"/>
     <div id="globalSearchResults" class="list"></div>
   </div>`;
@@ -3137,24 +3219,24 @@ function attachmentBubble(m){
     return `<img src="${m.attachData}" class="chatImg" data-viewimg="${m.id}"/>`;
   }
   if(m.attachType==='audio'){
-    return `<div class="voiceCard"><span class="voiceIcon">🎙️</span><audio controls src="${m.attachData}" style="height:34px;flex:1;min-width:160px"></audio></div>`;
+    return `<div class="voiceCard"><span class="voiceIcon">${ic.mic}</span><audio controls src="${m.attachData}" style="height:34px;flex:1;min-width:160px"></audio></div>`;
   }
   if(m.attachType==='location'){
     return `<a href="${m.attachData}" target="_blank" rel="noopener" class="locationCard">
-      <div class="locationMap">📍</div>
+      <div class="locationMap">${ic.pin}</div>
       <div><div style="font-weight:700;font-size:12.5px">Location</div><div class="mini">${esc(m.attachName||'')}</div><div class="mini" style="color:#1D4ED8;margin-top:2px">Open in Google Maps →</div></div>
     </a>`;
   }
   if(m.attachType==='event'){
     let ev={}; try{ ev=JSON.parse(m.attachData); }catch(e){}
     return `<div class="eventCard">
-      <div class="eventCardHeader">📅 ${esc(ev.title||'Event')}</div>
+      <div class="eventCardHeader" style="display:flex;align-items:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.calendar}</span>${esc(ev.title||'Event')}</div>
       <div class="eventCardBody"><div>${esc(ev.date||'')}${ev.time?(' · '+esc(ev.time)):''}</div>${ev.note?`<div class="mini" style="margin-top:3px">${esc(ev.note)}</div>`:''}</div>
     </div>`;
   }
   if(m.attachType==='file'){
-    return `<div class="fileCard"><div class="fileIcon">📄</div><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.attachName||'File')}</div><div class="mini">${b64SizeKB(m.attachData)} KB</div></div>
-      <button class="fileDlBtn" data-previewfile="${m.id}" title="Preview">👁</button><button class="fileDlBtn" data-dlfile="${m.id}" title="Download">⬇</button></div>`;
+    return `<div class="fileCard"><div class="fileIcon">${ic.doc}</div><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.attachName||'File')}</div><div class="mini">${b64SizeKB(m.attachData)} KB</div></div>
+      <button class="fileDlBtn" data-previewfile="${m.id}" title="Preview">${ic.eye}</button><button class="fileDlBtn" data-dlfile="${m.id}" title="Download">${ic.download}</button></div>`;
   }
   return '';
 }
@@ -3172,7 +3254,7 @@ function renderChatLog(otherKey){
     const mine=m.senderKey===PROFILE.key;
     const att=m.attachType?attachmentBubble(m):'';
     return dayHtml+`<div class="bubblerow ${mine?'me':''}"><div class="bubble" data-msgid="${m.id}">${att}${m.body?linkifyText(m.body):''}<div class="time">${chatTimeLabel(m.createdAt)}
-      <span class="msgActions"><button class="msgActBtn" data-fwdmsg="${m.id}" title="Forward">↗</button>${m.body?`<button class="msgActBtn" data-copymsg="${m.id}" title="Copy">⧉</button>`:''}${mine?`<button class="msgActBtn" data-delmsg="${m.id}" title="Delete">🗑</button>`:''}</span>
+      <span class="msgActions"><button class="msgActBtn" data-fwdmsg="${m.id}" title="Forward">↗</button>${m.body?`<button class="msgActBtn" data-copymsg="${m.id}" title="Copy">⧉</button>`:''}${mine?`<button class="msgActBtn" data-delmsg="${m.id}" title="Delete">${ic.trash}</button>`:''}</span>
       </div></div></div>`;
   }).join('');
 }
@@ -3208,9 +3290,9 @@ function openChatMenu(otherKey){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(staff?staff.name:'Chat')}</div><button id="closeChatMenu" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(staff?staff.name:'Chat')}</div><button id="closeChatMenu" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     <div style="display:flex;flex-direction:column;gap:8px">
-      <button class="delReasonBtn" id="clearChatBtn">🧹 Clear chat</button>
+      <button class="delReasonBtn" id="clearChatBtn" style="display:flex;align-items:center;gap:9px"><span style="width:16px;height:16px">${ic.broom}</span>Clear chat</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
@@ -3261,7 +3343,7 @@ function openForwardPicker(msgId){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Forward to…</div><button id="closeFwd" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Forward to…</div><button id="closeFwd" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     <div class="convList">${others.map(s=>`<button class="convRow" data-fwdto="${esc(s.key)}"><div class="convAvatar">${esc(s.name[0])}</div><div style="text-align:left;font-weight:700">${esc(s.name)}</div></button>`).join('')}</div>
   </div>`;
   document.body.appendChild(ov);
@@ -3369,11 +3451,11 @@ function openAttachMenu(otherKey){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Attach</div><button id="closeAttachMenu" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Attach</div><button id="closeAttachMenu" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     <div class="attachMenuGrid">
-      <button class="attachMenuBtn" id="attachPhotoBtn"><span class="attachMenuIcon" style="background:linear-gradient(150deg,#EC4899,#BE185D)">🖼️</span>Photo / File</button>
-      <button class="attachMenuBtn" id="attachLocationBtn"><span class="attachMenuIcon" style="background:linear-gradient(150deg,#16A34A,#166534)">📍</span>Location</button>
-      <button class="attachMenuBtn" id="attachEventBtn"><span class="attachMenuIcon" style="background:linear-gradient(150deg,#F59E0B,#B45309)">📅</span>Event</button>
+      <button class="attachMenuBtn" id="attachPhotoBtn"><span class="attachMenuIcon" style="background:linear-gradient(150deg,#EC4899,#BE185D);color:#fff">${ic.image}</span>Photo / File</button>
+      <button class="attachMenuBtn" id="attachLocationBtn"><span class="attachMenuIcon" style="background:linear-gradient(150deg,#16A34A,#166534);color:#fff">${ic.pin}</span>Location</button>
+      <button class="attachMenuBtn" id="attachEventBtn"><span class="attachMenuIcon" style="background:linear-gradient(150deg,#F59E0B,#B45309);color:#fff">${ic.calendar}</span>Event</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
@@ -3399,7 +3481,7 @@ function openEventComposer(otherKey){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">📅 Share an event</div><button id="closeEventComposer" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px;display:flex;align-items:center;gap:8px"><span style="width:17px;height:17px;color:var(--leaf)">${ic.calendar}</span>Share an event</div><button id="closeEventComposer" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     ${fld('Title *','<input id="ev_title" placeholder="e.g. Site visit with Kofi Mensah"/>')}
     <div class="grid2">${fld('Date *','<input id="ev_date" type="date" value="'+today()+'"/>')}${fld('Time','<input id="ev_time" type="time"/>')}</div>
     ${fld('Note','<textarea id="ev_note" placeholder="Optional details"></textarea>')}
@@ -4191,23 +4273,23 @@ async function saveAccountPw(){
 /* ================= MANAGER ================= */
 let mgrTab='overview'; let cmpFilter='All'; let slYear=new Date(today()).getFullYear(); let TEAM_ROSTER=[]; let INVITE_LIST=[];
 const MGR_APPS=[
-  {key:'Data Check',icon:'🛡️',color:'#EF4444',label:'Data Check'},
-  {key:'Leaderboard',icon:'🏆',color:'#D4A72C',label:'Leaderboard'},
-  {key:'Reports',icon:'📊',color:'#3B82F6',label:'Reports'},
-  {key:'Plots',icon:'🗺️',color:'#16A34A',label:'Plot Inventory'},
-  {key:'Allocations',icon:'🔑',color:'#8B5CF6',label:'Allocations'},
-  {key:'Enquiries',icon:'💬',color:'#14B8A6',label:'Enquiries'},
-  {key:'Complaints',icon:'⚠️',color:'#F97316',label:'Complaints'},
-  {key:'Site visits',icon:'📍',color:'#EC4899',label:'Site Visits'},
-  {key:'Settings',icon:'⚙️',color:'#64748B',label:'Settings'},
-  {key:'Activity',icon:'📋',color:'#1D4ED8',label:'Activity'},
+  {key:'Data Check',fic:'datacheck',label:'Data Check'},
+  {key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'},
+  {key:'Reports',fic:'analytics',label:'Reports'},
+  {key:'Plots',fic:'map',label:'Plot Inventory'},
+  {key:'Allocations',fic:'allocation',label:'Allocations'},
+  {key:'Enquiries',fic:'enquiry',label:'Enquiries'},
+  {key:'Complaints',fic:'alert',label:'Complaints'},
+  {key:'Site visits',fic:'location',label:'Site Visits'},
+  {key:'Settings',fic:'settings',label:'Settings'},
+  {key:'Activity',fic:'clipboard',label:'Activity'},
 ];
 function openMgrAppGrid(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div style="font-weight:800;font-size:16px">Management apps</div><button id="closeAppGrid" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button></div>
-    <div class="appGrid">${MGR_APPS.map(a=>`<button class="appGridIcon" data-mgrapp="${esc(a.key)}"><span class="appGridGlyph" style="background:${a.color}22;color:${a.color}">${a.icon}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div style="font-weight:800;font-size:16px">Management apps</div><button id="closeAppGrid" style="background:var(--paper);border:1px solid var(--line);border-radius:50%;color:var(--muted);width:30px;height:30px;display:grid;place-items:center;cursor:pointer;padding:0">${ic.close}</button></div>
+    <div class="appGrid">${MGR_APPS.map(a=>`<button class="appGridIcon" data-mgrapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
@@ -4486,7 +4568,7 @@ function mgrLeaderboard(){
     <div style="position:relative;z-index:1;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
       <div class="leaderAvatar">${leader.avatar?`<img src="${leader.avatar}"/>`:esc(leader.name[0])}</div>
       <div style="flex:1;min-width:200px">
-        <div style="font-size:11px;letter-spacing:.16em;text-transform:uppercase;opacity:.75;font-weight:700">🏆 Currently Leading</div>
+        <div style="font-size:11px;letter-spacing:.16em;text-transform:uppercase;opacity:.75;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:13px;height:13px;display:inline-flex">${ic.trophy}</span>Currently Leading</div>
         <div style="font-size:24px;font-weight:800;margin-top:2px">${esc(leader.name)}</div>
         <div style="font-size:13px;opacity:.85;margin-top:2px">${ghs(leader.totalCollected)} collected · ${leader.dealsClosedYear} deals closed ${slYear} · ${leader.siteVisits} site visits</div>
       </div>
@@ -4500,7 +4582,8 @@ function mgrLeaderboard(){
     </div>`:''}
   </div>`:emptyState(ic.grid,'No data yet','');
 
-  const medal=(i)=> i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
+  const medalColors=['#D4A72C','#9AA5B1','#B87333'];
+  const medal=(i)=> i<3?`<span style="width:17px;height:17px;display:inline-flex;color:${medalColors[i]}">${ic.medal}</span>`:(i+1);
   const rowsHtml=rows.map((r,i)=>`<tr class="${i===0?'lg-first':''} lg-clickable" data-leagueagent="${esc(r.key)}">
     <td class="lg-rank">${medal(i)}</td>
     <td class="lg-name">${esc(r.name)}</td>
@@ -5009,7 +5092,7 @@ function mgrSettings(){
     <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Signed in as</div><div class="mini">${esc(PROFILE.email)} · ${PROFILE.role}</div></div></div></div>
   </div>
   <div style="margin:-6px 0 12px"><button class="chip" id="sysRefreshBtn" style="width:100%">↻ Reload all data from the database now</button></div>
-  <div style="margin:0 0 20px"><button class="chip" id="sysBackupBtn" style="width:100%">💾 Download full data backup (.json)</button></div>
+  <div style="margin:0 0 20px"><button class="chip" id="sysBackupBtn" style="width:100%"><span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Download full data backup (.json)</button></div>
 
   <div class="sectitle"><h3>Announcements &amp; flyers</h3><span class="cnt">appears on every agent's dashboard</span></div>
   <div class="formwrap">
@@ -5119,7 +5202,7 @@ function bindSettingsCtrls(){
       a.href=url; a.download='PEP_Landbank_Backup_'+today()+'.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
       toast('Backup downloaded');
     }catch(e){ toast('Backup failed: '+(e.message||e)); }
-    sysBackupBtn.disabled=false; sysBackupBtn.textContent='💾 Download full data backup (.json)';
+    sysBackupBtn.disabled=false; sysBackupBtn.innerHTML=`<span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Download full data backup (.json)`;
   };
   let announceImageB64=null;
   const anImgInput=document.getElementById('an_image');
