@@ -2328,7 +2328,7 @@ function viewPipelineHealth(scopeArg){
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
 }
 function getMonthlyPlanClients(leads){
-  return leads.filter(l=>!isFullyPaid(l) && PLAN_MONTHS[l.paymentPlan])
+  return leads.filter(l=>!isFullyPaid(l) && PLAN_MONTHS[l.paymentPlan] && num(l.amtPaid)>0)
     .map(l=>{ const sched=computeMonthlySchedule(l,(DB.payments||[]).filter(p=>p.leadId===l.id)); return sched?{...l,__sched:sched}:null; })
     .filter(Boolean)
     .sort((a,b)=>b.__sched.expectedThisMonth-a.__sched.expectedThisMonth);
@@ -3733,6 +3733,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   const priceMismatch=Math.abs(num(l.unitPrice)-expectedUnit)>1 && num(l.unitPrice)>0;
   const overpaid=num(l.amtPaid)>g+1;
   const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const mySched=(PLAN_MONTHS[l.paymentPlan] && !isFullyPaid(l))?computeMonthlySchedule(l,myPayments):null;
   V.innerHTML=`${back('update')}<div class="pagehead"><div><div class="eyebrow">Updating</div><h2>${esc(l.name)}</h2><p>${esc(l.contact||'')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''}</p></div></div>
   ${priceMismatch?`<div class="rowcard" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #B4472F"><div style="font-weight:700;font-size:13.5px;color:#B4472F">⚠ Price check</div><div class="mini" style="margin-top:2px">This lead's unit price (${ghs(num(l.unitPrice))}) doesn't match the current ${esc(l.plotType)} price (${ghs(expectedUnit)}). This can be legitimate (a past promo) — but worth confirming it's correct.</div></div>`:''}
   ${overpaid?`<div class="rowcard" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #B4472F"><div style="font-weight:700;font-size:13.5px;color:#B4472F">⚠ Amount paid exceeds grand total</div><div class="mini" style="margin-top:2px">Paid ${ghs(num(l.amtPaid))} against a grand total of ${ghs(g)}. Check the numbers below.</div></div>`:''}
@@ -3745,8 +3746,16 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   <div class="grid2">${fld('Unit price (GHS)','<input id="u_unitprice" type="number" value="'+num(l.unitPrice)+'"/>','current standard price: '+ghs(expectedUnit))}${fld('Discount given (GHS)','<input id="u_discount" type="number" value="'+num(l.discount)+'"/>')}</div>
   ${fld('Payment plan',sel('u_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months'],l.paymentPlan||'Full Payment'))}
   <div class="calcbox" id="u_calc"></div>
+  ${mySched?`<div class="rowcard" style="margin:2px 0 14px;padding:14px 16px;background:linear-gradient(135deg,#EEF4FF,#F4F6F5);border:1px solid var(--line)">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div><div class="mini" style="font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:10.5px">This month's installment</div>
+      <div style="font-size:20px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-top:2px">${ghs(mySched.expectedThisMonth)}</div></div>
+      <div style="text-align:right"><div class="mini">Month ${mySched.monthsElapsed} of ${mySched.planMonths} · ${ghs(mySched.monthlyInstallment)}/mo</div>
+      <div class="mini" style="margin-top:2px">Due ${mySched.nextDueDate}</div></div>
+    </div>
+  </div>`:''}
   ${fld('Total paid to date (GHS)','<input id="u_paidtotal" type="number" value="'+num(l.amtPaid)+'"/>','edit directly to correct a mistake, or use the field below to just add a new payment')}
-  ${fld('...or add a new payment now (GHS)','<input id="u_pay" type="number" placeholder="0"/>','adds on top of the total above')}
+  ${fld(mySched?"This month's payment (GHS)":'...or add a new payment now (GHS)','<input id="u_pay" type="number" placeholder="0"/>'+(mySched?'<div id="u_payCompare" class="mini" style="margin-top:7px;font-weight:700"></div>':''),mySched?('expected '+ghs(mySched.monthlyInstallment)+' this month — enter what they actually paid'):'adds on top of the total above')}
   <div class="sectitle"><h3>Stage &amp; follow-up</h3></div>
   <div class="grid2">${fld('Move stage to',stageSel('u_stage',l.stage))}${fld('Contact method',sel('u_method',['Phone Call','WhatsApp','Email','In-person']))}</div>
   ${fld('What was discussed / outcome','<textarea id="u_disc" placeholder="Summary of the interaction"></textarea>')}
@@ -3769,6 +3778,17 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
     const paidTotal=num(val('u_paidtotal'))+num(val('u_pay'));
     const bal2=Math.max(cc.grand-paidTotal,0);
     document.getElementById('u_calc').innerHTML=`<div><div class="cl">Grand total</div><div class="cv">${ghs(cc.grand)}</div></div><div><div class="cl">New balance</div><div class="cv">${ghs(bal2)}</div></div>`;
+    const cmpEl=document.getElementById('u_payCompare');
+    if(cmpEl && mySched){
+      const paidNow=num(val('u_pay'));
+      if(paidNow<=0){ cmpEl.textContent=''; }
+      else{
+        const diff=paidNow-mySched.monthlyInstallment;
+        if(Math.abs(diff)<1){ cmpEl.style.color='#16A34A'; cmpEl.textContent='Matches the usual monthly amount'; }
+        else if(diff<0){ cmpEl.style.color='#B8791E'; cmpEl.textContent=ghs(Math.abs(diff))+' less than the usual monthly amount — behind schedule'; }
+        else{ cmpEl.style.color='#16A34A'; cmpEl.textContent=ghs(diff)+' more than the usual monthly amount — ahead of schedule'; }
+      }
+    }
   };
   ['u_plottype','u_noplots','u_unitprice','u_discount','u_plan','u_paidtotal','u_pay'].forEach(id2=>document.getElementById(id2).addEventListener('input',paintUCalc));
   paintUCalc();
