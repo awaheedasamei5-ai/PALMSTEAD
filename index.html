@@ -6,12 +6,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-title" content="PEP Portal"/>
+<meta name="apple-mobile-web-app-title" content="Palmstead"/>
 <meta name="theme-color" content="#0B1E3D"/>
 <link rel="manifest" href="./manifest.webmanifest"/>
 <link rel="apple-touch-icon" href="./apple-touch-icon.png"/>
 <link rel="icon" href="./favicon-32.png"/>
-<title>PEP Landbank Sales Portal</title>
+<title>Palmstead — PEP Landbank</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="preconnect" href="https://lrahgcnftetnyxunaljs.supabase.co">
@@ -572,8 +572,8 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 <!-- BOOT -->
 <div class="bootscreen" id="boot">
   <span class="glyphwrap"><span class="ring"></span><span class="glyph"><img alt="" id="bootLogo"/></span></span>
-  <div class="boot-word">PEP LANDBANK</div>
-  <div class="boot-sub">Sales Portal</div>
+  <div class="boot-word">PALMSTEAD</div>
+  <div class="boot-sub">by PEP Landbank</div>
 </div>
 
 <!-- LOGIN -->
@@ -581,7 +581,7 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 <div class="bgphoto"></div>
   <div class="brand">
     <div class="mark"><span class="glyph"><img alt="PEP Landbank" id="brandLogo"/></span></div>
-    <h1>Sales Portal</h1>
+    <h1>Palmstead</h1>
     <div class="sub">Internal activity &amp; pipeline system · Royal Palm Enclave</div>
   </div>
 
@@ -631,7 +631,7 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
   </div>
 
   <div class="cfg hidden" id="joinCard">
-    <div class="lbl">Join the PEP Landbank Sales Portal</div>
+    <div class="lbl">Join Palmstead</div>
     <div class="note">New here? Create your own account below. You'll be signed in immediately with your own empty pipeline, ready to add clients.</div>
     <input id="j_name" placeholder="Full name"/>
     <input id="j_email" placeholder="Email address" type="email"/>
@@ -647,7 +647,7 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 <section id="app" class="hidden">
   <header class="topbar">
     <span class="glyph"><img alt="" id="topbarLogo"/></span>
-    <div><div class="tt">PEP LANDBANK</div><div class="ts" id="topbarSub">Sales Portal</div></div>
+    <div><div class="tt">PALMSTEAD</div><div class="ts" id="topbarSub">by PEP Landbank</div></div>
     <div class="spacer"></div>
     <div class="whoami"><span id="tbAvatar" class="tb-avatar hidden"></span><span class="tb-name" id="tbName"></span>
       <button class="iconbtn" id="darkModeBtn" title="Toggle dark mode"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
@@ -2039,7 +2039,7 @@ async function enterApp(){
   document.getElementById('view').innerHTML='<div style="padding:70px 0;text-align:center"><div class="skel" style="height:120px;border-radius:16px;margin-bottom:14px"></div><div class="skel" style="height:80px;border-radius:16px"></div></div>';
   document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden');
   document.getElementById('tbName').textContent = PROFILE.role==='manager' ? 'Management' : PROFILE.name.split(' ')[0];
-  document.getElementById('topbarSub').innerHTML = DEMO_MODE ? 'Sales Portal <span class="demodot"></span> Demo data' : 'Sales Portal';
+  document.getElementById('topbarSub').innerHTML = DEMO_MODE ? 'by PEP Landbank <span class="demodot"></span> Demo data' : 'by PEP Landbank';
   paintTopbarAvatar();
   try{ await apiLoadConfig(); await apiLoadAll(); }catch(e){ toast('Could not load data'); }
   refreshAnnounceBubble();
@@ -5869,7 +5869,7 @@ async function downloadCompanyExcel(){
   const btn=document.getElementById('xlCompanyBtn'); btn.disabled=true; btn.textContent='Building report…';
   try{
     const wb=new ExcelJS.Workbook();
-    wb.creator='PEP Landbank Sales Portal'; wb.created=new Date();
+    wb.creator='Palmstead — PEP Landbank'; wb.created=new Date();
 
     const agents=allAgentLists();
     const allLeads=agents.flatMap(a=>a.list.map(l=>({...l,agentName:a.name})));
