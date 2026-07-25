@@ -14,9 +14,10 @@
 <title>PEP Landbank Sales Portal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://lrahgcnftetnyxunaljs.supabase.co">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
 <style>
 :root{
   --ink:#0B1E3D; --ink2:#0F2A52; --green:#1D4ED8; --green2:#2563EB; --leaf:#3B82F6;
@@ -1270,28 +1271,36 @@ async function apiLoadAll(){
     return;
   }
   const q=async t=>{const {data,error}=await sb.from(t).select('*').order('created_at',{ascending:false});if(error)throw error;return data||[];};
-  const [le,en,cm,sv,ac]=await Promise.all([q('leads'),q('enquiries'),q('complaints'),q('site_visits'),q('activity_log')]);
+  const loadProfiles=async()=>{ if(PROFILE.role==='manager'){const {data}=await sb.from('profiles').select('*');DB.profiles=data||[];} };
+  const loadPayments=async()=>{
+    try{
+      let pq=sb.from('payments').select('*').order('payment_date',{ascending:false});
+      if(PROFILE.role!=='manager') pq=pq.eq('agent_key',PROFILE.agent_key);
+      const {data:pd,error:pErr}=await pq; if(pErr) throw pErr;
+      DB.payments=(pd||[]).map(r=>({id:r.id,leadId:r.lead_id,agentKey:r.agent_key,clientName:r.client_name,amount:r.amount,date:r.payment_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
+    }catch(e){ DB.payments=[]; } // payments table not set up yet — Monthly Collected just shows empty
+  };
+  const loadPlots=async()=>{
+    try{
+      if(canManagePlots()){ const {data,error}=await sb.from('plots').select('*').order('site').order('plot_number'); if(error) throw error; DB.plots=(data||[]).map(mapPlot); DB.myPlots=DB.plots.filter(p=>p.agentKey===PROFILE.key); }
+      else{
+        const {data,error}=await sb.from('plots_availability').select('*').order('site').order('plot_number'); if(error) throw error; DB.plots=(data||[]).map(mapPlot);
+        try{ const {data:mine,error:mErr}=await sb.from('plots_my_sales').select('*'); if(mErr) throw mErr; DB.myPlots=(mine||[]).map(mapPlot); }catch(e2){ DB.myPlots=[]; }
+      }
+    }catch(e){ DB.plots=[]; DB.myPlots=[]; } // plot inventory table not set up yet — feature just shows empty, nothing else breaks
+  };
+  // Every read below is independent of the others, so they run as one concurrent wave
+  // instead of one-after-another — this is most of what makes sign-in-to-dashboard slow.
+  const results=await Promise.all([
+    q('leads'),q('enquiries'),q('complaints'),q('site_visits'),q('activity_log'),
+    loadProfiles(),loadPayments(),loadPlots(),
+    apiLoadAnnouncements(),apiLoadAllocations(),apiLoadMessages(),apiLoadTargetSelections(today().slice(0,7),PROFILE.role==='manager')
+  ]);
+  const [le,en,cm,sv,ac]=results;
   DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key||PROFILE.role==='manager').map(mapLead);
   if(PROFILE.role!=='manager') DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key).map(mapLead);
   DB.enquiries=en.map(mapEnq);DB.complaints=cm.map(mapCmp);DB.sitevisits=sv.map(mapSV);DB.activity=ac.map(mapAct);
-  if(PROFILE.role==='manager'){const {data}=await sb.from('profiles').select('*');DB.profiles=data||[];}
-  try{
-    let pq=sb.from('payments').select('*').order('payment_date',{ascending:false});
-    if(PROFILE.role!=='manager') pq=pq.eq('agent_key',PROFILE.agent_key);
-    const {data:pd,error:pErr}=await pq; if(pErr) throw pErr;
-    DB.payments=(pd||[]).map(r=>({id:r.id,leadId:r.lead_id,agentKey:r.agent_key,clientName:r.client_name,amount:r.amount,date:r.payment_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
-  }catch(e){ DB.payments=[]; } // payments table not set up yet — Monthly Collected just shows empty
-  try{
-    if(canManagePlots()){ const {data,error}=await sb.from('plots').select('*').order('site').order('plot_number'); if(error) throw error; DB.plots=(data||[]).map(mapPlot); DB.myPlots=DB.plots.filter(p=>p.agentKey===PROFILE.key); }
-    else{
-      const {data,error}=await sb.from('plots_availability').select('*').order('site').order('plot_number'); if(error) throw error; DB.plots=(data||[]).map(mapPlot);
-      try{ const {data:mine,error:mErr}=await sb.from('plots_my_sales').select('*'); if(mErr) throw mErr; DB.myPlots=(mine||[]).map(mapPlot); }catch(e2){ DB.myPlots=[]; }
-    }
-  }catch(e){ DB.plots=[]; DB.myPlots=[]; } // plot inventory table not set up yet — feature just shows empty, nothing else breaks
-  DB.announcements=await apiLoadAnnouncements();
-  DB.allocations=await apiLoadAllocations();
-  DB.messages=await apiLoadMessages();
-  DB.targetSelections=await apiLoadTargetSelections(today().slice(0,7),PROFILE.role==='manager');
+  DB.announcements=results[8]; DB.allocations=results[9]; DB.messages=results[10]; DB.targetSelections=results[11];
 }
 async function apiInsertLead(l,c){
   if(DEMO_MODE){ const d=await demoLoad(); const row={id:uid(),agent:PROFILE.key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal};
