@@ -1608,7 +1608,8 @@ async function apiLoadAgentMonthStats(){
 /* ---- duties / tasks (operations, non-sales work: assigned by management OR self/peer-assigned) ---- */
 const mapTask=r=>({id:r.id,title:r.title,description:r.description,category:r.category,priority:r.priority,
   assignedTo:r.assigned_to,assignedToName:r.assigned_to_name,assignedBy:r.assigned_by,assignedByName:r.assigned_by_name,
-  status:r.status,dueDate:r.due_date,createdAt:r.created_at,completedAt:r.completed_at});
+  status:r.status,dueDate:r.due_date,createdAt:r.created_at,completedAt:r.completed_at,
+  escalatedTo:r.escalated_to,escalatedToName:r.escalated_to_name,escalatedBy:r.escalated_by,escalatedByName:r.escalated_by_name,escalatedAt:r.escalated_at,escalationNote:r.escalation_note});
 async function apiLoadTasks(){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.tasks||[]).slice(); }
   try{ const {data,error}=await sb.from('tasks').select('*').order('created_at',{ascending:false}); if(error) throw error;
@@ -1630,6 +1631,15 @@ async function apiUpdateTaskStatus(id,status){
 async function apiDeleteTask(id){
   if(DEMO_MODE){ const d=await demoLoad(); d.tasks=(d.tasks||[]).filter(x=>x.id!==id); await demoSave(); return; }
   const {error}=await sb.from('tasks').delete().eq('id',id); if(error) throw error;
+}
+async function apiEscalateTask(id,toKey,toName,note){
+  const escalatedAt=new Date().toISOString();
+  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id);
+    if(t){ t.assignedTo=toKey; t.assignedToName=toName; t.escalatedTo=toKey; t.escalatedToName=toName; t.escalatedBy=PROFILE.key; t.escalatedByName=PROFILE.name; t.escalatedAt=escalatedAt; t.escalationNote=note||null; }
+    await demoSave(); return; }
+  const {error}=await sb.from('tasks').update({assigned_to:toKey,assigned_to_name:toName,escalated_to:toKey,escalated_to_name:toName,
+    escalated_by:PROFILE.key,escalated_by_name:PROFILE.name,escalated_at:escalatedAt,escalation_note:note||null}).eq('id',id);
+  if(error) throw error;
 }
 /* ---- feedback forum (bugs, suggestions, things people want changed) ---- */
 const mapFeedback=r=>({id:r.id,authorKey:r.author_key,authorName:r.author_name,category:r.category,body:r.body,createdAt:r.created_at});
@@ -4168,10 +4178,12 @@ function paintDuties(){
     <div class="top"><div><div class="nm">${esc(t.title)}</div><div class="meta">${esc(t.category)} · ${esc(t.assignedToName||t.assignedTo)}${t.assignedBy!==t.assignedTo?(' · assigned by '+esc(t.assignedByName||t.assignedBy)):' · self-assigned'}</div></div>
     <span class="tag ${statusMeta[t.status].cls}">${esc(t.status)}</span></div>
     ${t.description?`<div class="mini" style="margin-top:4px">${esc(t.description)}</div>`:''}
-    <div class="foot"><span class="tag ${t.priority==='Critical'||t.priority==='High'?'warnt':'ghost'}">${esc(t.priority)} priority</span>${t.dueDate?`<span class="tag ${overdue?'dgr':'ghost'}">${overdue?'Overdue: ':'Due '}${esc(t.dueDate)}</span>`:''}<span class="tag ghost">${daysOpen} day${daysOpen===1?'':'s'} open</span></div>
+    <div class="foot"><span class="tag ${t.priority==='Critical'||t.priority==='High'?'warnt':'ghost'}">${esc(t.priority)} priority</span>${t.dueDate?`<span class="tag ${overdue?'dgr':'ghost'}">${overdue?'Overdue: ':'Due '}${esc(t.dueDate)}</span>`:''}<span class="tag ghost">Opened ${esc((t.createdAt||'').slice(0,10))}</span>${t.completedAt?`<span class="tag ok">Completed ${esc((t.completedAt||'').slice(0,10))}</span>`:`<span class="tag ghost">${daysOpen} day${daysOpen===1?'':'s'} open</span>`}</div>
+    ${t.escalatedTo?`<div class="mini" style="margin-top:4px;padding-top:6px;border-top:1px solid var(--line);color:#B4472F;display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;display:inline-flex">${ic.alert}</span>Escalated to ${esc(t.escalatedToName||t.escalatedTo)} by ${esc(t.escalatedByName||t.escalatedBy)} · ${esc((t.escalatedAt||'').slice(0,10))}${t.escalationNote?(': '+esc(t.escalationNote)):''}</div>`:''}
     ${t.status!=='Done'&&t.status!=='Cancelled'?`<div class="foot">
       <button class="chip" data-taskstatus="${t.id}|In Progress">Mark in progress</button>
       <button class="chip" data-taskstatus="${t.id}|Done">Mark done</button>
+      <button class="chip" data-taskescalate="${t.id}">⬆ Escalate</button>
       ${t.assignedBy===PROFILE.key||PROFILE.role==='manager'?`<button class="trashbtn" data-taskdel="${t.id}">${ic.trash}</button>`:''}
     </div>`:''}
   </div>`;};
@@ -4196,6 +4208,33 @@ function bindDutiesRowCtrls(){
     try{ await apiDeleteTask(b.dataset.taskdel); DB.tasks=DB.tasks.filter(x=>x.id!==b.dataset.taskdel); toast('Task deleted'); viewDuties(); }
     catch(e){ toast('Failed: '+(e.message||e)); }
   });
+  document.querySelectorAll('[data-taskescalate]').forEach(b=>b.onclick=()=>openEscalateTaskModal(b.dataset.taskescalate));
+}
+function openEscalateTaskModal(id){
+  const t=(DB.tasks||[]).find(x=>x.id===id); if(!t) return;
+  const options=STAFF_LIST.filter(s=>s.key!==t.assignedTo);
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Escalate — ${esc(t.title)}</div>
+    <div class="mini" style="margin-bottom:14px">Reassigns this task and notifies them in chat with your reason.</div>
+    ${fld('Escalate to',`<select id="esc_to">${options.map(s=>`<option value="${s.key}">${esc(s.name)}</option>`).join('')}</select>`)}
+    ${fld('Reason','<textarea id="esc_note" placeholder="Why this needs their attention…"></textarea>')}
+    <div class="formactions"><button class="btn primary" id="doEscalate" style="width:100%">Escalate</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('doEscalate').onclick=async()=>{
+    const toKey=val('esc_to'); const toStaff=STAFF_LIST.find(s=>s.key===toKey); const note=val('esc_note').trim();
+    const btn=document.getElementById('doEscalate'); btn.disabled=true; btn.textContent='Escalating…';
+    try{
+      await apiEscalateTask(id,toKey,toStaff?toStaff.name:toKey,note);
+      Object.assign(t,{assignedTo:toKey,assignedToName:toStaff?toStaff.name:toKey,escalatedTo:toKey,escalatedToName:toStaff?toStaff.name:toKey,
+        escalatedBy:PROFILE.key,escalatedByName:PROFILE.name,escalatedAt:new Date().toISOString(),escalationNote:note||null});
+      try{ const rec=await apiSendMessage(toKey,`${PROFILE.name} escalated "${t.title}" to you${note?(': '+note):''}`); DB.messages.push(rec); }catch(e){}
+      toast('Escalated to '+(toStaff?toStaff.name:toKey)); ov.remove(); viewDuties();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Escalate'; }
+  };
 }
 function openNewTaskModal(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
