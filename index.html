@@ -76,6 +76,9 @@ a{color:var(--green2)}
 @keyframes shimmer{0%{background-position:-300px 0}100%{background-position:300px 0}}
 @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 @keyframes ringPulse{0%{box-shadow:0 0 0 0 rgba(132,204,22,.45)}100%{box-shadow:0 0 0 14px rgba(132,204,22,0)}}
+@keyframes letterIn{0%{opacity:0;transform:translateX(16px) scale(.6)}60%{opacity:1}100%{opacity:1;transform:translateX(0) scale(1)}}
+@keyframes glyphSettle{0%{transform:scale(1)}45%{transform:scale(1.14)}100%{transform:scale(1)}}
+@keyframes lockupFlash{0%,100%{filter:drop-shadow(0 0 0 rgba(190,242,100,0))}50%{filter:drop-shadow(0 0 10px rgba(190,242,100,.65))}}
 .view-enter{animation:fadeUp .38s cubic-bezier(.2,.8,.2,1) both}
 .skel{background:linear-gradient(90deg,#EDEAE0 25%,#F6F4EC 37%,#EDEAE0 63%);background-size:400px 100%;animation:shimmer 1.3s infinite linear;border-radius:10px}
 
@@ -555,24 +558,37 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 .demoflag{display:inline-flex;align-items:center;gap:6px;background:#F6EBD3;color:#8A6E12;font-weight:700;font-size:10.5px;
   padding:4px 10px;border-radius:100px;letter-spacing:.04em;text-transform:uppercase}
 .demoflag .d{width:6px;height:6px;border-radius:50%;background:#8A6E12;animation:ringPulse 1.6s infinite}
-.bootscreen{position:fixed;inset:0;z-index:200;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+.bootscreen{position:fixed;inset:0;z-index:200;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
   background:radial-gradient(130% 100% at 50% 30%, #163B7A 0%, var(--ink) 60%, #050E1F 100%);
   opacity:1;transition:opacity .45s ease;}
 .bootscreen.fade{opacity:0;pointer-events:none}
-.bootscreen .glyphwrap{position:relative;width:76px;height:76px;display:grid;place-items:center}
+.bootLockup{display:flex;align-items:center;gap:14px}
+.bootscreen .glyphwrap{position:relative;width:76px;height:76px;display:grid;place-items:center;animation:glyphSettle .7s .5s ease both}
 .bootscreen .ring{position:absolute;inset:0;border-radius:22px;border:2px solid rgba(132,204,22,.5);animation:ringPulse 1.7s ease-out infinite}
-.bootscreen .glyph{width:64px;height:64px;border-radius:20px;overflow:hidden;animation:floaty 1.8s ease-in-out infinite;box-shadow:0 14px 34px rgba(0,0,0,.45);position:relative;z-index:1}
+.bootscreen .glyph{width:64px;height:64px;border-radius:20px;overflow:hidden;animation:floaty 1.8s ease-in-out infinite,lockupFlash 1s .5s ease both;box-shadow:0 14px 34px rgba(0,0,0,.45);position:relative;z-index:1}
 .bootscreen .glyph img{width:100%;height:100%;display:block}
-.bootscreen .boot-word{font-family:Fraunces,serif;font-weight:700;font-size:15px;letter-spacing:.22em;color:#fff;opacity:0;animation:fadeIn .6s .25s ease forwards}
-.bootscreen .boot-sub{font-size:11.5px;color:#8FAE9C;letter-spacing:.05em;opacity:0;animation:fadeIn .6s .4s ease forwards;margin-top:-8px}
+.bootscreen .boot-word{display:flex;gap:2px;font-family:Fraunces,serif;font-weight:700;font-size:21px;color:#fff}
+.bootscreen .boot-word span{display:inline-block;opacity:0;animation:letterIn .5s cubic-bezier(.2,.8,.3,1.2) forwards}
+.bootscreen .boot-word span:nth-child(1){animation-delay:.28s}
+.bootscreen .boot-word span:nth-child(2){animation-delay:.32s}
+.bootscreen .boot-word span:nth-child(3){animation-delay:.36s}
+.bootscreen .boot-word span:nth-child(4){animation-delay:.40s}
+.bootscreen .boot-word span:nth-child(5){animation-delay:.44s}
+.bootscreen .boot-word span:nth-child(6){animation-delay:.48s}
+.bootscreen .boot-word span:nth-child(7){animation-delay:.52s}
+.bootscreen .boot-word span:nth-child(8){animation-delay:.56s}
+.bootscreen .boot-word span:nth-child(9){animation-delay:.60s}
+.bootscreen .boot-sub{font-size:11.5px;color:#8FAE9C;letter-spacing:.05em;opacity:0;animation:fadeIn .6s .85s ease forwards}
 </style>
 </head>
 <body>
 
 <!-- BOOT -->
 <div class="bootscreen" id="boot">
-  <span class="glyphwrap"><span class="ring"></span><span class="glyph"><img alt="" id="bootLogo"/></span></span>
-  <div class="boot-word">PALMSTEAD</div>
+  <div class="bootLockup">
+    <span class="glyphwrap"><span class="ring"></span><span class="glyph"><img alt="" id="bootLogo"/></span></span>
+    <div class="boot-word"><span>P</span><span>A</span><span>L</span><span>M</span><span>S</span><span>T</span><span>E</span><span>A</span><span>D</span></div>
+  </div>
   <div class="boot-sub">by PEP Landbank</div>
 </div>
 
