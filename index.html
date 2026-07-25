@@ -676,7 +676,7 @@ const favicon = document.querySelector('link[rel="icon"]'); if(favicon) favicon.
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
-let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[]};
+let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[]};
 
 function cfg(){ let u=SUPABASE_URL,k=SUPABASE_ANON_KEY;
   if(!u||!k){ try{const s=JSON.parse(localStorage.getItem('pep_cfg')||'null'); if(s){u=s.url;k=s.key;}}catch(e){} }
@@ -1316,7 +1316,8 @@ async function apiLoadAll(){
     DB.myPlots=DB.plots.filter(p=>p.agentKey===PROFILE.key);
     DB.payments=(PROFILE.role==='manager'?(d.payments||[]):(d.payments||[]).filter(p=>p.agentKey===PROFILE.key)).slice();
     DB.announcements=(d.announcements||[]).slice();
-    if(PROFILE.role==='manager'){ DB.profiles=STAFF_LIST.filter(s=>s.role==='agent').map(s=>({name:s.name,role:'agent',agent_key:s.key})); }
+    DB.profiles=STAFF_LIST.filter(s=>s.role==='agent').map(s=>({name:s.name,role:'agent',agent_key:s.key,birthday:(d.profileBirthdays||{})[s.key]||null}));
+    DB.agentMonthStats=await apiLoadAgentMonthStats();
     return;
   }
   const q=async t=>{const {data,error}=await sb.from(t).select('*').order('created_at',{ascending:false});if(error)throw error;return data||[];};
@@ -1346,13 +1347,15 @@ async function apiLoadAll(){
   const results=await Promise.all([
     q('leads'),q('enquiries'),q('complaints'),q('site_visits'),q('activity_log'),
     loadProfiles(),loadPayments(),loadPlots(),
-    apiLoadAnnouncements(),apiLoadAllocations(),apiLoadMessages(),apiLoadTargetSelections(today().slice(0,7),PROFILE.role==='manager')
+    apiLoadAnnouncements(),apiLoadAllocations(),apiLoadMessages(),apiLoadTargetSelections(today().slice(0,7),PROFILE.role==='manager'),
+    apiLoadAgentMonthStats()
   ]);
   const [le,en,cm,sv,ac]=results;
   DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key||PROFILE.role==='manager').map(mapLead);
   if(PROFILE.role!=='manager') DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key).map(mapLead);
   DB.enquiries=en.map(mapEnq);DB.complaints=cm.map(mapCmp);DB.sitevisits=sv.map(mapSV);DB.activity=ac.map(mapAct);
   DB.announcements=results[8]; DB.allocations=results[9]; DB.messages=results[10]; DB.targetSelections=results[11];
+  DB.agentMonthStats=results[12];
 }
 async function apiInsertLead(l,c){
   if(DEMO_MODE){ const d=await demoLoad(); const row={id:uid(),agent:PROFILE.key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal};
@@ -1467,6 +1470,26 @@ async function apiLoadAnnouncements(){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.announcements||[]).slice(); }
   try{ const {data,error}=await sb.from('announcements').select('*').order('created_at',{ascending:false}); if(error) throw error;
     return (data||[]).map(r=>({id:r.id,title:r.title,body:r.body,image:r.image_b64,active:r.active,createdBy:r.created_by,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')})); }
+  catch(e){ return []; }
+}
+// Cross-agent totals (collected + new-sales count, per agent per month) from the
+// agent_month_stats view -- safe for every role to read since it never exposes
+// individual client names or transaction-level payment records, only sums/counts.
+// Demo mode has no such view, so it's computed locally from the same demo payments.
+async function apiLoadAgentMonthStats(){
+  if(DEMO_MODE){
+    const d=await demoLoad(); const payments=d.payments||[];
+    const firstByLead={};
+    payments.forEach(p=>{ if(!p.leadId) return; if(!firstByLead[p.leadId]||p.date<firstByLead[p.leadId].date) firstByLead[p.leadId]=p; });
+    const rows={};
+    payments.forEach(p=>{ const mk=(p.date||'').slice(0,7); if(!mk) return; const key=p.agentKey+'|'+mk;
+      rows[key]=rows[key]||{agentKey:p.agentKey,month:mk,totalCollected:0,newSalesCount:0}; rows[key].totalCollected+=num(p.amount); });
+    Object.values(firstByLead).forEach(p=>{ const mk=(p.date||'').slice(0,7); if(!mk) return; const key=p.agentKey+'|'+mk;
+      rows[key]=rows[key]||{agentKey:p.agentKey,month:mk,totalCollected:0,newSalesCount:0}; rows[key].newSalesCount+=1; });
+    return Object.values(rows);
+  }
+  try{ const {data,error}=await sb.from('agent_month_stats').select('*'); if(error) throw error;
+    return (data||[]).map(r=>({agentKey:r.agent_key,month:r.month,totalCollected:num(r.total_collected),newSalesCount:num(r.new_sales_count)})); }
   catch(e){ return []; }
 }
 async function apiInsertAnnouncement(title,body,image){
@@ -1929,7 +1952,7 @@ document.getElementById('logoutBtn').onclick=async()=>{
   if(CHAT_CHANNEL){ try{ sb.removeChannel(CHAT_CHANNEL); }catch(e){} CHAT_CHANNEL=null; }
   const bub=document.getElementById('announceBubble'); if(bub) bub.remove();
   const ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
-  USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[]};
+  USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[]};
   document.getElementById('app').classList.add('hidden'); document.getElementById('login').classList.remove('hidden');
   document.getElementById('ddLabel').textContent='Choose your name';
   document.querySelectorAll('#ddPanel .dd-item').forEach(el=>el.classList.remove('sel'));
@@ -2377,7 +2400,8 @@ function computeAgentOfMonth(){
   const thisMonth=today().slice(0,7);
   const agents=allAgentLists();
   const rows=agents.map(a=>{
-    const collected=(DB.payments||[]).filter(p=>p.agentKey===a.key&&(p.date||'').slice(0,7)===thisMonth).reduce((s,p)=>s+num(p.amount),0);
+    const stat=(DB.agentMonthStats||[]).find(s=>s.agentKey===a.key&&s.month===thisMonth);
+    const collected=stat?stat.totalCollected:0;
     const profile=(DB.profiles||[]).find(p=>p.agent_key===a.key);
     return {name:a.name,key:a.key,collected,avatar:profile?profile.avatar:null};
   }).sort((x,y)=>y.collected-x.collected);
@@ -2386,13 +2410,12 @@ function computeAgentOfMonth(){
 let BANNER_SLIDE_IDX=0, BANNER_TIMER=null;
 function buildBannerSlides(){
   const slides=[];
-  // Agent of the Month compares payment totals across ALL agents -- that comparison is
-  // only ever correct when computed here with a manager's full data access. Row-level
-  // security deliberately keeps individual agents from reading each other's payment
-  // records (confirmed against the live policy), so from an agent's own session this
-  // would silently just crown themselves (or no one) rather than the real top performer.
-  // Shown to managers only until there's a secure cross-agent aggregate to compute it from.
-  const aom=PROFILE.role==='manager'?computeAgentOfMonth():null;
+  // Now computed from the agent_month_stats view (see apiLoadAgentMonthStats), which
+  // exposes only summed totals per agent per month -- safe for every role, since it
+  // never surfaces the individual payment records the payments table's RLS keeps
+  // agent-private. This is what makes Agent of the Month genuinely correct from any
+  // agent's own session, not just Management's.
+  const aom=computeAgentOfMonth();
   if(aom) slides.push({grad:'linear-gradient(120deg,#0B1E3D,#1D4ED8 65%,#3B82F6)',kind:'agentOfMonth',arg:aom.key,
     html:`<div style="display:flex;align-items:center;gap:14px;position:relative;z-index:1">
       <div class="leaderAvatar" style="width:52px;height:52px;font-size:20px">${aom.avatar?`<img src="${aom.avatar}"/>`:esc(aom.name[0])}</div>
@@ -2433,13 +2456,17 @@ function bindBannerSlideshow(){
   resetBannerTimer();
 }
 function viewAgentOfMonthDetail(agentKey){
-  if(PROFILE.role!=='manager'){ toast('Full team comparison is only available to Management right now'); return; }
   const thisMonth=today().slice(0,7);
   const profile=(DB.profiles||[]).find(p=>p.agent_key===agentKey);
   const name=(profile&&profile.name)||(STAFF_LIST.find(s=>s.key===agentKey)||{}).name||agentKey;
-  const monthPayments=(DB.payments||[]).filter(p=>p.agentKey===agentKey&&(p.date||'').slice(0,7)===thisMonth).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const collected=monthPayments.reduce((s,p)=>s+num(p.amount),0);
-  const closedCount=DB.leads.filter(l=>l.agent===agentKey&&isFullyPaid(l)&&monthKey(l.date)===thisMonth).length;
+  const stat=(DB.agentMonthStats||[]).find(s=>s.agentKey===agentKey&&s.month===thisMonth);
+  const collected=stat?stat.totalCollected:0;
+  const newSales=stat?stat.newSalesCount:0;
+  // Itemized payment records are only ever visible to Management or to agents looking at
+  // their own data -- that's what payments RLS actually allows, so this mirrors it exactly
+  // rather than trying to show something the viewer's own session can't legitimately read.
+  const canSeeItems=PROFILE.role==='manager'||agentKey===PROFILE.key;
+  const monthPayments=canSeeItems?(DB.payments||[]).filter(p=>p.agentKey===agentKey&&(p.date||'').slice(0,7)===thisMonth).sort((a,b)=>(b.date||'').localeCompare(a.date||'')):[];
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
@@ -2448,9 +2475,10 @@ function viewAgentOfMonthDetail(agentKey){
       <div class="leaderAvatar" style="width:48px;height:48px;font-size:18px">${profile&&profile.avatar?`<img src="${profile.avatar}"/>`:esc(name[0]||'?')}</div>
       <div><div style="font-weight:800;font-size:17px">${esc(name)}</div><div class="mini">${monthLabel(thisMonth)}</div></div>
     </div>
-    <div class="kpis" style="grid-template-columns:repeat(2,1fr);margin-bottom:16px">${kpi('Collected this month',ghs(collected),'gold')}${kpi('Plots closed',closedCount)}</div>
-    <div class="sectitle" style="margin-top:0"><h3>Payments this month</h3><span class="cnt">${monthPayments.length}</span></div>
-    <div style="max-height:260px;overflow-y:auto">${monthPayments.length?monthPayments.map(p=>`<div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">${esc(p.clientName||'')}</div><div class="mini">${esc(p.date||'')}</div></div></div><div class="amt mono" style="font-weight:700;color:#1E7A56">+${ghs(num(p.amount))}</div></div>`).join(''):'<div class="empty">No payments recorded yet.</div>'}</div>
+    <div class="kpis" style="grid-template-columns:repeat(2,1fr);margin-bottom:16px">${kpi('Collected this month',ghs(collected),'gold')}${kpi('New clients closed',newSales)}</div>
+    ${canSeeItems?`<div class="sectitle" style="margin-top:0"><h3>Payments this month</h3><span class="cnt">${monthPayments.length}</span></div>
+    <div style="max-height:260px;overflow-y:auto">${monthPayments.length?monthPayments.map(p=>`<div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">${esc(p.clientName||'')}</div><div class="mini">${esc(p.date||'')}</div></div></div><div class="amt mono" style="font-weight:700;color:#1E7A56">+${ghs(num(p.amount))}</div></div>`).join(''):'<div class="empty">No payments recorded yet.</div>'}</div>`
+    :'<div class="mini" style="text-align:center;padding:6px 0">Individual client payments stay private to the agent and Management — only totals are shared here.</div>'}
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
