@@ -752,19 +752,35 @@ function monthsElapsedSince(dateStr){
   if(isNaN(start)) return 1;
   return Math.max(1,(now.getFullYear()-start.getFullYear())*12+(now.getMonth()-start.getMonth())+1);
 }
+function scheduleAnchorDate(lead,paymentsForLead){
+  // Month 1 of an installment plan starts the day the client actually made their
+  // first payment (their deposit) -- not the day the lead record was created,
+  // which can be earlier (prospecting) or occasionally entered later (backfilled data).
+  const dated=(paymentsForLead||[]).map(p=>p.date).filter(Boolean).sort();
+  return dated[0]||lead.date||today();
+}
 function computeMonthlySchedule(lead,paymentsForLead){
   const planMonths=PLAN_MONTHS[lead.paymentPlan]; if(!planMonths) return null;
   const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand; if(!grand) return null;
   const monthlyInstallment=Math.round(grand/planMonths);
-  const monthsElapsed=Math.min(planMonths,monthsElapsedSince(lead.date));
-  const expectedCumulative=Math.min(grand,monthlyInstallment*monthsElapsed);
+  const anchor=scheduleAnchorDate(lead,paymentsForLead);
+  const monthsElapsed=Math.min(planMonths,monthsElapsedSince(anchor));
+  const cumulativeThrough=n=>Math.min(grand,monthlyInstallment*Math.max(0,n));
   const thisMonthStart=today().slice(0,7)+'-01';
   const paidBeforeThisMonth=(paymentsForLead||[]).filter(p=>(p.date||'')<thisMonthStart).reduce((s,p)=>s+num(p.amount),0);
-  const expectedThisMonth=Math.max(0,Math.round(expectedCumulative-paidBeforeThisMonth));
+  const paidThisMonth=(paymentsForLead||[]).filter(p=>(p.date||'')>=thisMonthStart).reduce((s,p)=>s+num(p.amount),0);
+  // What this specific month's installment slot is worth (handles the last, possibly
+  // uneven, installment correctly) -- capped so it can never exceed one month's amount.
+  const thisMonthSlot=cumulativeThrough(monthsElapsed)-cumulativeThrough(monthsElapsed-1);
+  const expectedThisMonth=Math.max(0,Math.round(thisMonthSlot-paidThisMonth));
+  // Arrears: unpaid installments from BEFORE this month only -- this is what used to
+  // silently balloon "expected this month" up toward the client's entire remaining
+  // balance for anyone who fell behind. Now tracked and shown separately.
+  const arrears=Math.max(0,Math.round(cumulativeThrough(monthsElapsed-1)-paidBeforeThisMonth));
   const monthsRemaining=Math.max(0,planMonths-monthsElapsed+1);
-  const startDate=new Date(lead.date||today());
+  const startDate=new Date(anchor);
   const nextDue=new Date(startDate.getFullYear(),startDate.getMonth()+monthsElapsed,startDate.getDate());
-  return {monthlyInstallment,planMonths,monthsElapsed,monthsRemaining,expectedThisMonth,nextDueDate:nextDue.toISOString().slice(0,10)};
+  return {monthlyInstallment,planMonths,monthsElapsed,monthsRemaining,expectedThisMonth,arrears,nextDueDate:nextDue.toISOString().slice(0,10)};
 }
 function INTEREST(){ return {'Full Payment':0,'3 Months':num(CONFIG.int3),'6 Months':num(CONFIG.int6),
   '9 Months':num(CONFIG.int9),'12 Months':num(CONFIG.int12)}; }
@@ -2472,8 +2488,8 @@ function viewMonthlyPlanClients(){
   const total=list.reduce((s,l)=>s+l.__sched.expectedThisMonth,0);
   const rows=list.map(l=>`<div class="rowcard"><div class="top"><div><div class="nm nm-link" data-custname="${esc(l.name)}" data-custcontact="${esc(l.contact||'')}">${esc(l.name)}</div>
     <div class="meta">${esc(l.contact||'—')}${l.agentDisplay?(' · '+esc(l.agentDisplay)):''} · ${l.paymentPlan} · month ${l.__sched.monthsElapsed} of ${l.__sched.planMonths}</div></div>
-    <div style="text-align:right"><div class="amt">${ghs(l.__sched.expectedThisMonth)}</div><div class="meta">${l.__sched.expectedThisMonth>l.__sched.monthlyInstallment?'includes rollover':'due '+l.__sched.nextDueDate}</div></div></div>
-    <div class="foot"><span class="tag ghost">${ghs(l.__sched.monthlyInstallment)}/month</span>${l.__sched.expectedThisMonth>l.__sched.monthlyInstallment?'<span class="tag warnt">⚠ Behind schedule</span>':''}</div>
+    <div style="text-align:right"><div class="amt">${ghs(l.__sched.expectedThisMonth)}</div><div class="meta">${l.__sched.expectedThisMonth<=0?'paid for this month':'due '+l.__sched.nextDueDate}</div></div></div>
+    <div class="foot"><span class="tag ghost">${ghs(l.__sched.monthlyInstallment)}/month</span>${l.__sched.arrears>0?`<span class="tag warnt" style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;display:inline-flex">${ic.alert}</span>${ghs(l.__sched.arrears)} overdue from earlier months</span>`:''}</div>
     <div class="foot"><button class="chip" onclick="route('updateOne','${l.id}')">Record payment →</button></div></div>`).join('');
   const owing=scope.filter(l=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; return !isFullyPaid(l) && l.stage!==STAGE_LOST && (g-num(l.amtPaid))>0.01; })
     .map(l=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; return {...l,__bal:g-num(l.amtPaid)}; })
@@ -3818,6 +3834,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
       <div style="text-align:right"><div class="mini">Month ${mySched.monthsElapsed} of ${mySched.planMonths} · ${ghs(mySched.monthlyInstallment)}/mo</div>
       <div class="mini" style="margin-top:2px">Due ${mySched.nextDueDate}</div></div>
     </div>
+    ${mySched.arrears>0?`<div class="mini" style="margin-top:9px;padding-top:9px;border-top:1px solid var(--line);color:#B8791E;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:13px;height:13px;display:inline-flex">${ic.alert}</span>${ghs(mySched.arrears)} still overdue from earlier months</div>`:''}
   </div>`:''}
   ${fld('Total paid to date (GHS)','<input id="u_paidtotal" type="number" value="'+num(l.amtPaid)+'"/>','edit directly to correct a mistake, or use the field below to just add a new payment')}
   ${fld(mySched?"This month's payment (GHS)":'...or add a new payment now (GHS)','<input id="u_pay" type="number" placeholder="0"/>'+(mySched?'<div id="u_payCompare" class="mini" style="margin-top:7px;font-weight:700"></div>':''),mySched?('expected '+ghs(mySched.monthlyInstallment)+' this month — enter what they actually paid'):'adds on top of the total above')}
