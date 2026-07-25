@@ -1,6 +1,6 @@
 {
-  "name": "PEP Landbank Sales Portal",
-  "short_name": "PEP Landbank",
+  "name": "Palmstead — PEP Landbank",
+  "short_name": "Palmstead",
   "description": "Internal sales, pipeline and client activity portal for PEP Landbank / Trulander JSF Limited.",
   "start_url": "./index.html",
   "scope": "./",

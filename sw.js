@@ -1,4 +1,4 @@
-/* PEP Landbank Sales Portal — service worker
+/* Palmstead (PEP Landbank) — service worker
    Provides an installable, offline-tolerant app shell.
    Your data (leads, enquiries, etc.) always comes live from Supabase when online —
    this only caches the app shell so the portal still opens with no signal. */
