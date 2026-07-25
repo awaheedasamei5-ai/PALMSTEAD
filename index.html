@@ -162,15 +162,24 @@ a{color:var(--green2)}
 .topbar .ts{font-size:10.5px;color:#9DB2CC;letter-spacing:.05em;margin-top:3px;display:flex;align-items:center;gap:6px}
 .demodot{width:6px;height:6px;border-radius:50%;background:var(--gold2);animation:ringPulse 1.8s infinite}
 .topbar .spacer{flex:1}
-.whoami{display:flex;align-items:center;gap:12px}
-.tb-name{color:#EAF0EB;font-size:13px;font-weight:600;letter-spacing:.01em}
-.tb-avatar{width:26px;height:26px;border-radius:100px;overflow:hidden;flex:0 0 auto;display:inline-block}
+.whoami{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+  padding:5px 7px 5px 13px;border-radius:100px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  box-shadow:0 6px 18px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.08)}
+.tb-name{color:#EAF0EB;font-size:13px;font-weight:600;letter-spacing:.01em;padding-right:11px;margin-right:3px;
+  border-right:1px solid rgba(255,255,255,.16);white-space:nowrap}
+.tb-avatar{width:26px;height:26px;border-radius:100px;overflow:hidden;flex:0 0 auto;display:inline-block;box-shadow:0 0 0 1.5px rgba(190,242,100,.55)}
 .tb-avatar img{width:100%;height:100%;object-fit:cover}
-.iconbtn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);color:#fff;border-radius:10px;
-  width:37px;height:37px;display:grid;place-items:center;transition:.15s}
-.iconbtn:hover{background:rgba(255,255,255,.18);transform:translateY(-1px)}
-.chatnavbtn{border-radius:100px;position:relative;background:linear-gradient(150deg,rgba(132,204,22,.22),rgba(59,130,246,.22))}
-.chatnavbtn:hover{transform:translateY(-1px) scale(1.06)}
+.iconbtn{background:transparent;border:1px solid transparent;color:#C6D3E8;border-radius:50%;
+  width:35px;height:35px;display:grid;place-items:center;cursor:pointer;
+  transition:background .18s ease,color .18s ease,transform .2s cubic-bezier(.34,1.56,.64,1)}
+.iconbtn svg{transition:transform .18s ease}
+.iconbtn:hover{background:rgba(255,255,255,.14);color:#fff;transform:translateY(-1px)}
+.iconbtn:hover svg{transform:scale(1.12)}
+.iconbtn:active{transform:scale(.9)}
+.iconbtn:focus-visible{outline:none;box-shadow:0 0 0 2px var(--ink),0 0 0 4px rgba(190,242,100,.6)}
+#logoutBtn:hover{background:rgba(180,71,47,.34);color:#fff}
+.chatnavbtn{border-radius:50%;position:relative;color:#fff;background:linear-gradient(150deg,rgba(132,204,22,.32),rgba(59,130,246,.32))}
+.chatnavbtn:hover{transform:translateY(-1px) scale(1.06);background:linear-gradient(150deg,rgba(132,204,22,.5),rgba(59,130,246,.5))}
 .chatnavbtn .badge{position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:100px;
   background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:9.5px;font-weight:800;
   display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--ink);animation:badgePop .3s ease both}
@@ -300,21 +309,25 @@ a{color:var(--green2)}
 .commentRow input{flex:1;border:1px solid var(--line);border-radius:100px;padding:8px 14px;font-size:13px;background:#F4F6F5}
 .commentRow button{border:none;background:var(--ink);color:#fff;border-radius:100px;padding:8px 16px;font-size:12.5px;font-weight:700;cursor:pointer}
 .commentItem{font-size:12.5px;padding:8px 0;border-top:1px solid var(--line)}
-.commentItem b{color:var(--ink)}
+.commentItem b{color:var(--text)}
 .appGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .appGridIcon{display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;cursor:pointer;padding:14px 6px;border-radius:16px;transition:.15s}
 .appGridIcon:hover{background:#F4F6F5;transform:translateY(-2px)}
 .appGridGlyph{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:24px}
 .appGridLabel{font-size:11.5px;font-weight:700;color:var(--ink);text-align:center;line-height:1.25}
-.insightGrid{display:flex;flex-direction:column;gap:9px;margin-bottom:20px}
-.insightCard{display:flex;align-items:center;gap:12px;text-align:left;width:100%;padding:13px 15px;border-radius:16px;cursor:pointer;
-  border:1px solid rgba(255,255,255,.5);backdrop-filter:blur(6px);position:relative;overflow:hidden;transition:.15s;animation:fadeUp .4s ease both}
-.insightCard::before{content:"";position:absolute;inset:0;opacity:.08;background:linear-gradient(135deg,currentColor,transparent 60%)}
-.insightCard:hover{transform:translateX(3px);box-shadow:var(--shadow)}
-.insightCard.ok{background:rgba(132,204,22,.08);color:#4D7C0F}
-.insightCard.warnt{background:rgba(245,185,79,.1);color:#B8791E}
-.insightCard.dgr{background:rgba(239,68,68,.08);color:#B4472F}
-.insightIcon{font-size:20px;flex:0 0 auto;position:relative;z-index:1}
+.insightGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:11px;margin-bottom:22px}
+.insightCard{display:flex;align-items:center;gap:13px;text-align:left;width:100%;padding:14px 40px 14px 15px;border-radius:16px;cursor:pointer;
+  border:1px solid var(--line);border-left:3px solid currentColor;background:var(--card);position:relative;overflow:hidden;
+  box-shadow:var(--shadow);transition:transform .22s cubic-bezier(.34,1.4,.64,1),box-shadow .22s ease;animation:fadeUp .4s ease both}
+.insightCard::before{content:"";position:absolute;inset:0;opacity:.06;background:linear-gradient(135deg,currentColor,transparent 55%);pointer-events:none}
+.insightCard::after{content:"";position:absolute;right:16px;top:50%;width:8px;height:8px;border-right:2px solid currentColor;border-top:2px solid currentColor;transform:translateY(-50%) rotate(45deg);opacity:.45;transition:right .2s ease,opacity .2s ease}
+.insightCard:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+.insightCard:hover::after{right:13px;opacity:.85}
+.insightCard.ok{color:#4D7C0F}
+.insightCard.warnt{color:#B8791E}
+.insightCard.dgr{color:#B4472F}
+body.dark .insightCard.ok{color:#A3E635}body.dark .insightCard.warnt{color:#FBBF4E}body.dark .insightCard.dgr{color:#F87171}
+.insightIcon{font-size:19px;flex:0 0 auto;position:relative;z-index:1;width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,currentColor 16%,transparent)}
 .insightCard>div{position:relative;z-index:1;color:var(--text)}
 .delReasonBtn{display:block;width:100%;text-align:left;background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;transition:.12s}
 .delReasonBtn:hover{border-color:var(--leaf);background:#F4F8FF}
@@ -1986,7 +1999,7 @@ function chartLegend(segments){
   return `<div style="display:flex;flex-direction:column;gap:8px">${segments.filter(s=>s.value>0).map(s=>`
     <div style="display:flex;align-items:center;gap:8px;font-size:12.5px">
       <span style="width:10px;height:10px;border-radius:3px;background:${s.color};flex:0 0 auto"></span>
-      <span style="flex:1;color:var(--ink);font-weight:600">${esc(s.label)}</span>
+      <span style="flex:1;color:var(--text);font-weight:600">${esc(s.label)}</span>
       <span style="color:var(--muted)">${s.value} · ${Math.round(s.value/total*100)}%</span>
     </div>`).join('')}</div>`;
 }
@@ -2038,7 +2051,7 @@ async function openAnnounceModal(){
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <div style="font-weight:800;font-size:17px;color:var(--ink)">📣 Announcements</div>
+      <div style="font-weight:800;font-size:17px;color:var(--text)">📣 Announcements</div>
       <button id="closeAnnounceModal" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:4px">✕</button>
     </div>
     <div id="announceCardsWrap">${active.map(a=>renderAnnounceCard(a)).join('')}</div>
@@ -2051,7 +2064,7 @@ async function openAnnounceModal(){
 }
 function renderAnnounceCard(a){
   return `<div class="announceCard" id="announceCard_${a.id}">
-    <div style="font-weight:800;font-size:15px;color:var(--ink)">${esc(a.title)}</div>
+    <div style="font-weight:800;font-size:15px;color:var(--text)">${esc(a.title)}</div>
     <div class="mini" style="margin-top:2px">${esc(a.createdBy||'')} · ${esc(a.createdAt||'')}</div>
     ${a.body?`<div style="font-size:13.5px;margin-top:8px;line-height:1.5">${esc(a.body)}</div>`:''}
     ${a.image?`<img src="${a.image}"/>`:''}
@@ -2506,7 +2519,7 @@ function agentHome(){ const k=kpisOf(DB.leads);
   ${commissionPct>0?`<div class="rowcard" style="margin-bottom:18px;padding:16px;background:linear-gradient(120deg,#F4F8FF,#EEF6F1);border:1px solid rgba(59,130,246,.18)">
     <div style="display:flex;align-items:center;gap:12px"><span class="kpi-ic blue" style="margin-bottom:0">${kpiIc.coins||kpiIc.check}</span>
     <div><div style="font-weight:700;font-size:13.5px">Estimated commission</div><div class="mini">${commissionPct}% of ${ghs(k.coll)} collected all-time</div></div>
-    <div style="margin-left:auto;font-size:22px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--ink)">${ghs(estCommission)}</div></div>
+    <div style="margin-left:auto;font-size:22px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--text)">${ghs(estCommission)}</div></div>
   </div>`:''}
   <div class="kpis">${kpi('Active leads',k.leads,'','pipeline')}${kpi('Pipeline value',ghs(k.val),'gold','pipeline')}${kpi('Collected',ghs(k.coll),'','paid')}${kpi('Outstanding',ghs(k.out),'gold','owed')}${kpi('Site visits',k.sv,'','visits')}${kpi('Fully paid',wonAll.length,'','donepaying')}${kpi('Monthly collected',ghs(monthCollected),'gold','monthlyclosed')}</div>
   ${renderTargetCard(wonMonth.length,target,wonMonthVal)}
@@ -2747,7 +2760,7 @@ function renderPlotsGrid(){
       const selectedHere=selected && plotBlockOf(selected.plotNumber)===bl;
       return `<div class="rowcard" style="margin-bottom:10px;padding:14px 16px">
         <button class="blockrow" data-block="${bl}" style="width:100%;background:none;border:none;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px">
-          <span style="font-weight:800;font-size:15px;color:var(--ink);width:26px">${bl}</span>
+          <span style="font-weight:800;font-size:15px;color:var(--text);width:26px">${bl}</span>
           <div style="flex:1;height:10px;border-radius:100px;overflow:hidden;display:flex;background:#EEF1F6">
             ${avail?`<span style="width:${avail/tot*100}%;background:linear-gradient(90deg,#A3E635,#4D7C0F)"></span>`:''}
             ${rs?`<span style="width:${rs/tot*100}%;background:linear-gradient(90deg,#F5B94F,#B8791E)"></span>`:''}
