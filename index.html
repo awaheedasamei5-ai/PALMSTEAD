@@ -1451,6 +1451,34 @@ async function apiSaveConfig(patch){
     targets:CONFIG.targets,commission_pct:CONFIG.commissionPct,target_plots_per_month:CONFIG.targetPlotsPerMonth,note:CONFIG.note||''};
   const {error}=await sb.from('app_config').upsert(row); if(error) throw error;
 }
+async function apiSaveBirthday(agentKey,birthday){
+  if(DEMO_MODE){ const d=await demoLoad(); d.profileBirthdays=d.profileBirthdays||{}; if(birthday) d.profileBirthdays[agentKey]=birthday; else delete d.profileBirthdays[agentKey]; await demoSave(); return; }
+  const {error}=await sb.from('profiles').update({birthday}).eq('agent_key',agentKey); if(error) throw error;
+}
+// Runs from a Management session only (avoids two different agents' sessions both
+// posting/DMing the same birthday within seconds of each other). Only the month and
+// day of the stored birthday matter -- the year is never compared.
+async function checkBirthdaysToday(){
+  if(PROFILE.role!=='manager') return;
+  try{
+    const todayMD=today().slice(5,10);
+    const todayStr=today();
+    for(const p of (DB.profiles||[])){
+      if(!p.birthday || String(p.birthday).slice(5,10)!==todayMD) continue;
+      const marker=`Happy Birthday, ${p.name}!`;
+      const already=(DB.announcements||[]).some(a=>a.title===marker && (a.createdAt||'').slice(0,10)===todayStr);
+      if(already) continue;
+      const firstName=(p.name||'').split(' ')[0];
+      const body=`Wishing you a wonderful birthday, ${firstName}! Thank you for everything you bring to the PEP Landbank family — here's to a great year ahead.`;
+      const rec=await apiInsertAnnouncement(marker,body,p.avatar||null);
+      if(rec){ DB.announcements.unshift(rec); refreshAnnounceBubble(); }
+      if(p.agent_key && p.agent_key!==PROFILE.key){
+        try{ const msgRec=await apiSendMessage(p.agent_key,`Happy birthday, ${firstName}! Wishing you a fantastic day and an even better year ahead. Thank you for all your hard work — enjoy your celebration!`);
+          if(msgRec) DB.messages.push(msgRec); }catch(e){}
+      }
+    }
+  }catch(e){}
+}
 
 /* ---- deletes ---- */
 async function apiDeleteLead(id,agentKey){
@@ -1894,6 +1922,7 @@ async function enterApp(){
   startInactivityTimer();
   startMonthRolloverWatchdog();
   checkClockSanity();
+  checkBirthdaysToday();
   route(PROFILE.role==='manager'?'mgr':'home');
 }
 /* ---- time-awareness: month rollover watchdog + device clock sanity check ---- */
@@ -5564,6 +5593,13 @@ function mgrSettings(){
   <div class="formactions"><button class="btn primary" id="saveTargets">Save targets</button></div>
   </div>
 
+  <div class="sectitle"><h3>Birthdays</h3><span class="cnt">powers the automatic birthday post &amp; message</span></div>
+  <div class="formwrap">
+  ${agentStaff.map(s=>{ const p=(DB.profiles||[]).find(x=>x.agent_key===s.key); return fld(s.name,'<input id="bday_'+s.key+'" type="date" value="'+esc((p&&p.birthday)||'')+'"/>'); }).join('')}
+  <div class="mini" style="margin-top:-6px;margin-bottom:12px">Year doesn't matter — only the month and day are used. On the day, the system posts to the news banner and sends the person a message automatically.</div>
+  <div class="formactions"><button class="btn primary" id="saveBirthdays">Save birthdays</button></div>
+  </div>
+
   <div class="sectitle"><h3>System</h3><span class="cnt">live diagnostics</span></div>
   <div class="formwrap" style="padding:6px 15px">
     <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Connection</div><div class="mini">${DEMO_MODE?'Demo mode — not connected to Supabase':'Live — connected to Supabase'}</div></div></div><span class="tag ${DEMO_MODE?'warnt':'ok'}">${DEMO_MODE?'Demo':'Live'}</span></div>
@@ -5638,6 +5674,19 @@ function bindSettingsCtrls(){
     try{ await apiSaveConfig({targets,commissionPct}); toast('Targets updated'); }
     catch(e){ toast('Save failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save targets';
+  };
+  const saveBdayBtn=document.getElementById('saveBirthdays');
+  if(saveBdayBtn) saveBdayBtn.onclick=async()=>{
+    saveBdayBtn.disabled=true; saveBdayBtn.textContent='Saving…';
+    try{
+      for(const s of STAFF_LIST.filter(x=>x.role==='agent')){
+        const v=val('bday_'+s.key);
+        await apiSaveBirthday(s.key,v||null);
+        const p=(DB.profiles||[]).find(x=>x.agent_key===s.key); if(p) p.birthday=v||null;
+      }
+      toast('Birthdays saved');
+    }catch(e){ toast('Save failed: '+(e.message||e)); }
+    saveBdayBtn.disabled=false; saveBdayBtn.textContent='Save birthdays';
   };
   const sysRefreshBtn=document.getElementById('sysRefreshBtn');
   if(sysRefreshBtn) sysRefreshBtn.onclick=async()=>{
