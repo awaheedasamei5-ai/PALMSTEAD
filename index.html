@@ -2225,7 +2225,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback}[name]||agentHome)(arg);
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback,insights:viewSmartInsights}[name]||agentHome)(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && PROFILE){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -2332,7 +2332,8 @@ const FIC_GLYPHS={
  backup:{g:'gLime',p:'<ellipse cx="28" cy="20" rx="11" ry="4" fill="#fff"/><path d="M17 20v6c0 2.2 5 4 11 4s11-1.8 11-4v-6" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M17 26v6c0 2.2 5 4 11 4s11-1.8 11-4v-6" fill="none" stroke="#fff" stroke-width="2.6"/>'},
  alert:{g:'gGold',p:'<path d="M28 16l12 21a1.5 1.5 0 01-1.3 2.3H17.3A1.5 1.5 0 0116 37l12-21z" fill="#fff"/><path d="M28 25v6" stroke="#B45309" stroke-width="2.8" stroke-linecap="round"/><circle cx="28" cy="35" r="1.8" fill="#B45309"/>'},
  settings:{g:'gNavy',p:'<circle cx="28" cy="27" r="4" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M28 15v4M28 35v4M16 27h4M36 27h4M19.5 18.5l2.8 2.8M33.7 32.7l2.8 2.8M36.5 18.5l-2.8 2.8M22.3 32.7l-2.8 2.8" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>'},
- enquiry:{g:'gBlue',p:'<path d="M16 21h24a3 3 0 013 3v10a3 3 0 01-3 3H27l-7 5.5V37h-4a3 3 0 01-3-3V24a3 3 0 013-3z" fill="#fff"/><path d="M25 27a3 3 0 116 0c0 2-3 2-3 4M28 35h.01" stroke="#1D4ED8" stroke-width="2.4" stroke-linecap="round"/>'}
+ enquiry:{g:'gBlue',p:'<path d="M16 21h24a3 3 0 013 3v10a3 3 0 01-3 3H27l-7 5.5V37h-4a3 3 0 01-3-3V24a3 3 0 013-3z" fill="#fff"/><path d="M25 27a3 3 0 116 0c0 2-3 2-3 4M28 35h.01" stroke="#1D4ED8" stroke-width="2.4" stroke-linecap="round"/>'},
+ addlead:{g:'gLime',p:'<circle cx="28" cy="27" r="12" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M28 21v12M22 27h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>'}
 };
 function fic(name,size){size=size||44;var G=FIC_GLYPHS[name];if(!G)return '';return '<svg class="fic" width="'+size+'" height="'+size+'" viewBox="0 0 56 56" style="vertical-align:middle;flex:0 0 auto">'+ficChip(G.g)+G.p+'</svg>';}
 const KPI_STYLE={
@@ -2394,6 +2395,41 @@ function chartLegend(segments){
 function task(r,n,d,icon,cls=''){return `<button class="task c-${cls}" data-r="${r}"><span class="ic">${icon}</span><span class="tn">${n}</span><span class="td">${d}</span><svg class="arrow" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;}
 function taskWide(r,n,d,icon,cls){return `<button class="task wide c-${cls}" data-r="${r}"><span class="ic">${icon}</span><span><span class="tn">${n}</span><br><span class="td">${d}</span></span><svg class="arrow" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;}
 function bindTasks(){ V.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>route(b.dataset.r)); }
+function hubTile(hub,n,d,icon,cls=''){return `<button class="task c-${cls}" data-hub="${hub}"><span class="ic">${icon}</span><span class="tn">${n}</span><span class="td">${d}</span><svg class="arrow" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;}
+function bindHubTiles(){ V.querySelectorAll('[data-hub]').forEach(b=>b.onclick=()=>openAgentHub(b.dataset.hub)); }
+const AGENT_HUBS={
+  salesdesk:{title:'Sales Desk',items:[
+    {r:'addlead',fic:'addlead',label:'New lead'},
+    {r:'update',fic:'analytics',label:'Update pipeline'},
+    {r:'myDataCheck',fic:'datacheck',label:'Data check'},
+    {r:'plots',fic:'map',label:'Plot availability'},
+    {r:'pipeline',fic:'document',label:'My pipeline'}
+  ]},
+  crm:{title:'CRM Tools',items:[
+    {r:'sitevisit',fic:'location',label:'Site visit'},
+    {r:'enquiry',fic:'enquiry',label:'Client enquiry'},
+    {r:'complaint',fic:'alert',label:'Client complaint'}
+  ]}
+};
+function openAgentHub(hubKey){
+  const hub=AGENT_HUBS[hubKey]; if(!hub) return;
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div style="font-weight:800;font-size:16px">${esc(hub.title)}</div><button id="closeAppGrid" style="background:var(--paper);border:1px solid var(--line);border-radius:50%;color:var(--muted);width:30px;height:30px;display:grid;place-items:center;cursor:pointer;padding:0">${ic.close}</button></div>
+    <div class="appGrid">${hub.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeAppGrid').onclick=()=>ov.remove();
+  ov.querySelectorAll('[data-hubroute]').forEach(b=>b.onclick=()=>{ ov.remove(); route(b.dataset.hubroute); });
+}
+function viewSmartInsights(){
+  const homeRoute=PROFILE.role==='manager'?'mgr':'home';
+  const scope=PROFILE.role==='manager'?allAgentLists().flatMap(a=>a.list):DB.leads;
+  V.innerHTML=`${back(homeRoute)}${renderSmartInsights(scope,DB.payments)}`;
+  bindSmartInsights();
+}
 function animateKpiCounts(container){
   (container||V).querySelectorAll('.kpi .v').forEach(el=>{
     const raw=el.textContent.trim();
@@ -2957,6 +2993,8 @@ function agentHome(){ const k=kpisOf(DB.leads);
   const pendingAlloc=canManagePlots()?(DB.allocations||[]).filter(a=>a.status==='Pending').length:0;
   const myIssueCount=runDataIntegrityCheck(DB.leads).length;
   const myCommission=computeMyPersonalCommission(thisMonth);
+  const mySmartInsights=computeSmartInsights(DB.leads,DB.payments);
+  const salesDeskSub=myIssueCount?(myIssueCount+' record'+(myIssueCount===1?'':'s')+' need review'):'Leads, pipeline & plots';
   V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Welcome back</div><h2>${esc(PROFILE.name.split(' ')[0])}'s desk</h2><p>Royal Palm Enclave · Trulander JSF Limited</p></div>
   <div style="display:flex;gap:8px;flex:0 0 auto">
   <button class="dashRefreshBtn" id="dutiesQuickBtn" title="Duties" style="position:relative">${ic.check2}${computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount?`<span class="badge" style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:100px;background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center">${computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount}</span>`:''}</button>
@@ -2965,7 +3003,6 @@ function agentHome(){ const k=kpisOf(DB.leads);
   ${renderBannerSlideshow()}
   ${renderAllocationBanners()}
   ${renderComplaintAssignBanners()}
-  ${renderSmartInsights(DB.leads,DB.payments)}
   <div class="rowcard" style="margin-bottom:18px;padding:16px;background:linear-gradient(120deg,#F4F8FF,#EEF6F1);border:1px solid rgba(59,130,246,.18)">
     <div style="display:flex;align-items:center;gap:12px"><span class="kpi-ic blue" style="margin-bottom:0">${kpiIc.coins||kpiIc.check}</span>
     <div><div style="font-weight:700;font-size:13.5px">My commission — ${monthLabel(thisMonth)}</div><div class="mini">Personal only · your pool share is confirmed by Management on the 15th</div></div>
@@ -2977,10 +3014,10 @@ function agentHome(){ const k=kpisOf(DB.leads);
   ${renderMonthlyPlanCard(DB.leads)}
   ${renderPipelineHealthCard(DB.leads)}
   <div class="sectitle"><h3>What do you want to do?</h3></div>
-  <div class="tasks">${task('addlead','New lead','Add to your pipeline',ic.lead,'lead')}${task('update','Update pipeline','Log payment · move stage',ic.update,'update')}${task('enquiry','Client enquiry','Log a new enquiry',ic.enquiry,'enq')}${task('complaint','Client complaint','Record &amp; assign',ic.complaint,'cmp')}${task('sitevisit','Site visit','Request for a client',ic.visit,'visit')}${task('plots','Plot availability','Check before you promise a plot',ic.grid,'grid')}${task('myDataCheck','Data check',myIssueCount?(myIssueCount+' to review'):'All clear',ic.complaint,myIssueCount?'cmp':'lead')}${task('duties','Duties',computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount+' open',ic.check2,'lead')}${task('feedback','Feedback',(DB.feedback||[]).length+' posted',ic.chat,'enq')}${canManagePlots()?task('allocations','Allocation requests',pendingAlloc+' pending',ic.lead,pendingAlloc?'update':'lead'):''}${taskWide('pipeline','View my full pipeline',k.leads+' leads on record',ic.grid,'grid')}</div>
+  <div class="tasks">${hubTile('salesdesk','Sales Desk',salesDeskSub,kpiIc.grid,myIssueCount?'cmp':'update')}${hubTile('crm','CRM Tools','Visits, enquiries & complaints',ic.phone,'enq')}${task('duties','Operations',computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount+' open',ic.check2,'grid')}${task('feedback','Feedback',(DB.feedback||[]).length+' posted',ic.chat,'cmp')}${task('insights','Smart Insights',mySmartInsights.length+(mySmartInsights.length===1?' insight':' insights'),ic.spark,'visit')}${canManagePlots()?task('allocations','Allocation requests',pendingAlloc+' pending',ic.lead,'lead'):''}</div>
   <div class="footer-note">${DEMO_MODE?'<span class="demoflag"><span class="d"></span>Demo data</span>':''} Signed in as ${esc(PROFILE.email)}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
-  bindTasks(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindSmartInsights(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow(); bindDutiesCard();
+  bindTasks(); bindHubTiles(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow(); bindDutiesCard();
   document.getElementById('dashRefreshBtn').onclick=async(e)=>{
     const btn=e.currentTarget; btn.classList.add('spinning'); btn.disabled=true;
     try{ await apiLoadAll(); toast('Up to date'); agentHome(); }
@@ -5198,6 +5235,7 @@ const MGR_APPS=[
   {key:'Commission',fic:'savings',label:'Commission'},
   {key:'Duties',fic:'clipboard',label:'Duties'},
   {key:'Feedback',fic:'chat',label:'Feedback'},
+  {key:'Insights',fic:'target',label:'Smart Insights'},
   {key:'Settings',fic:'settings',label:'Settings'},
   {key:'Activity',fic:'clipboard',label:'Activity'},
 ];
@@ -5213,7 +5251,7 @@ function openMgrAppGrid(){
   document.getElementById('closeAppGrid').onclick=()=>ov.remove();
   ov.querySelectorAll('[data-mgrapp]').forEach(b=>b.onclick=()=>{
     const key=b.dataset.mgrapp; ov.remove();
-    if(key==='Duties') route('duties'); else if(key==='Feedback') route('feedback'); else { mgrTab=key; managerView(); }
+    if(key==='Duties') route('duties'); else if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else { mgrTab=key; managerView(); }
   });
 }
 async function managerView(){
@@ -5227,7 +5265,7 @@ async function managerView(){
   document.getElementById('mgrRefresh').onclick=async()=>{ toast('Refreshing…'); try{ await apiLoadAll(); managerView(); toast('Up to date'); }catch(e){ toast('Refresh failed'); } };
   document.getElementById('mgrDutiesBtn').onclick=()=>route('duties');
   const body=document.getElementById('mbody');
-  if(mgrTab==='overview'){ body.innerHTML=mgrOverview(); bindTasks(); bindOverviewCtrls(); animateKpiCounts(body); bindSmartInsights(); bindExpectedRevenueCard(); bindPipelineHealthCard(); bindBannerSlideshow(); }
+  if(mgrTab==='overview'){ body.innerHTML=mgrOverview(); bindTasks(); bindOverviewCtrls(); animateKpiCounts(body); bindExpectedRevenueCard(); bindPipelineHealthCard(); bindBannerSlideshow(); }
   else if(mgrTab==='Data Check'){ const renderMgrDataCheck=()=>{ body.innerHTML=renderDataCheck(null); bindDataCheckCtrls(null,renderMgrDataCheck); }; renderMgrDataCheck(); }
   else if(mgrTab==='Leaderboard'){ body.innerHTML=mgrLeaderboard(); bindLeagueCtrls(); }
   else if(mgrTab==='Reports'){ body.innerHTML=mgrReports(); bindReportCtrls(); }
@@ -5344,8 +5382,13 @@ function mgrOverview(){ let tot={leads:0,val:0,coll:0,out:0,sv:0,hi:0};
   const srcSegments=Object.keys(srcCounts).map(s=>({label:s,value:srcCounts[s],color:SRC_COLORS[s]||'#94A3B8'}));
   const fullyPaid=allLeads.filter(l=>isFullyPaid(l));
 
+  const mySmartInsightsMgr=computeSmartInsights(allLeads,DB.payments);
   return `${renderBannerSlideshow()}
-  ${renderSmartInsights(allLeads,DB.payments)}
+  <button class="rowcard" id="mgrInsightsTeaser" style="margin-bottom:18px;padding:16px;width:100%;text-align:left;display:flex;align-items:center;gap:12px;cursor:pointer;border:1px solid rgba(52,211,153,.25);background:linear-gradient(120deg,#F4FBEA,#F4F8FF)">
+    <span class="kpi-ic green" style="margin-bottom:0">${ic.spark}</span>
+    <div style="flex:1"><div style="font-weight:700;font-size:13.5px">Smart Insights</div><div class="mini">${mySmartInsightsMgr.length} auto-generated ${mySmartInsightsMgr.length===1?'insight':'insights'} from live company data</div></div>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="color:var(--muted)"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
   ${renderExpectedRevenueCard()}
   ${renderPipelineHealthCard(allLeads)}
   <div class="kpis">${kpi('Total leads',tot.leads,'','pipeline')}${kpi('Pipeline value',ghs(tot.val),'gold','pipeline')}${kpi('Collected',ghs(tot.coll),'','paid')}${kpi('Outstanding',ghs(tot.out),'gold','owed')}${kpi('Fully paid',fullyPaid.length,'','donepaying')}${kpi('Open complaints',DB.complaints.filter(c=>c.status!=='Resolved').length)}${kpi('Escalated',escalated,escalated?'gold':'')}</div>
@@ -5360,6 +5403,7 @@ function mgrOverview(){ let tot={leads:0,val:0,coll:0,out:0,sv:0,hi:0};
 function bindOverviewCtrls(){
   V.querySelectorAll('[data-agentkey]').forEach(b=>b.onclick=()=>route('agentDetail',b.dataset.agentkey));
   V.querySelectorAll('[data-stage]').forEach(b=>b.onclick=()=>route('stageList',b.dataset.stage));
+  const insightsTeaser=document.getElementById('mgrInsightsTeaser'); if(insightsTeaser) insightsTeaser.onclick=()=>route('insights');
 }
 function viewStageList(stage){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
