@@ -1624,8 +1624,21 @@ async function apiLoadAllocations(){
     return (data||[]).map(r=>({id:r.id,leadId:r.lead_id,clientName:r.client_name,agentKey:r.agent_key,agentName:r.agent_name,
       percent:r.percent_paid,grandTotal:r.grand_total,amtPaid:r.amt_paid,status:r.status,plotNumber:r.plot_number,
       suggestedPlots:r.suggested_plots,note:r.note,allocatedBy:r.allocated_by,agentSeen:r.agent_seen,createdAt:(r.created_at||'').slice(0,16).replace('T',' '),
-      resolvedAt:r.resolved_at?(r.resolved_at||'').slice(0,16).replace('T',' '):null}));
+      resolvedAt:r.resolved_at?(r.resolved_at||'').slice(0,16).replace('T',' '):null,
+      flagReason:r.flag_reason,flaggedBy:r.flagged_by,flaggedAt:r.flagged_at?(r.flagged_at||'').slice(0,16).replace('T',' '):null}));
   }catch(e){ return []; }
+}
+async function apiFlagAllocation(id,reason){
+  if(DEMO_MODE){ const d=await demoLoad(); const a=(d.allocations||[]).find(x=>x.id===id);
+    if(a){ a.flagReason=reason; a.flaggedBy=PROFILE.name; a.flaggedAt=new Date().toISOString(); } await demoSave(); return; }
+  const {error}=await sb.from('allocation_requests').update({flag_reason:reason,flagged_by:PROFILE.name,flagged_at:new Date().toISOString()}).eq('id',id);
+  if(error) throw error;
+}
+async function apiResolveAllocationFlag(id){
+  if(DEMO_MODE){ const d=await demoLoad(); const a=(d.allocations||[]).find(x=>x.id===id);
+    if(a){ a.flagReason=null; a.flaggedBy=null; a.flaggedAt=null; } await demoSave(); return; }
+  const {error}=await sb.from('allocation_requests').update({flag_reason:null,flagged_by:null,flagged_at:null}).eq('id',id);
+  if(error) throw error;
 }
 async function apiInsertAllocationRequest(lead,percent){
   const row={leadId:lead.id,clientName:lead.name,agentKey:PROFILE.key,agentName:PROFILE.name,percent,
@@ -2926,7 +2939,7 @@ function agentHome(){ const k=kpisOf(DB.leads);
   ${renderMonthlyPlanCard(DB.leads)}
   ${renderPipelineHealthCard(DB.leads)}
   <div class="sectitle"><h3>What do you want to do?</h3></div>
-  <div class="tasks">${task('addlead','New lead','Add to your pipeline',ic.lead,'lead')}${task('update','Update pipeline','Log payment · move stage',ic.update,'update')}${task('enquiry','Client enquiry','Log a new enquiry',ic.enquiry,'enq')}${task('complaint','Client complaint','Record &amp; assign',ic.complaint,'cmp')}${task('sitevisit','Site visit','Request for a client',ic.visit,'visit')}${task('plots','Plot availability','Check before you promise a plot',ic.grid,'grid')}${task('myDataCheck','Data check',myIssueCount?(myIssueCount+' to review'):'All clear',ic.complaint,myIssueCount?'cmp':'lead')}${canManagePlots()?task('allocations','Allocation requests',pendingAlloc+' pending',ic.lead,pendingAlloc?'update':'lead'):''}${taskWide('pipeline','View my full pipeline',k.leads+' leads on record',ic.grid,'grid')}</div>
+  <div class="tasks">${task('addlead','New lead','Add to your pipeline',ic.lead,'lead')}${task('update','Update pipeline','Log payment · move stage',ic.update,'update')}${task('enquiry','Client enquiry','Log a new enquiry',ic.enquiry,'enq')}${task('complaint','Client complaint','Record &amp; assign',ic.complaint,'cmp')}${task('sitevisit','Site visit','Request for a client',ic.visit,'visit')}${task('plots','Plot availability','Check before you promise a plot',ic.grid,'grid')}${task('myDataCheck','Data check',myIssueCount?(myIssueCount+' to review'):'All clear',ic.complaint,myIssueCount?'cmp':'lead')}${task('duties','Duties',computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount+' open',ic.check2,'lead')}${canManagePlots()?task('allocations','Allocation requests',pendingAlloc+' pending',ic.lead,pendingAlloc?'update':'lead'):''}${taskWide('pipeline','View my full pipeline',k.leads+' leads on record',ic.grid,'grid')}</div>
   <div class="footer-note">${DEMO_MODE?'<span class="demoflag"><span class="d"></span>Demo data</span>':''} Signed in as ${esc(PROFILE.email)}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
   bindTasks(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindSmartInsights(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow(); bindDutiesCard();
@@ -3433,12 +3446,27 @@ function renderAllocationDetail(a){
   return `<div class="formwrap" style="margin-top:6px">
     <div class="sectitle" style="margin-top:0"><h3>${esc(a.clientName)}</h3><span class="cnt">${esc(a.agentName)} · ${a.percent}% paid</span></div>
     <div class="mini" style="margin-bottom:10px">Suggest up to 3 candidate plots. This builds an Authorization form for Management to sign off on physically — nothing is allocated yet.</div>
-    ${fld('Option 1 *','<input id="al_plot1" list="availPlotsList" placeholder="e.g. A12"/>')}
-    ${fld('Option 2','<input id="al_plot2" list="availPlotsList" placeholder="optional"/>')}
-    ${fld('Option 3','<input id="al_plot3" list="availPlotsList" placeholder="optional"/>')}
+    <button class="chip nm-link" data-custname="${esc(a.clientName)}" data-custcontact="" style="margin-bottom:12px;width:100%">Review full client record before suggesting →</button>
+    ${fld('Option 1 *','<input id="al_plot1" list="availPlotsList" placeholder="e.g. A12"/><div id="al_plot1_status" class="mini" style="margin-top:5px;font-weight:700"></div>')}
+    ${fld('Option 2','<input id="al_plot2" list="availPlotsList" placeholder="optional"/><div id="al_plot2_status" class="mini" style="margin-top:5px;font-weight:700"></div>')}
+    ${fld('Option 3','<input id="al_plot3" list="availPlotsList" placeholder="optional"/><div id="al_plot3_status" class="mini" style="margin-top:5px;font-weight:700"></div>')}
     ${dl}
     <div class="formactions"><button class="btn ghost" id="cancelAlloc">Cancel</button><button class="btn primary" id="suggestAlloc">Download Authorization PDF</button></div>
   </div>`;
+}
+function checkPlotFieldLive(inputId,statusId){
+  const input=document.getElementById(inputId); const status=document.getElementById(statusId);
+  if(!input||!status) return;
+  const check=()=>{
+    const pn=input.value.trim();
+    if(!pn){ status.textContent=''; return; }
+    const p=DB.plots.find(x=>x.plotNumber.toLowerCase()===pn.toLowerCase());
+    if(!p){ status.style.color='var(--muted)'; status.textContent='Not found in inventory — check the plot number'; }
+    else if(p.status==='Allocated'){ status.style.color='#B4472F'; status.textContent='✕ Already allocated'+(p.clientName?(' to '+p.clientName):''); }
+    else if(p.status==='Running Search'){ status.style.color='#B8791E'; status.textContent='⚠ Running search — confirm before offering this one'; }
+    else{ status.style.color='#16A34A'; status.textContent='✓ Available'; }
+  };
+  input.addEventListener('input',check); check();
 }
 function renderAllocationAwaiting(a){
   const plots=(a.suggestedPlots||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -4089,7 +4117,10 @@ function viewAllocations(){
   const rowOf=a=>`<div class="rowcard"><div class="top"><div><div class="nm nm-link" data-custname="${esc(a.clientName)}" data-custcontact="">${esc(a.clientName)}</div>
     <div class="meta">${esc(a.agentName)} · ${ghs(a.amtPaid)} of ${ghs(a.grandTotal)}</div></div>
     <div style="text-align:right"><span class="tag ${a.status==='Pending'?'warnt':a.status==='Awaiting Authorization'?'warnt':'ok'}">${a.percent}% paid</span></div></div>
-    ${a.status==='Pending'?`<div class="foot"><button class="chip" data-selectalloc="${a.id}">Suggest plots →</button></div>`
+    ${a.flagReason?`<div class="mini" style="margin-top:4px;padding-top:6px;border-top:1px solid var(--line);color:#B4472F;display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;display:inline-flex">${ic.alert}</span>${esc(a.flagReason)} — flagged by ${esc(a.flaggedBy||'')}</div>`:''}
+    ${a.status==='Pending'?(a.flagReason
+        ?(a.agentKey===PROFILE.key?`<div class="foot"><button class="chip" data-fixalloc="${a.id}" style="flex:1">I've fixed this — notify for re-review</button></div>`:`<div class="foot"><span class="tag ghost">Waiting on ${esc(a.agentName)} to fix and resubmit</span></div>`)
+        :`<div class="foot"><button class="chip" data-selectalloc="${a.id}">Suggest plots →</button>${canManagePlots()?`<button class="chip" data-flagalloc="${a.id}">Flag an issue</button>`:''}</div>`)
       :a.status==='Awaiting Authorization'?`<div class="foot"><span class="tag ghost">Awaiting sign-off · options: ${esc((a.suggestedPlots||'').split(',').join(', '))}</span><button class="chip" data-selectalloc="${a.id}">Confirm approved →</button></div>`
       :`<div class="foot"><span class="tag ghost">Plot ${esc(a.plotNumber||'—')} · by ${esc(a.allocatedBy||'')}</span><button class="chip" data-selectalloc="${a.id}">PDF / resend →</button></div>`}
     <div id="allocDetail_${a.id}"></div></div>`;
@@ -4113,6 +4144,7 @@ function bindAllocationCtrls(){
     if(a.status==='Allocated'){ wrap.innerHTML=renderAllocationDone(a); bindAllocationDoneCtrls(a); return; }
     if(a.status==='Awaiting Authorization'){ wrap.innerHTML=renderAllocationAwaiting(a); bindAllocationAwaitingCtrls(a,wrap); return; }
     wrap.innerHTML=renderAllocationDetail(a);
+    checkPlotFieldLive('al_plot1','al_plot1_status'); checkPlotFieldLive('al_plot2','al_plot2_status'); checkPlotFieldLive('al_plot3','al_plot3_status');
     document.getElementById('cancelAlloc').onclick=()=>{ selectedAllocId=null; wrap.innerHTML=''; };
     document.getElementById('suggestAlloc').onclick=async()=>{
       const plots=[val('al_plot1').trim(),val('al_plot2').trim(),val('al_plot3').trim()].filter(Boolean);
@@ -4134,6 +4166,48 @@ function bindAllocationCtrls(){
   V.querySelectorAll('[data-dlalloc]').forEach(b=>b.onclick=()=>{ const a=DB.allocations.find(x=>x.id===b.dataset.dlalloc); if(a) buildAllocationPDF(a); });
   V.querySelectorAll('[data-sendalloc]').forEach(b=>b.onclick=async()=>{ const a=DB.allocations.find(x=>x.id===b.dataset.sendalloc); if(a){ b.disabled=true; b.textContent='Sending…'; await sendAllocationToChat(a); b.disabled=false; b.textContent='✉ Sent ✓'; } });
   V.querySelectorAll('[data-allocmonth]').forEach(b=>b.onclick=()=>{ allocMonthFilter=b.dataset.allocmonth; PROFILE.role==='manager'?managerView():viewAllocations(); });
+  V.querySelectorAll('[data-flagalloc]').forEach(b=>b.onclick=()=>{ const a=DB.allocations.find(x=>x.id===b.dataset.flagalloc); if(a) openFlagAllocationModal(a); });
+  V.querySelectorAll('[data-fixalloc]').forEach(b=>b.onclick=async()=>{
+    const a=DB.allocations.find(x=>x.id===b.dataset.fixalloc); if(!a) return;
+    b.disabled=true; b.textContent='Notifying…';
+    try{
+      const flaggedByName=a.flaggedBy;
+      await apiResolveAllocationFlag(a.id);
+      Object.assign(a,{flagReason:null,flaggedBy:null,flaggedAt:null});
+      const notifyTo=['elias','emmanuel','manager'].filter(k=>k!==PROFILE.key);
+      for(const key of notifyTo){ try{ const rec=await apiSendMessage(key,`${PROFILE.name} fixed the flagged issue on ${a.clientName}'s allocation request — ready to suggest plots again.`); DB.messages.push(rec); }catch(e){} }
+      toast('Marked as fixed — '+(flaggedByName||'the team')+' notified');
+      PROFILE.role==='manager'?managerView():viewAllocations();
+    }catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; b.textContent="I've fixed this — notify for re-review"; }
+  });
+}
+function openFlagAllocationModal(a){
+  const reasons=['Payment amount looks wrong','Plot type or count mismatch','Client details incomplete','Other'];
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Flag an issue — ${esc(a.clientName)}</div>
+    <div class="mini" style="margin-bottom:14px">This sends ${esc(a.agentName)} a message explaining what needs fixing before you can suggest plots.</div>
+    ${fld('Reason',sel('flag_reason',reasons))}
+    ${fld('Details (optional)','<textarea id="flag_detail" placeholder="Anything specific to add"></textarea>')}
+    <div class="formactions"><button class="btn ghost" id="cancelFlagAlloc">Cancel</button><button class="btn primary" id="saveFlagAlloc">Send &amp; flag</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('cancelFlagAlloc').onclick=()=>ov.remove();
+  document.getElementById('saveFlagAlloc').onclick=async()=>{
+    const reason=val('flag_reason'); const detail=val('flag_detail').trim();
+    const fullReason=detail?(reason+' — '+detail):reason;
+    const btn=document.getElementById('saveFlagAlloc'); btn.disabled=true; btn.textContent='Sending…';
+    try{
+      await apiFlagAllocation(a.id,fullReason);
+      Object.assign(a,{flagReason:fullReason,flaggedBy:PROFILE.name,flaggedAt:today()+' '+nowTime()});
+      const rec=await apiSendMessage(a.agentKey,`Your allocation request for ${a.clientName} needs a fix before it can proceed: ${fullReason}. Please update their pipeline record, then come back and mark it fixed.`);
+      if(rec) DB.messages.push(rec);
+      toast('Flagged — '+a.agentName+' notified'); ov.remove();
+      PROFILE.role==='manager'?managerView():viewAllocations();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Send & flag'; }
+  };
 }
 function bindAllocationAwaitingCtrls(a,wrap){
   const redlBtn=document.getElementById('redlAuthAlloc');
@@ -5065,7 +5139,10 @@ async function managerView(){
     const res=(DB.allocations||[]).filter(a=>a.status==='Allocated').sort((x,y)=>(y.createdAt||'').localeCompare(x.createdAt||''));
     const rowOf=a=>`<div class="rowcard"><div class="top"><div><div class="nm nm-link" data-custname="${esc(a.clientName)}" data-custcontact="">${esc(a.clientName)}</div>
       <div class="meta">${esc(a.agentName)} · ${ghs(a.amtPaid)} of ${ghs(a.grandTotal)}</div></div><span class="tag ${a.status==='Allocated'?'ok':'warnt'}">${a.percent}% paid</span></div>
-      ${a.status==='Pending'?`<div class="foot"><button class="chip" data-selectalloc="${a.id}">Suggest plots →</button></div>`
+      ${a.flagReason?`<div class="mini" style="margin-top:4px;padding-top:6px;border-top:1px solid var(--line);color:#B4472F;display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;display:inline-flex">${ic.alert}</span>${esc(a.flagReason)} — flagged by ${esc(a.flaggedBy||'')}</div>`:''}
+      ${a.status==='Pending'?(a.flagReason
+          ?(a.agentKey===PROFILE.key?`<div class="foot"><button class="chip" data-fixalloc="${a.id}" style="flex:1">I've fixed this — notify for re-review</button></div>`:`<div class="foot"><span class="tag ghost">Waiting on ${esc(a.agentName)} to fix and resubmit</span></div>`)
+          :`<div class="foot"><button class="chip" data-selectalloc="${a.id}">Suggest plots →</button>${canManagePlots()?`<button class="chip" data-flagalloc="${a.id}">Flag an issue</button>`:''}</div>`)
         :a.status==='Awaiting Authorization'?`<div class="foot"><span class="tag ghost">Awaiting sign-off · options: ${esc((a.suggestedPlots||'').split(',').join(', '))}</span><button class="chip" data-selectalloc="${a.id}">Confirm approved →</button></div>`
         :`<div class="foot"><span class="tag ghost">Plot ${esc(a.plotNumber||'—')} · by ${esc(a.allocatedBy||'')}</span><button class="chip" data-selectalloc="${a.id}">PDF / resend →</button></div>`}
       <div id="allocDetail_${a.id}"></div></div>`;
