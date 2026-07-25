@@ -676,7 +676,7 @@ const favicon = document.querySelector('link[rel="icon"]'); if(favicon) favicon.
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
-let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[]};
+let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[]};
 
 function cfg(){ let u=SUPABASE_URL,k=SUPABASE_ANON_KEY;
   if(!u||!k){ try{const s=JSON.parse(localStorage.getItem('pep_cfg')||'null'); if(s){u=s.url;k=s.key;}}catch(e){} }
@@ -1359,6 +1359,7 @@ async function apiLoadAll(){
     DB.announcements=(d.announcements||[]).slice();
     DB.profiles=STAFF_LIST.filter(s=>s.role==='agent').map(s=>({name:s.name,role:'agent',agent_key:s.key,birthday:(d.profileBirthdays||{})[s.key]||null}));
     DB.agentMonthStats=await apiLoadAgentMonthStats();
+    DB.tasks=await apiLoadTasks();
     return;
   }
   const q=async t=>{const {data,error}=await sb.from(t).select('*').order('created_at',{ascending:false});if(error)throw error;return data||[];};
@@ -1389,13 +1390,14 @@ async function apiLoadAll(){
     q('leads'),q('enquiries'),q('complaints'),q('site_visits'),q('activity_log'),
     loadProfiles(),loadPayments(),loadPlots(),
     apiLoadAnnouncements(),apiLoadAllocations(),apiLoadMessages(),apiLoadTargetSelections(today().slice(0,7),PROFILE.role==='manager'),
-    apiLoadAgentMonthStats()
+    apiLoadAgentMonthStats(),apiLoadTasks()
   ]);
   const [le,en,cm,sv,ac]=results;
   DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key||PROFILE.role==='manager').map(mapLead);
   if(PROFILE.role!=='manager') DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key).map(mapLead);
   DB.enquiries=en.map(mapEnq);DB.complaints=cm.map(mapCmp);DB.sitevisits=sv.map(mapSV);DB.activity=ac.map(mapAct);
   DB.announcements=results[8]; DB.allocations=results[9]; DB.messages=results[10]; DB.targetSelections=results[11];
+  DB.tasks=results[13];
   DB.agentMonthStats=results[12];
 }
 async function apiInsertLead(l,c){
@@ -1569,6 +1571,32 @@ async function apiLoadAgentMonthStats(){
   try{ const {data,error}=await sb.from('agent_month_stats').select('*'); if(error) throw error;
     return (data||[]).map(r=>({agentKey:r.agent_key,month:r.month,totalCollected:num(r.total_collected),newSalesCount:num(r.new_sales_count)})); }
   catch(e){ return []; }
+}
+/* ---- duties / tasks (operations, non-sales work: assigned by management OR self/peer-assigned) ---- */
+const mapTask=r=>({id:r.id,title:r.title,description:r.description,category:r.category,priority:r.priority,
+  assignedTo:r.assigned_to,assignedToName:r.assigned_to_name,assignedBy:r.assigned_by,assignedByName:r.assigned_by_name,
+  status:r.status,dueDate:r.due_date,createdAt:r.created_at,completedAt:r.completed_at});
+async function apiLoadTasks(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.tasks||[]).slice(); }
+  try{ const {data,error}=await sb.from('tasks').select('*').order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapTask); }
+  catch(e){ return []; }
+}
+async function apiInsertTask(t){
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),...t,status:'Open',createdAt:new Date().toISOString(),completedAt:null};
+    d.tasks=d.tasks||[]; d.tasks.unshift(rec); await demoSave(); return rec; }
+  const row={title:t.title,description:t.description||null,category:t.category,priority:t.priority,
+    assigned_to:t.assignedTo,assigned_to_name:t.assignedToName,assigned_by:PROFILE.key,assigned_by_name:PROFILE.name,due_date:t.dueDate||null};
+  const {data,error}=await sb.from('tasks').insert(row).select().single(); if(error) throw error; return mapTask(data);
+}
+async function apiUpdateTaskStatus(id,status){
+  const completedAt=status==='Done'?new Date().toISOString():null;
+  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id); if(t){ t.status=status; t.completedAt=completedAt; } await demoSave(); return; }
+  const {error}=await sb.from('tasks').update({status,completed_at:completedAt}).eq('id',id); if(error) throw error;
+}
+async function apiDeleteTask(id){
+  if(DEMO_MODE){ const d=await demoLoad(); d.tasks=(d.tasks||[]).filter(x=>x.id!==id); await demoSave(); return; }
+  const {error}=await sb.from('tasks').delete().eq('id',id); if(error) throw error;
 }
 async function apiInsertAnnouncement(title,body,image){
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),title,body,image:image||null,active:true,createdBy:PROFILE.name,createdAt:today()+' '+nowTime()};
@@ -2032,7 +2060,7 @@ document.getElementById('logoutBtn').onclick=async()=>{
   if(CHAT_CHANNEL){ try{ sb.removeChannel(CHAT_CHANNEL); }catch(e){} CHAT_CHANNEL=null; }
   const bub=document.getElementById('announceBubble'); if(bub) bub.remove();
   const ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
-  USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[]};
+  USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[]};
   document.getElementById('app').classList.add('hidden'); document.getElementById('login').classList.remove('hidden');
   document.getElementById('ddLabel').textContent='Choose your name';
   document.querySelectorAll('#ddPanel .dd-item').forEach(el=>el.classList.remove('sel'));
@@ -2149,7 +2177,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule}[name]||agentHome)(arg);
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties}[name]||agentHome)(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && PROFILE){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -2892,6 +2920,7 @@ function agentHome(){ const k=kpisOf(DB.leads);
     <div><div style="font-weight:700;font-size:13.5px">My commission — ${monthLabel(thisMonth)}</div><div class="mini">Personal only · your pool share is confirmed by Management on the 15th</div></div>
     <div style="margin-left:auto;font-size:22px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--text)">${ghs(myCommission)}</div></div>
   </div>
+  ${renderDutiesCard()}
   <div class="kpis">${kpi('Active leads',k.leads,'','pipeline')}${kpi('Pipeline value',ghs(k.val),'gold','pipeline')}${kpi('Collected',ghs(k.coll),'','paid')}${kpi('Outstanding',ghs(k.out),'gold','owed')}${kpi('Site visits',k.sv,'','visits')}${kpi('Fully paid',wonAll.length,'','donepaying')}${kpi('Monthly collected',ghs(monthCollected),'gold','monthlyclosed')}</div>
   ${renderTargetCard(wonMonth.length,target,wonMonthVal)}
   ${renderMonthlyPlanCard(DB.leads)}
@@ -2900,7 +2929,7 @@ function agentHome(){ const k=kpisOf(DB.leads);
   <div class="tasks">${task('addlead','New lead','Add to your pipeline',ic.lead,'lead')}${task('update','Update pipeline','Log payment · move stage',ic.update,'update')}${task('enquiry','Client enquiry','Log a new enquiry',ic.enquiry,'enq')}${task('complaint','Client complaint','Record &amp; assign',ic.complaint,'cmp')}${task('sitevisit','Site visit','Request for a client',ic.visit,'visit')}${task('plots','Plot availability','Check before you promise a plot',ic.grid,'grid')}${task('myDataCheck','Data check',myIssueCount?(myIssueCount+' to review'):'All clear',ic.complaint,myIssueCount?'cmp':'lead')}${canManagePlots()?task('allocations','Allocation requests',pendingAlloc+' pending',ic.lead,pendingAlloc?'update':'lead'):''}${taskWide('pipeline','View my full pipeline',k.leads+' leads on record',ic.grid,'grid')}</div>
   <div class="footer-note">${DEMO_MODE?'<span class="demoflag"><span class="d"></span>Demo data</span>':''} Signed in as ${esc(PROFILE.email)}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
-  bindTasks(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindSmartInsights(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow();
+  bindTasks(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindSmartInsights(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow(); bindDutiesCard();
   document.getElementById('dashRefreshBtn').onclick=async(e)=>{
     const btn=e.currentTarget; btn.classList.add('spinning'); btn.disabled=true;
     try{ await apiLoadAll(); toast('Up to date'); agentHome(); }
@@ -3958,6 +3987,100 @@ function renderAllocMonthFilterChips(resolved){
   const chips=['All',...months].map(m=>`<button class="chip ${allocMonthFilter===m?'on':''}" data-allocmonth="${m}">${m==='All'?'All time':monthLabel(m)}</button>`).join('');
   return `<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px">${chips}</div>`;
 }
+/* ================= DUTIES (operations tasks -- assigned by management, or self/peer-assigned) ================= */
+const TASK_CATEGORIES=['Sales','Digital Operations','Site Operations','Executive/Admin','Facilities','General'];
+const TASK_STATUSES=['Open','In Progress','Done','Cancelled'];
+let dutiesFilter='mine';
+function daysBetween(a,b){ const d1=new Date(a),d2=new Date(b); if(isNaN(d1)||isNaN(d2)) return null; return Math.max(0,Math.round((d2-d1)/86400000)); }
+function taskDaysOpen(t){ const end=t.completedAt||new Date().toISOString(); return daysBetween(t.createdAt,end); }
+function computeDutiesSummary(tasks){
+  const open=tasks.filter(t=>t.status==='Open'||t.status==='In Progress');
+  const overdue=open.filter(t=>t.dueDate&&t.dueDate<today());
+  const done=tasks.filter(t=>t.status==='Done'&&t.completedAt);
+  const avgDays=done.length?Math.round(done.reduce((s,t)=>s+(daysBetween(t.createdAt,t.completedAt)||0),0)/done.length):null;
+  return {openCount:open.length,overdueCount:overdue.length,doneCount:done.length,avgDaysToClose:avgDays};
+}
+function renderDutiesCard(){
+  const mine=(DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key);
+  const s=computeDutiesSummary(mine);
+  if(!(DB.tasks||[]).length) return '';
+  return `<div class="rowcard" style="margin-bottom:18px;padding:16px;cursor:pointer" data-goduties="1">
+    <div style="display:flex;align-items:center;gap:12px">
+      <span class="kpi-ic blue" style="margin-bottom:0">${kpiIc.check}</span>
+      <div style="flex:1"><div style="font-weight:700;font-size:13.5px">My duties</div><div class="mini">${s.openCount} open${s.overdueCount?(' · '+s.overdueCount+' overdue'):''}</div></div>
+      <div style="text-align:right"><div class="mini">tap to view →</div></div>
+    </div>
+  </div>`;
+}
+function bindDutiesCard(){ const el=document.querySelector('[data-goduties]'); if(el) el.onclick=()=>route('duties'); }
+function viewDuties(){
+  const homeRoute=PROFILE.role==='manager'?'mgr':'home';
+  const all=DB.tasks||[];
+  const mine=all.filter(t=>t.assignedTo===PROFILE.key);
+  const byMe=all.filter(t=>t.assignedBy===PROFILE.key&&t.assignedTo!==PROFILE.key);
+  const list=dutiesFilter==='mine'?mine:dutiesFilter==='byme'?byMe:all;
+  const teamSummary=computeDutiesSummary(all);
+  const statusMeta={Open:{cls:'ghost'},'In Progress':{cls:'warnt'},Done:{cls:'ok'},Cancelled:{cls:'dgr'}};
+  const rowOf=t=>{
+    const overdue=t.dueDate&&t.dueDate<today()&&t.status!=='Done'&&t.status!=='Cancelled';
+    const daysOpen=taskDaysOpen(t);
+    return `<div class="rowcard">
+    <div class="top"><div><div class="nm">${esc(t.title)}</div><div class="meta">${esc(t.category)} · ${esc(t.assignedToName||t.assignedTo)}${t.assignedBy!==t.assignedTo?(' · assigned by '+esc(t.assignedByName||t.assignedBy)):' · self-assigned'}</div></div>
+    <span class="tag ${statusMeta[t.status].cls}">${esc(t.status)}</span></div>
+    ${t.description?`<div class="mini" style="margin-top:4px">${esc(t.description)}</div>`:''}
+    <div class="foot"><span class="tag ${t.priority==='Critical'||t.priority==='High'?'warnt':'ghost'}">${esc(t.priority)} priority</span>${t.dueDate?`<span class="tag ${overdue?'dgr':'ghost'}">${overdue?'Overdue: ':'Due '}${esc(t.dueDate)}</span>`:''}<span class="tag ghost">${daysOpen} day${daysOpen===1?'':'s'} open</span></div>
+    ${t.status!=='Done'&&t.status!=='Cancelled'?`<div class="foot">
+      <button class="chip" data-taskstatus="${t.id}|In Progress">Mark in progress</button>
+      <button class="chip" data-taskstatus="${t.id}|Done">Mark done</button>
+      ${t.assignedBy===PROFILE.key||PROFILE.role==='manager'?`<button class="trashbtn" data-taskdel="${t.id}">${ic.trash}</button>`:''}
+    </div>`:''}
+  </div>`;};
+  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Duties</div><h2>${teamSummary.openCount} open across the team</h2><p>${teamSummary.overdueCount} overdue${teamSummary.avgDaysToClose!=null?(' · avg '+teamSummary.avgDaysToClose+' day'+(teamSummary.avgDaysToClose===1?'':'s')+' to close'):''}</p></div></div>
+  <div style="display:flex;gap:8px;margin-bottom:14px"><button class="chip ${dutiesFilter==='mine'?'on':''}" data-dutiesfilter="mine">Mine (${mine.length})</button><button class="chip ${dutiesFilter==='byme'?'on':''}" data-dutiesfilter="byme">Assigned by me (${byMe.length})</button><button class="chip ${dutiesFilter==='all'?'on':''}" data-dutiesfilter="all">Team (${all.length})</button></div>
+  <div style="margin-bottom:16px"><button class="btn primary" id="newTaskBtn" style="width:100%">+ New duty</button></div>
+  <div class="list">${list.length?list.map(rowOf).join(''):emptyState(ic.grid,'Nothing here','Assign a duty to yourself or someone else to get started.')}</div>`;
+  bindDutiesCtrls();
+}
+function bindDutiesCtrls(){
+  document.querySelectorAll('[data-dutiesfilter]').forEach(b=>b.onclick=()=>{ dutiesFilter=b.dataset.dutiesfilter; viewDuties(); });
+  document.getElementById('newTaskBtn').onclick=openNewTaskModal;
+  document.querySelectorAll('[data-taskstatus]').forEach(b=>b.onclick=async()=>{
+    const [id,status]=b.dataset.taskstatus.split('|');
+    try{ await apiUpdateTaskStatus(id,status); const t=DB.tasks.find(x=>x.id===id); if(t){ t.status=status; if(status==='Done') t.completedAt=new Date().toISOString(); } toast('Duty updated'); viewDuties(); }
+    catch(e){ toast('Failed: '+(e.message||e)); }
+  });
+  document.querySelectorAll('[data-taskdel]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Delete this duty?')) return;
+    try{ await apiDeleteTask(b.dataset.taskdel); DB.tasks=DB.tasks.filter(x=>x.id!==b.dataset.taskdel); toast('Duty deleted'); viewDuties(); }
+    catch(e){ toast('Failed: '+(e.message||e)); }
+  });
+}
+function openNewTaskModal(){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">New duty</div><button id="closeNewTask" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Title *','<input id="nt_title" placeholder="e.g. Post this week on Instagram"/>')}
+    ${fld('Description','<textarea id="nt_desc" placeholder="Details, context…"></textarea>')}
+    <div class="grid2">${fld('Category',sel('nt_cat',TASK_CATEGORIES))}${fld('Priority',sel('nt_pri',['Low','Medium','High','Critical'],'Medium'))}</div>
+    <div class="grid2">${fld('Assign to',`<select id="nt_to">${STAFF_LIST.map(s=>`<option value="${s.key}" ${s.key===PROFILE.key?'selected':''}>${esc(s.name)}${s.key===PROFILE.key?' (myself)':''}</option>`).join('')}</select>`)}${fld('Due date','<input id="nt_due" type="date"/>')}</div>
+    <div class="formactions"><button class="btn primary" id="saveNewTask" style="width:100%">Assign duty</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeNewTask').onclick=()=>ov.remove();
+  document.getElementById('saveNewTask').onclick=async()=>{
+    const title=val('nt_title').trim(); if(!title){ toast('Add a title'); return; }
+    const btn=document.getElementById('saveNewTask'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const toKey=val('nt_to'); const toStaff=STAFF_LIST.find(s=>s.key===toKey);
+      const rec=await apiInsertTask({title,description:val('nt_desc').trim(),category:val('nt_cat'),priority:val('nt_pri'),
+        assignedTo:toKey,assignedToName:toStaff?toStaff.name:toKey,dueDate:val('nt_due')||null});
+      rec.assignedByName=PROFILE.name; rec.assignedBy=PROFILE.key;
+      DB.tasks.unshift(rec); toast('Duty assigned'); ov.remove(); viewDuties();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Assign duty'; }
+  };
+}
 function viewAllocations(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
   const pending=(DB.allocations||[]).filter(a=>a.status==='Pending').sort((x,y)=>y.percent-x.percent);
@@ -4903,6 +5026,7 @@ const MGR_APPS=[
   {key:'Site visits',fic:'location',label:'Site Visits'},
   {key:'News',fic:'announce',label:'News & Announcements'},
   {key:'Commission',fic:'savings',label:'Commission'},
+  {key:'Duties',fic:'clipboard',label:'Duties'},
   {key:'Settings',fic:'settings',label:'Settings'},
   {key:'Activity',fic:'clipboard',label:'Activity'},
 ];
@@ -4916,7 +5040,10 @@ function openMgrAppGrid(){
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeAppGrid').onclick=()=>ov.remove();
-  ov.querySelectorAll('[data-mgrapp]').forEach(b=>b.onclick=()=>{ mgrTab=b.dataset.mgrapp; ov.remove(); managerView(); });
+  ov.querySelectorAll('[data-mgrapp]').forEach(b=>b.onclick=()=>{
+    const key=b.dataset.mgrapp; ov.remove();
+    if(key==='Duties') route('duties'); else { mgrTab=key; managerView(); }
+  });
 }
 async function managerView(){
   V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Management</div><h2>Team overview</h2><p>Live across all agents</p></div>
