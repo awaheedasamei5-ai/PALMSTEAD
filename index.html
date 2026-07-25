@@ -2761,6 +2761,15 @@ function viewPipeline(){
     </div>
     <input type="file" id="xlImportFile" accept=".xlsx" class="hidden"/>
   </div>
+  <div class="rowcard" style="margin-bottom:16px;padding:14px 16px">
+    <div style="font-weight:700;font-size:14px;margin-bottom:2px">Backup &amp; restore</div>
+    <div class="mini" style="margin-bottom:12px">Before deleting a client — or your whole pipeline — back them up here, full payment history included. Restoring always creates new records; it never overwrites anything live.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="chip" id="pipeBackupBtn" style="flex:1;min-width:160px">Back up clients</button>
+      <button class="chip" id="pipeRestoreBtn" style="flex:1;min-width:160px">Restore from backup</button>
+    </div>
+    <input type="file" id="pipeRestoreFile" accept=".json" class="hidden"/>
+  </div>
   <div class="searchbar"><input id="pq" placeholder="Search name or contact…" value="${esc(pf.q)}"/>
   <select id="ps"><option value="">All stages</option>${STAGES.map(s=>`<option value="${s}" ${s===pf.stage?'selected':''}>${STAGE_LABELS[s]}</option>`).join('')}</select></div>
   <div style="margin-bottom:14px"><button class="chip ${pf.paidOnly?'on':''}" id="paidOnlyBtn">✓ Fully paid only${pf.paidOnly?' ✕':''}</button></div>
@@ -2772,6 +2781,9 @@ function viewPipeline(){
   document.getElementById('xlMyPipelineBtn').onclick=downloadAgentPipelineExcel;
   document.getElementById('xlImportBtn').onclick=()=>document.getElementById('xlImportFile').click();
   document.getElementById('xlImportFile').onchange=e=>{ if(e.target.files[0]) importPipelineExcel(e.target.files[0]); e.target.value=''; };
+  document.getElementById('pipeBackupBtn').onclick=openPipelineBackupModal;
+  document.getElementById('pipeRestoreBtn').onclick=()=>document.getElementById('pipeRestoreFile').click();
+  document.getElementById('pipeRestoreFile').onchange=e=>{ if(e.target.files[0]) openPipelineRestoreModal(e.target.files[0]); e.target.value=''; };
   paintPipe();
 }
 function paintPipe(){ const wrap=document.getElementById('plist'); const q=pf.q.toLowerCase();
@@ -2783,6 +2795,118 @@ function paintPipe(){ const wrap=document.getElementById('plist'); const q=pf.q.
       <div class="foot">${paidFull?'<span class="tag ok">✓ Paid in full</span>':''}<span class="tag stage-${esc(l.stage||'')}">${esc(l.stage||'—')}</span><span class="tag pri-${esc(l.priority||'Low')}">${esc(l.priority||'Low')} priority</span>${l.siteVisit==='Yes'?'<span class="tag ok">Site visited</span>':''}${l.paymentPlan?`<span class="tag ghost">${esc(l.paymentPlan)}</span>`:''}${(l.tags||'').split(',').map(t=>t.trim()).filter(Boolean).map(t=>`<span class="tag tagchip">🏷 ${esc(t)}</span>`).join('')}</div>
       ${l.nextAction?`<div class="note"><b>Next:</b> ${esc(l.nextAction)}</div>`:''}
       <div class="foot"><button class="chip" onclick="route('updateOne','${l.id}')">Update this lead →</button></div></div>`; }).join('');
+}
+
+/* ================= PIPELINE BACKUP & RESTORE ================= */
+function buildPipelineBackup(clientIds){
+  const clients=DB.leads.filter(l=>clientIds.includes(l.id)).map(l=>{
+    const payments=(DB.payments||[]).filter(p=>p.leadId===l.id).map(p=>({amount:num(p.amount),date:p.date}));
+    return {lead:{name:l.name,contact:l.contact,date:l.date,stage:l.stage,plotType:l.plotType,noPlots:l.noPlots,unitPrice:l.unitPrice,
+      discount:l.discount,paymentPlan:l.paymentPlan,siteVisit:l.siteVisit,priority:l.priority,nextAction:l.nextAction,
+      notes:l.notes,tags:l.tags,amtPaid:l.amtPaid},payments};
+  });
+  return {type:'pep-pipeline-backup',version:1,exportedAt:new Date().toISOString(),exportedBy:PROFILE.name,agentKey:PROFILE.key,clients};
+}
+function downloadPipelineBackup(clientIds){
+  const backup=buildPipelineBackup(clientIds);
+  const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  const scope=clientIds.length===DB.leads.length?'AllClients':(clientIds.length===1?(DB.leads.find(l=>l.id===clientIds[0])||{name:'Client'}).name.replace(/\s+/g,'_'):clientIds.length+'Clients');
+  a.href=url; a.download='PEP_Pipeline_Backup_'+scope+'_'+today()+'.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function openPipelineBackupModal(){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:800;font-size:16px">Back up clients</div><button id="closeBackupModal" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:14px">Pick who to back up — downloads a file with their full details and payment history. Safe to keep before deleting anything.</div>
+    <button class="chip" id="backupSelectAll" style="margin-bottom:10px;width:100%">Select all (${DB.leads.length})</button>
+    <div style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:2px">
+      ${DB.leads.length?DB.leads.map(l=>`<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line);cursor:pointer">
+        <input type="checkbox" data-backupclient="${l.id}"/>
+        <span style="flex:1"><b>${esc(l.name)}</b><br><span class="mini">${esc(l.contact||'')} · ${ghs(num(l.amtPaid))} paid</span></span>
+      </label>`).join(''):'<div class="empty">No clients in your pipeline yet.</div>'}
+    </div>
+    <div class="formactions"><button class="btn primary" id="doBackup" style="width:100%">Download backup</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeBackupModal').onclick=()=>ov.remove();
+  const selAllBtn=document.getElementById('backupSelectAll');
+  if(selAllBtn) selAllBtn.onclick=()=>{
+    const boxes=[...document.querySelectorAll('[data-backupclient]')]; const allChecked=boxes.length&&boxes.every(b=>b.checked);
+    boxes.forEach(b=>b.checked=!allChecked);
+  };
+  document.getElementById('doBackup').onclick=()=>{
+    const ids=[...document.querySelectorAll('[data-backupclient]:checked')].map(b=>b.dataset.backupclient);
+    if(!ids.length){ toast('Select at least one client'); return; }
+    downloadPipelineBackup(ids);
+    toast('Backup downloaded · '+ids.length+' client'+(ids.length===1?'':'s'));
+    ov.remove();
+  };
+}
+function openPipelineRestoreModal(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    let data;
+    try{ data=JSON.parse(reader.result); }catch(e){ toast('That file is not valid JSON'); return; }
+    if(!data||data.type!=='pep-pipeline-backup'||!Array.isArray(data.clients)){ toast('That file is not a PEP pipeline backup'); return; }
+    if(!data.clients.length){ toast('That backup file has no clients in it'); return; }
+    renderRestorePicker(data);
+  };
+  reader.onerror=()=>toast('Could not read that file');
+  reader.readAsText(file);
+}
+function renderRestorePicker(data){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:800;font-size:16px">Restore from backup</div><button id="closeRestoreModal" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:14px">Backed up ${esc((data.exportedAt||'').slice(0,10))} by ${esc(data.exportedBy||'')}. Restoring creates brand-new records — it never overwrites or merges with an existing client, even if the name matches.</div>
+    <button class="chip" id="restoreSelectAll" style="margin-bottom:10px;width:100%">Select all (${data.clients.length})</button>
+    <div style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:2px">
+      ${data.clients.map((c,i)=>{
+        const nm=(c.lead&&c.lead.name)||'(unnamed)';
+        const existing=DB.leads.some(l=>l.name.trim().toLowerCase()===nm.trim().toLowerCase());
+        return `<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line);cursor:pointer">
+        <input type="checkbox" data-restoreclient="${i}" checked/>
+        <span style="flex:1"><b>${esc(nm)}</b>${existing?' <span class="tag warnt" style="margin-left:4px">already exists — creates a 2nd record</span>':''}<br><span class="mini">${esc((c.lead&&c.lead.contact)||'')} · ${ghs(num(c.lead&&c.lead.amtPaid))} paid · ${(c.payments||[]).length} itemized payment${(c.payments||[]).length===1?'':'s'}</span></span>
+      </label>`;}).join('')}
+    </div>
+    <div class="formactions"><button class="btn primary" id="doRestore" style="width:100%">Restore selected</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeRestoreModal').onclick=()=>ov.remove();
+  document.getElementById('restoreSelectAll').onclick=()=>{
+    const boxes=[...document.querySelectorAll('[data-restoreclient]')]; const allChecked=boxes.length&&boxes.every(b=>b.checked);
+    boxes.forEach(b=>b.checked=!allChecked);
+  };
+  document.getElementById('doRestore').onclick=async()=>{
+    const idxs=[...document.querySelectorAll('[data-restoreclient]:checked')].map(b=>+b.dataset.restoreclient);
+    if(!idxs.length){ toast('Select at least one client'); return; }
+    if(!confirm('Restore '+idxs.length+' client(s) as new pipeline records? This adds them fresh — it does not undo anything automatically.')) return;
+    const btn=document.getElementById('doRestore'); btn.disabled=true;
+    let done=0;
+    try{
+      for(const i of idxs){
+        btn.textContent='Restoring… ('+done+'/'+idxs.length+')';
+        const c=data.clients[i]; const leadData={...c.lead};
+        const computed=computeLead(leadData);
+        const newLead=await apiInsertLead(leadData,computed);
+        if(leadData.tags){ try{ await apiUpdateLead(newLead.id,{tags:leadData.tags}); newLead.tags=leadData.tags; }catch(e){} }
+        DB.leads.unshift(newLead);
+        for(const p of (c.payments||[])){
+          const prec=await apiInsertPayment(newLead.id,newLead.name,num(p.amount),p.date);
+          if(prec) DB.payments.unshift(prec);
+        }
+        await checkAllocationTrigger(newLead);
+        await checkTargetExceeded();
+        done++;
+      }
+      toast('Restored '+done+' client'+(done===1?'':'s')); ov.remove(); route('pipeline');
+    }catch(e){ toast('Restore stopped after '+done+' — '+(e.message||e)); btn.disabled=false; btn.textContent='Restore selected'; }
+  };
 }
 
 /* ================= AGENT DETAIL (management: one agent's full client breakdown) ================= */
