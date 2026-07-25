@@ -13,7 +13,7 @@
 <link rel="icon" href="./favicon-32.png"/>
 <title>Palmstead — PEP Landbank</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="preconnect" href="https://lrahgcnftetnyxunaljs.supabase.co">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js" defer></script>
@@ -64,7 +64,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 button{font-family:inherit;cursor:pointer}
 input,select,textarea{font-family:inherit;font-size:16px}
 .mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
-h1,h2,h3{font-family:Fraunces,Georgia,serif;font-weight:600;letter-spacing:-.01em;margin:0}
+h1,h2,h3{font-family:Inter,system-ui,sans-serif;font-weight:800;letter-spacing:-.01em;margin:0}
 a{color:var(--green2)}
 .hidden{display:none!important}
 ::selection{background:var(--gold2);color:#1a1a1a}
@@ -98,8 +98,8 @@ a{color:var(--green2)}
 .brand .mark{display:flex;justify-content:center;align-items:center;margin-bottom:16px}
 .brand .glyph{width:76px;height:76px;border-radius:22px;overflow:hidden;box-shadow:0 10px 26px rgba(11,30,61,.4),0 0 0 1px rgba(255,255,255,.08) inset;animation:floaty 5s ease-in-out infinite}
 .brand .glyph img{width:100%;height:100%;display:block}
-.brand .wm{font-family:Fraunces,serif;font-weight:700;font-size:19px;letter-spacing:.16em;color:#fff}
-.brand h1{font-size:32px;line-height:1.06;color:#fff}
+.brand .wm{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;letter-spacing:.16em;color:#fff}
+.brand h1{font-family:'Space Grotesk',sans-serif;font-size:30px;line-height:1.06;letter-spacing:.03em;text-transform:uppercase;color:#fff}
 .brand .sub{color:#A9BEDD;font-size:13.5px;margin-top:11px;letter-spacing:.02em}
 .card-auth{position:relative;width:100%;max-width:404px;background:rgba(255,255,255,.055);
   border:1px solid rgba(255,255,255,.14);border-radius:22px;padding:22px;backdrop-filter:blur(10px);
@@ -171,7 +171,7 @@ a{color:var(--green2)}
 @keyframes sheenSlide{0%{background-position:130% 0}100%{background-position:-30% 0}}
 .topbar .glyph{width:34px;height:34px;border-radius:10px;overflow:hidden;flex:0 0 auto;box-shadow:0 4px 12px rgba(0,0,0,.3),0 0 0 1px rgba(190,242,100,.25)}
 .topbar .glyph img{width:100%;height:100%;display:block}
-.topbar .tt{font-family:Fraunces,serif;font-weight:700;font-size:14.5px;letter-spacing:.09em;line-height:1}
+.topbar .tt{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14.5px;letter-spacing:.09em;line-height:1}
 .topbar .ts{font-size:10.5px;color:#9DB2CC;letter-spacing:.05em;margin-top:3px;display:flex;align-items:center;gap:6px}
 .demodot{width:6px;height:6px;border-radius:50%;background:var(--gold2);animation:ringPulse 1.8s infinite}
 .topbar .spacer{flex:1}
@@ -411,7 +411,7 @@ body.dark .insightCard.ok{color:#A3E635}body.dark .insightCard.warnt{color:#FBBF
 .task.c-cmp .ic{background:linear-gradient(150deg,#E0836A,#B4472F)}
 .task.c-visit .ic{background:linear-gradient(150deg,#4FBFA6,#1E7A6E)}
 .task.c-grid .ic{background:linear-gradient(150deg,#8C7BC7,#5D4E9E)}
-.task .tn{font-weight:700;font-size:15px;color:var(--ink);font-family:Fraunces,serif}
+.task .tn{font-weight:700;font-size:15px;color:var(--ink);font-family:Inter,sans-serif}
 .task .td{font-size:12px;color:var(--muted);margin-top:-4px}
 .task.wide{grid-column:1/-1;flex-direction:row;align-items:center;min-height:0}
 .task.wide .ic{flex:0 0 auto}
@@ -507,7 +507,7 @@ body.dark .insightCard.ok{color:#A3E635}body.dark .insightCard.warnt{color:#FBBF
 .empty{text-align:center;color:var(--muted);padding:42px 18px;background:var(--card);border:1.5px dashed var(--line);border-radius:18px;animation:fadeUp .3s ease both}
 .empty .bigicon{width:56px;height:56px;border-radius:18px;margin:0 auto 14px;display:grid;place-items:center;
   background:linear-gradient(135deg,#EEF1F6,#F4F6F5);color:var(--muted);box-shadow:inset 0 0 0 1px var(--line);animation:floaty 4.5s ease-in-out infinite}
-.empty .big{font-family:Fraunces,serif;font-size:17.5px;color:var(--text);margin-bottom:4px}
+.empty .big{font-family:Inter,sans-serif;font-weight:800;font-size:17.5px;color:var(--text);margin-bottom:4px}
 body.dark .empty .bigicon{background:linear-gradient(135deg,#182541,#132038)}
 
 .tabs{display:flex;gap:7px;overflow-x:auto;padding-bottom:6px;margin-bottom:15px;-webkit-overflow-scrolling:touch}
@@ -567,7 +567,7 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 .bootscreen .ring{position:absolute;inset:0;border-radius:22px;border:2px solid rgba(132,204,22,.5);animation:ringPulse 1.7s ease-out infinite}
 .bootscreen .glyph{width:64px;height:64px;border-radius:20px;overflow:hidden;animation:floaty 1.8s ease-in-out infinite,lockupFlash 1s .5s ease both;box-shadow:0 14px 34px rgba(0,0,0,.45);position:relative;z-index:1}
 .bootscreen .glyph img{width:100%;height:100%;display:block}
-.bootscreen .boot-word{display:flex;gap:2px;font-family:Fraunces,serif;font-weight:700;font-size:21px;color:#fff}
+.bootscreen .boot-word{display:flex;gap:2px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;color:#fff}
 .bootscreen .boot-word span{display:inline-block;opacity:0;animation:letterIn .5s cubic-bezier(.2,.8,.3,1.2) forwards}
 .bootscreen .boot-word span:nth-child(1){animation-delay:.28s}
 .bootscreen .boot-word span:nth-child(2){animation-delay:.32s}
