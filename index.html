@@ -143,6 +143,15 @@ a{color:var(--green2)}
   padding:10px 12px;font-size:12px;color:#E4F5B0;line-height:1.55;display:flex;gap:9px;align-items:flex-start}
 .demo-banner svg{flex:0 0 auto;margin-top:1px}
 .linkbtn{background:none;border:none;color:#9DB2CC;text-decoration:underline;font-size:12px;margin-top:14px;width:100%;text-align:center}
+.sysBanner{position:fixed;left:12px;right:12px;bottom:14px;z-index:60;display:flex;align-items:center;gap:10px;
+  padding:12px 14px;border-radius:14px;font-size:12.5px;line-height:1.5;box-shadow:0 10px 30px rgba(0,0,0,.3);
+  animation:fadeUp .3s ease both;max-width:520px;margin:0 auto}
+.sysBanner svg{width:18px;height:18px;flex:0 0 auto}
+.sysBanner span{flex:1;display:flex;align-items:flex-start;gap:9px}
+.sysBanner button{flex:0 0 auto;border:none;border-radius:100px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;background:rgba(255,255,255,.18);color:#fff}
+.sysBanner button:hover{background:rgba(255,255,255,.3)}
+.sysBanner.info{background:#173D7A;color:#fff}
+.sysBanner.danger{background:#B4472F;color:#fff}
 .cfg{max-width:404px;width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:22px;animation:fadeUp .3s ease both}
 .cfg input{width:100%;padding:12px;border-radius:11px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.95);color:#16211C;margin-bottom:11px;outline:none}
 .cfg .note{font-size:11.5px;color:#9DB2CC;line-height:1.6;margin:2px 2px 14px}
@@ -1787,7 +1796,44 @@ async function enterApp(){
   refreshChatNavBadge();
   ensureChatSubscribed();
   startInactivityTimer();
+  startMonthRolloverWatchdog();
+  checkClockSanity();
   route(PROFILE.role==='manager'?'mgr':'home');
+}
+/* ---- time-awareness: month rollover watchdog + device clock sanity check ---- */
+function showSystemBanner(id,html,tone){
+  if(document.getElementById(id)) return;
+  const b=document.createElement('div'); b.id=id; b.className='sysBanner '+(tone||'warn');
+  b.innerHTML=html;
+  document.body.appendChild(b);
+  return b;
+}
+let APP_BOOT_MONTH=null;
+function startMonthRolloverWatchdog(){
+  APP_BOOT_MONTH=today().slice(0,7);
+  const check=()=>{
+    if(!PROFILE) return;
+    if(today().slice(0,7)!==APP_BOOT_MONTH){
+      const b=showSystemBanner('monthRolloverBanner',
+        `<span>${ic.calendar}A new month has started — figures on screen may be from ${monthLabel(APP_BOOT_MONTH)}. Refresh to update.</span><button id="monthRolloverRefresh">Refresh now</button>`,'info');
+      if(b) document.getElementById('monthRolloverRefresh').onclick=()=>location.reload();
+    }
+  };
+  setInterval(check,5*60*1000);
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') check(); });
+}
+async function checkClockSanity(){
+  if(DEMO_MODE || !SUPABASE_URL) return;
+  try{
+    const res=await fetch(SUPABASE_URL+'/rest/v1/',{method:'HEAD'});
+    const serverDateHeader=res.headers.get('date'); if(!serverDateHeader) return;
+    const diffMin=Math.abs(new Date(serverDateHeader).getTime()-Date.now())/60000;
+    if(diffMin>15){
+      showSystemBanner('clockWarnBanner',
+        `<span>${ic.alert}Your device's clock looks off by about ${diffMin<90?Math.round(diffMin)+' min':Math.round(diffMin/60)+' hr'} — this can misdate payments and monthly figures. Please correct your device's date &amp; time.</span><button id="clockWarnDismiss">Dismiss</button>`,'danger');
+      const el=document.getElementById('clockWarnDismiss'); if(el) el.onclick=()=>document.getElementById('clockWarnBanner').remove();
+    }
+  }catch(e){}
 }
 let INACTIVITY_TIMER=null;
 const INACTIVITY_LIMIT_MS=20*60*1000; // 20 minutes — real client money on screen, so we don't leave a session open indefinitely
@@ -2271,7 +2317,7 @@ function buildBannerSlides(){
   if(aom) slides.push({grad:'linear-gradient(120deg,#0B1E3D,#1D4ED8 65%,#3B82F6)',
     html:`<div style="display:flex;align-items:center;gap:14px;position:relative;z-index:1">
       <div class="leaderAvatar" style="width:52px;height:52px;font-size:20px">${aom.avatar?`<img src="${aom.avatar}"/>`:esc(aom.name[0])}</div>
-      <div><div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.8;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;display:inline-flex">${ic.star}</span>Agent of the Month</div>
+      <div><div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.8;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;display:inline-flex">${ic.star}</span>Agent of the Month · ${monthLabel(today().slice(0,7))}</div>
       <div style="font-size:17px;font-weight:800">${esc(aom.name)}</div>
       <div style="font-size:12px;opacity:.85">${ghs(aom.collected)} collected this month</div></div>
     </div>`});
@@ -2361,7 +2407,7 @@ function renderExpectedRevenueCard(){
   const monthlyTotal=getMonthlyPlanClients(scope).reduce((s,l)=>s+l.__sched.expectedThisMonth,0);
   const grandTotal=newClientTotal+monthlyTotal;
   return `<div class="rowcard" style="margin-bottom:18px;padding:18px;cursor:pointer;background:linear-gradient(120deg,#0B1E3D,#173D7A);color:#fff" data-goexpected="1">
-    <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.8;font-weight:700;margin-bottom:6px">Total expected this month</div>
+    <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.8;font-weight:700;margin-bottom:6px">Total expected · ${monthLabel(today().slice(0,7))}</div>
     <div style="font-size:26px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-bottom:10px">${ghs(grandTotal)}</div>
     <div style="display:flex;gap:16px;font-size:12.5px;opacity:.9"><div>New clients: <b>${ghs(newClientTotal)}</b></div><div>Monthly-plan: <b>${ghs(monthlyTotal)}</b></div></div>
     <div style="margin-top:8px;font-size:11.5px;opacity:.75">tap for breakdown by agent →</div>
@@ -2389,7 +2435,7 @@ function viewExpectedRevenue(){
     return {name:a.name,key:a.key,total:list.reduce((s,l)=>s+l.__sched.expectedThisMonth,0),clients:list};
   }).filter(a=>a.total>0).sort((x,y)=>y.total-x.total);
 
-  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Expected revenue</div><h2>${ghs(grandTotal)}</h2><p>Combined — new clients closing + monthly-plan installments, this month</p></div></div>
+  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Expected revenue · ${monthLabel(today().slice(0,7))}</div><h2>${ghs(grandTotal)}</h2><p>Combined — new clients closing + monthly-plan installments, this month</p></div></div>
   <div class="kpis" style="grid-template-columns:repeat(2,1fr)">${kpi('From new clients',ghs(newClientTotal),'gold')}${kpi('From monthly-plan clients',ghs(monthlyTotal))}</div>
 
   <div class="sectitle" style="margin-top:0"><h3>New clients — by agent</h3><span class="cnt">tap an agent to expand</span></div>
@@ -2440,10 +2486,10 @@ function renderTargetCard(closedCount,targetVal,closedVal){
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">
     <div style="display:flex;align-items:center;gap:11px">
       <span class="kpi-ic ${exceeded?'lime':'blue'}" style="margin-bottom:0">${exceeded?kpiIc.trophy:kpiIc.coins}</span>
-      <div><div style="font-weight:700;color:var(--text);font-size:14.5px">This month's target</div>
+      <div><div style="font-weight:700;color:var(--text);font-size:14.5px">Target · ${monthLabel(today().slice(0,7))}</div>
       <div style="font-size:12px;color:var(--muted);margin-top:1px">${closedCount} of ${quota} plots closed${targetVal?(' · '+ghs(closedVal)+' of '+ghs(targetVal)):''}</div></div>
     </div>
-    <span class="tag ${exceeded?'ok':'ghost'}" style="font-size:13px;padding:6px 12px;flex:0 0 auto">${mainPct}%${exceeded?' 🏆':''}</span>
+    <span class="tag ${exceeded?'ok':'ghost'}" style="font-size:13px;padding:6px 12px;flex:0 0 auto;display:inline-flex;align-items:center;gap:5px">${mainPct}%${exceeded?`<span style="width:12px;height:12px;display:inline-flex">${ic.trophy}</span>`:''}</span>
   </div>
   <div style="height:11px;background:#EEF1F6;border-radius:100px;overflow:hidden;position:relative">
     <div style="height:100%;width:${mainPct}%;background:linear-gradient(90deg,var(--leaf),var(--green));border-radius:100px;transition:width .8s cubic-bezier(.22,1,.36,1)"></div>
