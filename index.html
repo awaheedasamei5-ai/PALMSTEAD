@@ -782,6 +782,39 @@ function computeMonthlySchedule(lead,paymentsForLead){
   const nextDue=new Date(startDate.getFullYear(),startDate.getMonth()+monthsElapsed,startDate.getDate());
   return {monthlyInstallment,planMonths,monthsElapsed,monthsRemaining,expectedThisMonth,arrears,nextDueDate:nextDue.toISOString().slice(0,10)};
 }
+function ymAdd(year,month0,n){ const d=new Date(year,month0+n,1); return {y:d.getFullYear(),m:d.getMonth()}; }
+function ymKey(y,m0){ return y+'-'+String(m0+1).padStart(2,'0'); }
+function ymLastDay(y,m0){ return new Date(y,m0+1,0).getDate(); }
+// A month-by-month ledger for an installment plan: one slot per month from the client's
+// first payment through the end of the plan, each with what was expected vs what's
+// actually logged for that calendar month, and whether it's the agent's own record-keeping
+// that's incomplete (a lump total that doesn't match the sum of itemized payments below).
+function buildInstallmentSchedule(lead,paymentsForLead){
+  const planMonths=PLAN_MONTHS[lead.paymentPlan]; if(!planMonths) return null;
+  const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand; if(!grand) return null;
+  const monthlyInstallment=Math.round(grand/planMonths);
+  const anchor=scheduleAnchorDate(lead,paymentsForLead);
+  const startDate=new Date(anchor);
+  const cumulativeThrough=n=>Math.min(grand,monthlyInstallment*Math.max(0,n));
+  const thisMonthKey=today().slice(0,7);
+  const slots=[];
+  for(let i=1;i<=planMonths;i++){
+    const {y,m}=ymAdd(startDate.getFullYear(),startDate.getMonth(),i-1);
+    const slotKey=ymKey(y,m);
+    const expected=Math.round(cumulativeThrough(i)-cumulativeThrough(i-1));
+    const paid=Math.round((paymentsForLead||[]).filter(p=>(p.date||'').slice(0,7)===slotKey).reduce((s,p)=>s+num(p.amount),0));
+    let status;
+    if(slotKey>thisMonthKey) status='future';
+    else if(paid<=0) status=(slotKey===thisMonthKey?'due':'missed');
+    else if(paid<expected-1) status='partial';
+    else if(paid>expected+1) status='over';
+    else status='paid';
+    slots.push({monthNumber:i,y,m,slotKey,label:monthLabel(slotKey),expected,paid,status,lastDay:ymLastDay(y,m)});
+  }
+  const itemizedTotal=Math.round((paymentsForLead||[]).reduce((s,p)=>s+num(p.amount),0));
+  const unassigned=Math.max(0,Math.round(num(lead.amtPaid)-itemizedTotal));
+  return {slots,monthlyInstallment,planMonths,anchor,unassigned,grand};
+}
 function INTEREST(){ return {'Full Payment':0,'3 Months':num(CONFIG.int3),'6 Months':num(CONFIG.int6),
   '9 Months':num(CONFIG.int9),'12 Months':num(CONFIG.int12)}; }
 function isFullyPaid(l){ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; return g>0 && num(l.amtPaid)>=g; }
@@ -1381,11 +1414,12 @@ async function apiInsertActivity(row){
     detail:row.detail||'',note:row.note||'',method:row.method||'',follow:row.follow||null};
   const {data,error}=await sb.from('activity_log').insert(dbrow).select().single(); if(error) throw error; return mapAct(data);
 }
-async function apiInsertPayment(leadId,clientName,amount){
+async function apiInsertPayment(leadId,clientName,amount,paymentDate){
+  const pdate=paymentDate||today();
   if(DEMO_MODE){ const d=await demoLoad(); d.payments=d.payments||[];
-    const rec={id:uid(),leadId,agentKey:PROFILE.key,clientName,amount,date:today(),createdAt:today()+' '+nowTime()};
+    const rec={id:uid(),leadId,agentKey:PROFILE.key,clientName,amount,date:pdate,createdAt:today()+' '+nowTime()};
     d.payments.unshift(rec); await demoSave(); return rec; }
-  const dbrow={lead_id:leadId,agent_key:PROFILE.agent_key,client_name:clientName,amount,payment_date:today()};
+  const dbrow={lead_id:leadId,agent_key:PROFILE.agent_key,client_name:clientName,amount,payment_date:pdate};
   try{ const {data,error}=await sb.from('payments').insert(dbrow).select().single(); if(error) throw error;
     return {id:data.id,leadId:data.lead_id,agentKey:data.agent_key,clientName:data.client_name,amount:data.amount,date:data.payment_date,createdAt:(data.created_at||'').slice(0,16).replace('T',' ')};
   }catch(e){ return null; } // payments table not set up yet — pipeline still saves fine, just no ledger entry
@@ -1998,7 +2032,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue}[name]||agentHome)(arg);
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule}[name]||agentHome)(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && PROFILE){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -3835,6 +3869,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
       <div class="mini" style="margin-top:2px">Due ${mySched.nextDueDate}</div></div>
     </div>
     ${mySched.arrears>0?`<div class="mini" style="margin-top:9px;padding-top:9px;border-top:1px solid var(--line);color:#B8791E;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:13px;height:13px;display:inline-flex">${ic.alert}</span>${ghs(mySched.arrears)} still overdue from earlier months</div>`:''}
+    <button class="chip" id="viewSchedBtn" style="margin-top:10px;width:100%">View full month-by-month schedule →</button>
   </div>`:''}
   ${fld('Total paid to date (GHS)','<input id="u_paidtotal" type="number" value="'+num(l.amtPaid)+'"/>','edit directly to correct a mistake, or use the field below to just add a new payment')}
   ${fld(mySched?"This month's payment (GHS)":'...or add a new payment now (GHS)','<input id="u_pay" type="number" placeholder="0"/>'+(mySched?'<div id="u_payCompare" class="mini" style="margin-top:7px;font-weight:700"></div>':''),mySched?('expected '+ghs(mySched.monthlyInstallment)+' this month — enter what they actually paid'):'adds on top of the total above')}
@@ -3877,6 +3912,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   document.getElementById('saveUpd').onclick=()=>saveUpdate(id);
   document.getElementById('delLead').onclick=()=>deleteLeadConfirm(id,l.name);
   document.getElementById('dlUpdPdf').onclick=()=>downloadClientRecordPDF(l.name,l.contact,l,myPayments,g,num(l.amtPaid),bal);
+  const viewSchedBtn=document.getElementById('viewSchedBtn'); if(viewSchedBtn) viewSchedBtn.onclick=()=>route('paymentSchedule',id);
 }
 function deleteLeadConfirm(id,name){
   const l=DB.leads.find(x=>x.id===id);
@@ -3958,6 +3994,76 @@ async function saveUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l)return
     await addActivity(name,'Pipeline update',parts.join(' · '),val('u_disc').trim(),val('u_method'),val('u_follow'));
     toast(pay>0?('Payment recorded · '+ghs(pay)):'Pipeline updated'); route('pipeline');
   }catch(e){ toast('Update failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save update'; }
+}
+
+/* ================= MONTH-BY-MONTH PAYMENT SCHEDULE ================= */
+const SCHED_STATUS_META={
+  future:{label:'Not due yet',cls:'ghost'},
+  due:{label:'Due this month',cls:'warnt'},
+  missed:{label:'Missed',cls:'dgr'},
+  partial:{label:'Partly paid',cls:'warnt'},
+  over:{label:'Paid extra',cls:'ok'},
+  paid:{label:'Paid in full',cls:'ok'}
+};
+function viewPaymentSchedule(id){
+  const l=DB.leads.find(x=>x.id===id); if(!l){ route('home'); return; }
+  const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const sched=buildInstallmentSchedule(l,myPayments);
+  if(!sched){ toast('This client is not on an installment plan'); route('updateOne',id); return; }
+  const rows=sched.slots.map(s=>{
+    const meta=SCHED_STATUS_META[s.status];
+    return `<div class="rowcard" style="margin-bottom:10px;padding:14px 16px">
+      <div class="top"><div><div class="nm" style="font-size:14px">Month ${s.monthNumber} · ${s.label}</div>
+      <div class="meta">Expected ${ghs(s.expected)}${s.paid>0?(' · logged '+ghs(s.paid)):''}</div></div>
+      <span class="tag ${meta.cls}">${meta.label}</span></div>
+      <div class="foot"><button class="chip" data-logmonth="${s.slotKey}" data-expected="${s.expected}">Log payment for this month →</button></div>
+    </div>`;
+  }).join('');
+  V.innerHTML=`${back('updateOne')}<div class="pagehead"><div><div class="eyebrow">Payment schedule</div><h2>${esc(l.name)}</h2><p>${l.paymentPlan} · anchored from ${sched.anchor} (their first payment)</p></div></div>
+  ${sched.unassigned>0?`<div class="rowcard" style="margin-bottom:16px;padding:14px 16px;border-left:4px solid #B8791E">
+    <div style="font-weight:700;font-size:13.5px;color:#B8791E;display:flex;align-items:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.alert}</span>${ghs(sched.unassigned)} paid but not assigned to a month</div>
+    <div class="mini" style="margin-top:3px">This client's total-paid figure is higher than what's itemized by month below (common for older records entered as a lump sum). Log it against the month(s) it actually covers so the schedule below is accurate.</div>
+  </div>`:''}
+  <div id="schedRows">${rows}</div>`;
+  document.querySelectorAll('[data-logmonth]').forEach(b=>b.onclick=()=>openLogMonthPayment(l,b.dataset.logmonth,num(b.dataset.expected)));
+}
+function openLogMonthPayment(lead,slotKey,expected){
+  const [y,m]=slotKey.split('-').map(Number);
+  const lastDay=new Date(y,m,0).getDate();
+  const isCurrentMonth=slotKey===today().slice(0,7);
+  const defaultDate=isCurrentMonth?today():slotKey+'-01';
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Log payment · ${monthLabel(slotKey)}</div><button id="closeLogMonth" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:14px">Expected this month: ${ghs(expected)}. Enter what the client actually paid — can be less, equal to, or more.</div>
+    ${fld('Amount paid (GHS)','<input id="lm_amount" type="number" placeholder="'+expected+'"/>')}
+    ${fld('Date within '+monthLabel(slotKey),'<input id="lm_date" type="date" value="'+defaultDate+'" min="'+slotKey+'-01" max="'+slotKey+'-'+String(lastDay).padStart(2,'0')+'"/>')}
+    <div class="formactions"><button class="btn primary" id="saveLogMonth" style="width:100%">Save payment</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeLogMonth').onclick=()=>ov.remove();
+  document.getElementById('saveLogMonth').onclick=async()=>{
+    const amount=num(val('lm_amount')); const date=val('lm_date');
+    if(amount<=0){ toast('Enter an amount'); return; }
+    if(!date||date.slice(0,7)!==slotKey){ toast('Date must fall within '+monthLabel(slotKey)); return; }
+    const btn=document.getElementById('saveLogMonth'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const prec=await apiInsertPayment(lead.id,lead.name,amount,date);
+      if(prec) DB.payments.unshift(prec);
+      const newPaid=num(lead.amtPaid)+amount;
+      const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand;
+      const bal=Math.max(grand-newPaid,0);
+      await apiUpdateLead(lead.id,{amtPaid:newPaid,balance:bal});
+      Object.assign(lead,{amtPaid:newPaid,balance:bal});
+      await checkAllocationTrigger(lead);
+      await checkTargetExceeded();
+      await addActivity(lead.name,'Payment logged',ghs(amount)+' for '+monthLabel(slotKey),'','',null);
+      toast('Payment logged · '+ghs(amount)); ov.remove();
+      route('paymentSchedule',lead.id);
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save payment'; }
+  };
 }
 
 /* ================= ENQUIRY ================= */
