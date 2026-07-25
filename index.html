@@ -1521,6 +1521,17 @@ async function apiResolveAllocation(id,plotNumber,note){
   const {error}=await sb.from('allocation_requests').update({status:'Allocated',plot_number:plotNumber,note,allocated_by:PROFILE.name,resolved_at:nowIso}).eq('id',id);
   if(error) throw error;
 }
+async function apiRevertAllocation(id){
+  if(DEMO_MODE){ const d=await demoLoad(); const a=(d.allocations||[]).find(x=>x.id===id);
+    if(a){ a.status='Pending'; a.plotNumber=''; a.note=''; a.allocatedBy=''; } await demoSave(); return; }
+  const {error}=await sb.from('allocation_requests').update({status:'Pending',plot_number:null,note:null,allocated_by:null,resolved_at:null}).eq('id',id);
+  if(error) throw error;
+}
+async function apiDeleteAllocation(id){
+  if(DEMO_MODE){ const d=await demoLoad(); d.allocations=(d.allocations||[]).filter(x=>x.id!==id); await demoSave(); return; }
+  const {error}=await sb.from('allocation_requests').delete().eq('id',id);
+  if(error) throw error;
+}
 async function apiMarkAllocationSeen(id){
   if(DEMO_MODE){ const d=await demoLoad(); const a=(d.allocations||[]).find(x=>x.id===id); if(a) a.agentSeen=true; await demoSave(); return; }
   try{ await sb.from('allocation_requests').update({agent_seen:true}).eq('id',id); }catch(e){}
@@ -3133,7 +3144,20 @@ function renderAllocationDone(a){
       <button class="chip" data-dlalloc="${esc(a.id)}" style="flex:1;min-width:140px">⬇ Download PDF</button>
       <button class="chip" data-sendalloc="${esc(a.id)}" style="flex:1;min-width:140px">✉ Send to ${esc((a.agentName||'').split(' ')[0])}'s chat</button>
     </div>
+    ${canManagePlots()?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
+      <button class="chip" data-undoalloc="${esc(a.id)}" style="flex:1;min-width:140px">Mistake? Undo — send back to Pending</button>
+      <button class="trashbtn" data-delalloc="${esc(a.id)}" title="Delete this allocation entirely">${ic.trash}</button>
+    </div>`:''}
   </div>`;
+}
+// Frees up a plot that was allocated for a request being undone/deleted -- shared by
+// both actions so a mistaken allocation never leaves a plot stranded as occupied.
+async function vacatePlotForAllocation(a){
+  if(!a.plotNumber || !canManagePlots()) return;
+  const p=DB.plots.find(x=>x.plotNumber.toLowerCase()===a.plotNumber.toLowerCase());
+  if(!p || p.status!=='Allocated') return;
+  try{ await apiUpdatePlot(p.id,{status:'Available',clientName:'',clientContact:'',agentKey:''});
+    Object.assign(p,{status:'Available',clientName:'',clientContact:'',agentKey:''}); }catch(e){}
 }
 function buildAuthorizationPDF(a,plotsList,siteManagerName){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return null; }
@@ -3632,6 +3656,21 @@ function ensureChatSubscribed(){
   });
 }
 
+let allocMonthFilter='All';
+function distinctAllocMonths(resolved){
+  const set=new Set(resolved.map(a=>monthKey(a.resolvedAt)).filter(Boolean));
+  return [...set].sort().reverse();
+}
+function filterAllocByMonth(resolved){
+  if(allocMonthFilter==='All') return resolved;
+  return resolved.filter(a=>monthKey(a.resolvedAt)===allocMonthFilter);
+}
+function renderAllocMonthFilterChips(resolved){
+  const months=distinctAllocMonths(resolved);
+  if(months.length<2) return '';
+  const chips=['All',...months].map(m=>`<button class="chip ${allocMonthFilter===m?'on':''}" data-allocmonth="${m}">${m==='All'?'All time':monthLabel(m)}</button>`).join('');
+  return `<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px">${chips}</div>`;
+}
 function viewAllocations(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
   const pending=(DB.allocations||[]).filter(a=>a.status==='Pending').sort((x,y)=>y.percent-x.percent);
@@ -3649,8 +3688,9 @@ function viewAllocations(){
   <div class="list">${pending.length?pending.map(rowOf).join(''):emptyState(ic.grid,'Nothing pending','Clients appear here automatically once they cross 30% paid.')}</div>
   <div class="sectitle"><h3>Awaiting Management sign-off</h3></div>
   <div class="list">${awaiting.length?awaiting.map(rowOf).join(''):emptyState(ic.grid,'None right now','')}</div>
-  <div class="sectitle"><h3>Already allocated</h3></div>
-  <div class="list">${resolved.length?resolved.map(rowOf).join(''):emptyState(ic.grid,'None yet','')}</div>`;
+  <div class="sectitle"><h3>Already allocated</h3><span class="cnt">${resolved.length}</span></div>
+  ${renderAllocMonthFilterChips(resolved)}
+  <div class="list">${filterAllocByMonth(resolved).length?filterAllocByMonth(resolved).map(rowOf).join(''):emptyState(ic.grid,'No allocations in this period','')}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
   bindAllocationCtrls();
 }
@@ -3683,6 +3723,7 @@ function bindAllocationCtrls(){
   });
   V.querySelectorAll('[data-dlalloc]').forEach(b=>b.onclick=()=>{ const a=DB.allocations.find(x=>x.id===b.dataset.dlalloc); if(a) buildAllocationPDF(a); });
   V.querySelectorAll('[data-sendalloc]').forEach(b=>b.onclick=async()=>{ const a=DB.allocations.find(x=>x.id===b.dataset.sendalloc); if(a){ b.disabled=true; b.textContent='Sending…'; await sendAllocationToChat(a); b.disabled=false; b.textContent='✉ Sent ✓'; } });
+  V.querySelectorAll('[data-allocmonth]').forEach(b=>b.onclick=()=>{ allocMonthFilter=b.dataset.allocmonth; PROFILE.role==='manager'?managerView():viewAllocations(); });
 }
 function bindAllocationAwaitingCtrls(a,wrap){
   const redlBtn=document.getElementById('redlAuthAlloc');
@@ -3721,6 +3762,24 @@ function bindAllocationDoneCtrls(a){
   const wrap=document.getElementById('allocDetail_'+a.id); if(!wrap) return;
   wrap.querySelectorAll('[data-dlalloc]').forEach(b=>b.onclick=()=>buildAllocationPDF(a));
   wrap.querySelectorAll('[data-sendalloc]').forEach(b=>b.onclick=async()=>{ b.disabled=true; b.textContent='Sending…'; await sendAllocationToChat(a); b.disabled=false; b.textContent='✉ Sent ✓'; });
+  wrap.querySelectorAll('[data-undoalloc]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Undo this allocation? Plot '+a.plotNumber+' goes back to Available and this request returns to Pending so you can pick a different plot.')) return;
+    b.disabled=true; b.textContent='Undoing…';
+    try{ await vacatePlotForAllocation(a); await apiRevertAllocation(a.id);
+      Object.assign(a,{status:'Pending',plotNumber:'',note:'',allocatedBy:''});
+      toast('Allocation undone — back in Pending'); selectedAllocId=null;
+      PROFILE.role==='manager'?managerView():viewAllocations();
+    }catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; b.textContent='Mistake? Undo — send back to Pending'; }
+  });
+  wrap.querySelectorAll('[data-delalloc]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Delete this allocation request entirely? '+(a.plotNumber?('Plot '+a.plotNumber+' goes back to Available. '):'')+'This cannot be undone.')) return;
+    b.disabled=true;
+    try{ await vacatePlotForAllocation(a); await apiDeleteAllocation(a.id);
+      DB.allocations=(DB.allocations||[]).filter(x=>x.id!==a.id);
+      toast('Allocation request deleted'); selectedAllocId=null;
+      PROFILE.role==='manager'?managerView():viewAllocations();
+    }catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
+  });
 }
 
 /* ================= CUSTOMER PROFILE (timeline across leads/enquiries/complaints/visits) ================= */
@@ -4531,7 +4590,9 @@ async function managerView(){
       <div id="allocDetail_${a.id}"></div></div>`;
     body.innerHTML=`<div class="sectitle" style="margin-top:0"><h3>Pending</h3></div><div class="list">${pend.length?pend.map(rowOf).join(''):emptyState(ic.grid,'Nothing pending','Clients appear here automatically once they cross 30% paid.')}</div>
       <div class="sectitle"><h3>Awaiting Management sign-off</h3></div><div class="list">${awaiting.length?awaiting.map(rowOf).join(''):emptyState(ic.grid,'None right now','')}</div>
-      <div class="sectitle"><h3>Already allocated</h3></div><div class="list">${res.length?res.map(rowOf).join(''):emptyState(ic.grid,'None yet','')}</div>`;
+      <div class="sectitle"><h3>Already allocated</h3><span class="cnt">${res.length}</span></div>
+      ${renderAllocMonthFilterChips(res)}
+      <div class="list">${filterAllocByMonth(res).length?filterAllocByMonth(res).map(rowOf).join(''):emptyState(ic.grid,'No allocations in this period','')}</div>`;
     bindAllocationCtrls();
   }
   else if(mgrTab==='Enquiries'){ body.innerHTML=mgrEnquiries(); bindEnquiryCtrls(); }
