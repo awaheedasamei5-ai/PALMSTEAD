@@ -1755,6 +1755,26 @@ async function apiLoadDownloadFile(id){
   try{ const {data,error}=await sb.from('downloads').select('file_data').eq('id',id).single(); if(error) throw error; return data.file_data||null; }
   catch(e){ return null; }
 }
+async function apiUpdateDownloadFile(id,fileData){
+  if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.downloads||[]).find(x=>x.id===id); if(rec){ rec.fileData=fileData; await demoSave(); } return; }
+  try{ await sb.from('downloads').update({file_data:fileData}).eq('id',id); }catch(e){}
+}
+/* Chat attachments are stored permanently on the message itself (messages.attachment_data),
+   separate from this downloads log. Older log rows saved before a since-fixed bug can be
+   missing their copy here even though the real file is still safe on the original message --
+   recover it from there instead of telling the user it's gone, and repair the log row so
+   this only has to happen once per file. */
+async function recoverDownloadFileFromChat(d){
+  if(d.kind!=='attachment') return null;
+  const candidates=(DB.messages||[]).filter(m=>m.attachData && m.attachName===d.filename && m.senderKey===d.userKey);
+  if(!candidates.length) return null;
+  const dTime=new Date(d.createdAt).getTime();
+  candidates.sort((a,b)=>Math.abs(new Date(a.createdAt).getTime()-dTime)-Math.abs(new Date(b.createdAt).getTime()-dTime));
+  const fileData=candidates[0].attachData;
+  apiUpdateDownloadFile(d.id,fileData);
+  d.fileData=fileData;
+  return fileData;
+}
 function blobToDataUri(blob){
   return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(blob); });
 }
@@ -2661,9 +2681,19 @@ function viewMore(){
 }
 let downloadsKindFilter='';
 function isPreviewableDownload(d){
-  if(d.kind==='pdf') return true;
-  if(d.kind==='attachment') return /\.(png|jpe?g|gif|webp|bmp|pdf)$/i.test(d.filename||'');
+  if(d.kind==='pdf'||d.kind==='csv'||d.kind==='backup') return true;
+  if(d.kind==='excel') return /\.xlsx$/i.test(d.filename||'');
+  if(d.kind==='attachment') return /\.(png|jpe?g|gif|webp|bmp|pdf|csv|xlsx)$/i.test(d.filename||'');
   return false;
+}
+function previewKindOf(d){
+  const f=d.filename||'';
+  if(/\.pdf$/i.test(f)) return 'pdf';
+  if(/\.(png|jpe?g|gif|webp|bmp)$/i.test(f)) return 'image';
+  if(/\.csv$/i.test(f)||d.kind==='csv') return 'csv';
+  if(/\.xlsx$/i.test(f)||d.kind==='excel') return 'excel';
+  if(d.kind==='backup'||/\.json$/i.test(f)) return 'json';
+  return guessFileKind(f);
 }
 function viewDownloads(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
@@ -2683,15 +2713,17 @@ function viewDownloads(){
   V.querySelectorAll('[data-dlview]').forEach(b=>b.onclick=async()=>{
     const d=list.find(x=>x.id===b.dataset.dlview); if(!d) return;
     b.disabled=true; const orig=b.innerHTML; b.innerHTML='Loading…';
-    const fileData=d.fileData||await apiLoadDownloadFile(d.id);
+    let fileData=d.fileData||await apiLoadDownloadFile(d.id);
+    if(!fileData) fileData=await recoverDownloadFileFromChat(d);
     b.disabled=false; b.innerHTML=orig;
     if(!fileData){ toast('This file is no longer available to preview — download it again to get a fresh copy.'); return; }
-    openFilePreview(fileData,d.filename,/\.pdf$/i.test(d.filename||'')?'pdf':'image');
+    openFilePreview(fileData,d.filename,previewKindOf(d));
   });
   V.querySelectorAll('[data-dlsend]').forEach(b=>b.onclick=async()=>{
     const d=list.find(x=>x.id===b.dataset.dlsend); if(!d) return;
     b.disabled=true; const orig=b.innerHTML; b.innerHTML='Loading…';
-    const fileData=d.fileData||await apiLoadDownloadFile(d.id);
+    let fileData=d.fileData||await apiLoadDownloadFile(d.id);
+    if(!fileData) fileData=await recoverDownloadFileFromChat(d);
     b.disabled=false; b.innerHTML=orig;
     if(!fileData){ toast('This file is no longer available to send — download it again to get a fresh copy.'); return; }
     shareBlobUrl(fileData,d.filename);
@@ -2709,7 +2741,45 @@ function guessFileKind(filename){
   const ext=(filename||'').split('.').pop().toLowerCase();
   if(ext==='pdf') return 'pdf';
   if(['png','jpg','jpeg','gif','webp','bmp'].includes(ext)) return 'image';
+  if(ext==='csv') return 'csv';
+  if(ext==='xlsx') return 'excel';
+  if(ext==='json') return 'json';
   return 'other';
+}
+function dataUriToText(dataUri){
+  const comma=dataUri.indexOf(','); const b64=dataUri.slice(comma+1);
+  const bin=atob(b64); const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return new TextDecoder('utf-8').decode(bytes);
+}
+function parseCsv(text){
+  const rows=[]; let row=[], field='', inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQuotes){
+      if(c==='"'){ if(text[i+1]==='"'){ field+='"'; i++; } else inQuotes=false; }
+      else field+=c;
+    }else{
+      if(c==='"') inQuotes=true;
+      else if(c===','){ row.push(field); field=''; }
+      else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n') i++; row.push(field); field=''; rows.push(row); row=[]; }
+      else field+=c;
+    }
+  }
+  if(field.length||row.length){ row.push(field); rows.push(row); }
+  return rows.filter(r=>r.some(f=>f!==''));
+}
+function renderTablePreview(rows){
+  if(!rows.length) return `<div style="padding:30px;color:#fff;text-align:center">Empty file</div>`;
+  const capped=rows.slice(0,500);
+  const head=capped[0], body=capped.slice(1);
+  return `<div style="overflow:auto;height:100%;background:#fff">
+    <table style="border-collapse:collapse;width:100%;font-size:12.5px">
+      <thead><tr>${head.map(h=>`<th style="position:sticky;top:0;background:#0B1E3D;color:#fff;padding:8px 10px;text-align:left;white-space:nowrap;border:1px solid rgba(255,255,255,.15)">${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${body.map(r=>`<tr>${r.map(c=>`<td style="padding:7px 10px;border:1px solid #E2E7ED;white-space:nowrap">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>
+    ${rows.length>500?`<div class="mini" style="padding:10px;text-align:center">Showing first 500 of ${rows.length} rows — download for the full file.</div>`:''}
+  </div>`;
 }
 async function shareBlobUrl(blobUrl,filename){
   try{
@@ -2720,15 +2790,27 @@ async function shareBlobUrl(blobUrl,filename){
     else{ toast('Sharing is not supported on this browser — use Download instead.'); }
   }catch(e){ if(e.name!=='AbortError') toast('Could not share: '+(e.message||e)); }
 }
+function previewUnavailableBody(){
+  return `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:10px;padding:30px;text-align:center"><span style="width:40px;height:40px;display:inline-flex;opacity:.7">${ic.doc}</span><div style="font-weight:700">No in-app preview for this file type</div><div class="mini" style="color:#9DB2CC">Use Download or Send below</div></div>`;
+}
 function openFilePreview(dataUrl,filename,kind){
   let ov=document.getElementById('filePreviewOverlay'); if(ov) ov.remove();
-  const blobUrl=dataUrl.startsWith('data:')?dataUriToBlobUrl(dataUrl):dataUrl;
+  const isDataUri=dataUrl.startsWith('data:');
+  const blobUrl=isDataUri?dataUriToBlobUrl(dataUrl):dataUrl;
   kind=kind||guessFileKind(filename);
-  const body=kind==='pdf'
-    ? `<iframe src="${blobUrl}" style="width:100%;height:100%;border:none;background:#525659"></iframe>`
-    : kind==='image'
-    ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000"><img src="${blobUrl}" style="max-width:100%;max-height:100%;object-fit:contain"/></div>`
-    : `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:10px;padding:30px;text-align:center"><span style="width:40px;height:40px;display:inline-flex;opacity:.7">${ic.doc}</span><div style="font-weight:700">No in-app preview for this file type</div><div class="mini" style="color:#9DB2CC">Use Download or Send below</div></div>`;
+  let body;
+  if(kind==='pdf') body=`<iframe src="${blobUrl}" style="width:100%;height:100%;border:none;background:#525659"></iframe>`;
+  else if(kind==='image') body=`<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000"><img src="${blobUrl}" style="max-width:100%;max-height:100%;object-fit:contain"/></div>`;
+  else if(kind==='csv' && isDataUri){
+    try{ body=renderTablePreview(parseCsv(dataUriToText(dataUrl))); }catch(e){ body=previewUnavailableBody(); }
+  }else if(kind==='json' && isDataUri){
+    try{ body=`<pre style="margin:0;padding:16px;background:#fff;height:100%;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word">${esc(JSON.stringify(JSON.parse(dataUriToText(dataUrl)),null,2))}</pre>`; }
+    catch(e){ body=previewUnavailableBody(); }
+  }else if(kind==='excel' && isDataUri){
+    body=`<div id="excelPreviewLoading" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#fff">Loading spreadsheet…</div>`;
+  }else{
+    body=previewUnavailableBody();
+  }
   ov=document.createElement('div'); ov.id='filePreviewOverlay';
   ov.style.cssText='position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.9);display:flex;flex-direction:column';
   ov.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#111">
@@ -2739,10 +2821,27 @@ function openFilePreview(dataUrl,filename,kind){
         <button id="closeFilePreview" title="Close" style="background:rgba(255,255,255,.14);border:none;border-radius:8px;color:#fff;width:34px;height:34px;display:grid;place-items:center;cursor:pointer">${ic.close}</button>
       </div>
     </div>
-    <div style="flex:1;overflow:auto">${body}</div>`;
+    <div style="flex:1;overflow:auto" id="filePreviewBody">${body}</div>`;
   document.body.appendChild(ov);
   document.getElementById('closeFilePreview').onclick=()=>{ ov.remove(); URL.revokeObjectURL(blobUrl); };
   document.getElementById('shareFilePreview').onclick=()=>shareBlobUrl(blobUrl,filename);
+  if(kind==='excel' && isDataUri){
+    (async()=>{
+      try{
+        if(typeof ExcelJS==='undefined') throw new Error('lib not loaded');
+        const wb=new ExcelJS.Workbook();
+        await wb.xlsx.load(b64ToArrayBuffer(dataUrl.slice(dataUrl.indexOf(',')+1)));
+        const ws=wb.worksheets[0];
+        const cellText=v=>{ if(v==null) return ''; if(typeof v==='object'){ if(v.text!=null) return String(v.text); if(v.result!=null) return String(v.result); if(v instanceof Date) return v.toLocaleDateString(); return ''; } return String(v); };
+        const rows=[]; ws.eachRow(row=>rows.push(row.values.slice(1).map(cellText)));
+        const target=document.getElementById('excelPreviewLoading');
+        if(target) target.outerHTML=renderTablePreview(rows);
+      }catch(e){
+        const target=document.getElementById('excelPreviewLoading');
+        if(target) target.outerHTML=previewUnavailableBody();
+      }
+    })();
+  }
 }
 function animateKpiCounts(container){
   (container||V).querySelectorAll('.kpi .v').forEach(el=>{
