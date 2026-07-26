@@ -56,7 +56,11 @@ body.dark ::-webkit-scrollbar-thumb:hover{background:rgba(190,242,100,.3)}
 html,body{margin:0;padding:0}
 html{overscroll-behavior-x:none}
 body{font-family:var(--user-font-family);background:var(--paper);color:var(--text);-webkit-font-smoothing:antialiased;line-height:1.45;overflow-x:hidden;position:relative;overscroll-behavior-x:none}
-#app{zoom:var(--user-zoom)}
+/* Font-size scaling is scoped to #view only (not #app) -- #app also contains the
+   fixed .topbar/.bottomnav, and zooming a container that has fixed-position
+   descendants desyncs their real on-screen box from the zoomed content around
+   them, which was pushing whole pages left with a dead gap on the right. */
+#view{zoom:var(--user-zoom)}
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:
     radial-gradient(650px 450px at 8% -6%, rgba(59,130,246,.07), transparent 60%),
@@ -953,6 +957,28 @@ function buildInstallmentSchedule(lead,paymentsForLead){
   const unassigned=Math.max(0,Math.round(num(lead.amtPaid)-itemizedTotal));
   return {slots,monthlyInstallment,planMonths,anchor,unassigned,depositTarget:dep.target,depositPaid:dep.paid,grand};
 }
+// Plain month-by-month payment ledger for clients with no formal installment
+// plan (outright/full payment, or a plan that hasn't been set up as such) --
+// no "expected per month" concept, just what was actually logged each month,
+// so every client -- not just installment-plan ones -- gets an accurate,
+// backfillable payment history.
+function buildGenericMonthLedger(lead,paymentsForLead){
+  const dates=(paymentsForLead||[]).map(p=>p.date).filter(Boolean).sort();
+  const startStr=dates[0]||lead.date||today();
+  const start=new Date(startStr);
+  let {y,m}=ymAdd(start.getFullYear(),start.getMonth(),0);
+  const thisMonthKey=today().slice(0,7);
+  const slots=[]; let guard=0;
+  while(guard<60){
+    const slotKey=ymKey(y,m);
+    if(slotKey>thisMonthKey) break;
+    const next=ymAdd(y,m,1);
+    const paid=Math.round((paymentsForLead||[]).filter(p=>(p.date||'')>=slotKey+'-01' && (p.date||'')<ymKey(next.y,next.m)+'-01').reduce((s,p)=>s+num(p.amount),0));
+    slots.push({monthNumber:slots.length+1,y,m,slotKey,label:monthLabel(slotKey),paid});
+    y=next.y; m=next.m; guard++;
+  }
+  return {slots:slots.reverse(),anchor:startStr.slice(0,10)};
+}
 function INTEREST(){ return {'Full Payment':0,'3 Months':num(CONFIG.int3),'6 Months':num(CONFIG.int6),
   '9 Months':num(CONFIG.int9),'12 Months':num(CONFIG.int12)}; }
 function isFullyPaid(l){ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; return g>0 && num(l.amtPaid)>=g; }
@@ -1751,8 +1777,12 @@ async function apiLoadDownloadFile(id){
   try{ const {data,error}=await sb.from('downloads').select('file_data').eq('id',id).single(); if(error) throw error; return data.file_data||null; }
   catch(e){ return null; }
 }
-function triggerDownload(url,filename,kind){
+function blobToDataUri(blob){
+  return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(blob); });
+}
+function triggerDownload(url,filename,kind,blob){
   const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  if(blob){ blobToDataUri(blob).then(dataUri=>logDownload(filename,kind,dataUri)).catch(()=>logDownload(filename,kind)); return; }
   logDownload(filename,kind);
 }
 async function apiInsertAnnouncement(title,body,image){
@@ -2395,7 +2425,7 @@ function route(name,arg,opts){ opts=opts||{}; window.scrollTo({top:0,behavior:'s
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); }}[name]||agentHome)(arg);
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission}[name]||agentHome)(arg);
   updateBottomNav(name);
 }
 function goBack(fallbackTo){
@@ -2714,18 +2744,29 @@ function viewDownloads(){
   const list=downloadsKindFilter?all.filter(d=>d.kind===downloadsKindFilter):all;
   const rowOf=d=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(d.filename)}</div><div class="meta">${esc((d.createdAt||'').slice(0,16).replace('T',' '))}${PROFILE.role==='manager'?(' · '+esc(d.userName)):''}</div></div>
     <span class="tag ghost">${esc((d.kind||'').toUpperCase())}</span></div>
-    ${isPreviewableDownload(d)?`<div class="foot"><button class="chip" data-dlview="${esc(d.id)}">${ic.eye} View</button></div>`:''}</div>`;
+    <div class="foot">
+      ${isPreviewableDownload(d)?`<button class="chip" data-dlview="${esc(d.id)}" style="display:inline-flex;align-items:center;gap:6px"><span style="width:13px;height:13px;display:inline-flex">${ic.eye}</span>View</button>`:''}
+      <button class="chip" data-dlsend="${esc(d.id)}" style="display:inline-flex;align-items:center;gap:6px"><span style="width:13px;height:13px;display:inline-flex">${ic.upload}</span>Send</button>
+    </div></div>`;
   V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><h2>Download Directory</h2><p>${all.length} file${all.length===1?'':'s'} · ${PROFILE.role==='manager'?'every file downloaded by the team':'everything you have downloaded from this account'}</p></div></div>
   ${kinds.length>1?`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"><button class="chip ${!downloadsKindFilter?'on':''}" data-dlkind="">All</button>${kinds.map(k=>`<button class="chip ${downloadsKindFilter===k?'on':''}" data-dlkind="${esc(k)}">${esc(k.toUpperCase())}</button>`).join('')}</div>`:''}
   <div class="list">${list.length?list.map(rowOf).join(''):emptyState(ic.doc,'Nothing downloaded yet','PDFs, Excel exports and backups you generate will show up here.')}</div>`;
   V.querySelectorAll('[data-dlkind]').forEach(b=>b.onclick=()=>{ downloadsKindFilter=b.dataset.dlkind; viewDownloads(); });
   V.querySelectorAll('[data-dlview]').forEach(b=>b.onclick=async()=>{
     const d=list.find(x=>x.id===b.dataset.dlview); if(!d) return;
-    b.disabled=true; b.textContent='Loading…';
+    b.disabled=true; const orig=b.innerHTML; b.innerHTML='Loading…';
     const fileData=d.fileData||await apiLoadDownloadFile(d.id);
-    b.disabled=false; b.innerHTML=`${ic.eye} View`;
-    if(!fileData){ toast('Preview not available for this file'); return; }
+    b.disabled=false; b.innerHTML=orig;
+    if(!fileData){ toast('This file is no longer available to preview — download it again to get a fresh copy.'); return; }
     openFilePreview(fileData,d.filename,d.kind==='pdf'?'pdf':'image');
+  });
+  V.querySelectorAll('[data-dlsend]').forEach(b=>b.onclick=async()=>{
+    const d=list.find(x=>x.id===b.dataset.dlsend); if(!d) return;
+    b.disabled=true; const orig=b.innerHTML; b.innerHTML='Loading…';
+    const fileData=d.fileData||await apiLoadDownloadFile(d.id);
+    b.disabled=false; b.innerHTML=orig;
+    if(!fileData){ toast('This file is no longer available to send — download it again to get a fresh copy.'); return; }
+    shareBlobUrl(fileData,d.filename);
   });
 }
 function dataUriToBlobUrl(dataUri){
@@ -2736,24 +2777,44 @@ function dataUriToBlobUrl(dataUri){
   for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
   return URL.createObjectURL(new Blob([bytes],{type:mime}));
 }
+function guessFileKind(filename){
+  const ext=(filename||'').split('.').pop().toLowerCase();
+  if(ext==='pdf') return 'pdf';
+  if(['png','jpg','jpeg','gif','webp','bmp'].includes(ext)) return 'image';
+  return 'other';
+}
+async function shareBlobUrl(blobUrl,filename){
+  try{
+    const resp=await fetch(blobUrl); const blob=await resp.blob();
+    const file=new File([blob],filename,{type:blob.type||'application/octet-stream'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:filename}); }
+    else if(navigator.share){ await navigator.share({title:filename}); }
+    else{ toast('Sharing is not supported on this browser — use Download instead.'); }
+  }catch(e){ if(e.name!=='AbortError') toast('Could not share: '+(e.message||e)); }
+}
 function openFilePreview(dataUrl,filename,kind){
   let ov=document.getElementById('filePreviewOverlay'); if(ov) ov.remove();
   const blobUrl=dataUrl.startsWith('data:')?dataUriToBlobUrl(dataUrl):dataUrl;
+  kind=kind||guessFileKind(filename);
   const body=kind==='pdf'
     ? `<iframe src="${blobUrl}" style="width:100%;height:100%;border:none;background:#525659"></iframe>`
-    : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000"><img src="${blobUrl}" style="max-width:100%;max-height:100%;object-fit:contain"/></div>`;
+    : kind==='image'
+    ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000"><img src="${blobUrl}" style="max-width:100%;max-height:100%;object-fit:contain"/></div>`
+    : `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:10px;padding:30px;text-align:center"><span style="width:40px;height:40px;display:inline-flex;opacity:.7">${ic.doc}</span><div style="font-weight:700">No in-app preview for this file type</div><div class="mini" style="color:#9DB2CC">Use Download or Send below</div></div>`;
   ov=document.createElement('div'); ov.id='filePreviewOverlay';
   ov.style.cssText='position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.9);display:flex;flex-direction:column';
   ov.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#111">
       <div style="font-weight:700;font-size:14px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:12px">${esc(filename)}</div>
       <div style="display:flex;gap:8px;flex:0 0 auto">
-        <a href="${blobUrl}" download="${esc(filename)}" style="background:rgba(255,255,255,.14);border-radius:8px;color:#fff;width:34px;height:34px;display:grid;place-items:center;text-decoration:none">${ic.download}</a>
-        <button id="closeFilePreview" style="background:rgba(255,255,255,.14);border:none;border-radius:8px;color:#fff;width:34px;height:34px;display:grid;place-items:center;cursor:pointer">${ic.close}</button>
+        <button id="shareFilePreview" title="Send" style="background:rgba(255,255,255,.14);border:none;border-radius:8px;color:#fff;width:34px;height:34px;display:grid;place-items:center;cursor:pointer">${ic.upload}</button>
+        <a href="${blobUrl}" download="${esc(filename)}" title="Download" style="background:rgba(255,255,255,.14);border-radius:8px;color:#fff;width:34px;height:34px;display:grid;place-items:center;text-decoration:none">${ic.download}</a>
+        <button id="closeFilePreview" title="Close" style="background:rgba(255,255,255,.14);border:none;border-radius:8px;color:#fff;width:34px;height:34px;display:grid;place-items:center;cursor:pointer">${ic.close}</button>
       </div>
     </div>
     <div style="flex:1;overflow:auto">${body}</div>`;
   document.body.appendChild(ov);
   document.getElementById('closeFilePreview').onclick=()=>{ ov.remove(); URL.revokeObjectURL(blobUrl); };
+  document.getElementById('shareFilePreview').onclick=()=>shareBlobUrl(blobUrl,filename);
 }
 function animateKpiCounts(container){
   (container||V).querySelectorAll('.kpi .v').forEach(el=>{
@@ -3319,9 +3380,9 @@ function agentHome(){ const k=kpisOf(DB.leads);
   ${renderBannerSlideshow()}
   ${renderAllocationBanners()}
   ${renderComplaintAssignBanners()}
-  <div class="rowcard" style="margin-bottom:18px;padding:16px;background:linear-gradient(120deg,#F4F8FF,#EEF6F1);border:1px solid rgba(59,130,246,.18)">
+  <div class="rowcard" style="margin-bottom:18px;padding:16px;background:linear-gradient(120deg,#F4F8FF,#EEF6F1);border:1px solid rgba(59,130,246,.18);cursor:pointer" data-gomycommission="1">
     <div style="display:flex;align-items:center;gap:12px"><span class="kpi-ic blue" style="margin-bottom:0">${kpiIc.coins||kpiIc.check}</span>
-    <div><div style="font-weight:700;font-size:13.5px">My commission — ${monthLabel(thisMonth)}</div><div class="mini">Personal only · your pool share is confirmed by Management on the 15th</div></div>
+    <div><div style="font-weight:700;font-size:13.5px">My commission — ${monthLabel(thisMonth)}</div><div class="mini">Personal only · tap for the breakdown</div></div>
     <div style="margin-left:auto;font-size:22px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--text)">${ghs(myCommission)}</div></div>
   </div>
   <div class="kpis">${kpi('Active leads',k.leads,'','pipeline')}${kpi('Pipeline value',ghs(k.val),'gold','pipeline')}${kpi('Collected',ghs(k.coll),'','paid')}${kpi('Outstanding',ghs(k.out),'gold','owed')}${kpi('Site visits',k.sv,'','visits')}${kpi('Fully paid',wonAll.length,'','donepaying')}${kpi('Monthly collected',ghs(monthCollected),'gold','monthlyclosed')}</div>
@@ -3332,6 +3393,7 @@ function agentHome(){ const k=kpisOf(DB.leads);
   <div class="footer-note" style="padding-top:2px">System created by Abdul Waheed (Digital Operations) © ${new Date().getFullYear()}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
   bindTasks(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow();
+  document.querySelector('[data-gomycommission]').onclick=()=>route('myCommission');
   document.getElementById('dashRefreshBtn').onclick=async(e)=>{
     const btn=e.currentTarget; btn.classList.add('spinning'); btn.disabled=true;
     try{ await apiLoadAll(); toast('Up to date'); agentHome(); }
@@ -3407,7 +3469,7 @@ function downloadPipelineBackup(clientIds){
   const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const scope=clientIds.length===DB.leads.length?'AllClients':(clientIds.length===1?(DB.leads.find(l=>l.id===clientIds[0])||{name:'Client'}).name.replace(/\s+/g,'_'):clientIds.length+'Clients');
-  triggerDownload(url,'PEP_Pipeline_Backup_'+scope+'_'+today()+'.json','backup');
+  triggerDownload(url,'PEP_Pipeline_Backup_'+scope+'_'+today()+'.json','backup',blob);
 }
 function openPipelineBackupModal(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
@@ -4232,12 +4294,12 @@ function openForwardPicker(msgId){
 function bindChatMediaCtrls(otherKey){
   document.querySelectorAll('[data-viewimg]').forEach(img=>img.onclick=()=>{
     const m=DB.messages.find(x=>x.id===img.dataset.viewimg); if(!m) return;
-    const w=window.open(); if(w) w.document.write('<title>Image</title><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="'+m.attachData+'" style="max-width:100%"/></body>');
+    openFilePreview(m.attachData,m.attachName||'Photo.jpg','image');
   });
   document.querySelectorAll('[data-dlfile]').forEach(b=>b.onclick=()=>{ const m=DB.messages.find(x=>x.id===b.dataset.dlfile); if(m) downloadChatFile(m); });
   document.querySelectorAll('[data-previewfile]').forEach(b=>b.onclick=()=>{
     const m=DB.messages.find(x=>x.id===b.dataset.previewfile); if(!m) return;
-    const w=window.open(); if(w) w.location.href=m.attachData; // browsers preview PDFs/most files natively when opened directly
+    openFilePreview(m.attachData,m.attachName||'File',guessFileKind(m.attachName));
   });
   document.querySelectorAll('[data-fwdmsg]').forEach(b=>b.onclick=()=>openForwardPicker(b.dataset.fwdmsg));
   document.querySelectorAll('[data-copymsg]').forEach(b=>b.onclick=async()=>{
@@ -5001,7 +5063,8 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   <div class="formactions"><button class="btn ghost" onclick="route('update')">Back</button><button class="btn gold" id="saveUpd">Save update</button></div></div>
 
   <div class="sectitle"><h3>Payment history</h3><span class="cnt">${myPayments.length} payment${myPayments.length===1?'':'s'}</span></div>
-  <div class="formwrap" style="padding:6px 15px;margin-bottom:16px">${myPayments.length?myPayments.map(p=>`<div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">${esc(p.date||'')}</div></div></div><div class="amt mono" style="font-weight:700;color:#1E7A56">+${ghs(num(p.amount))}</div></div>`).join(''):'<div class="empty">No individual payments logged yet — only a starting total.</div>'}</div>
+  <div class="formwrap" style="padding:6px 15px;margin-bottom:12px">${myPayments.length?myPayments.map(p=>`<div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">${esc(p.date||'')}</div></div></div><div class="amt mono" style="font-weight:700;color:#1E7A56">+${ghs(num(p.amount))}</div></div>`).join(''):'<div class="empty">No individual payments logged yet — only a starting total.</div>'}</div>
+  <div style="margin-bottom:18px"><button class="chip" id="viewLedgerBtn" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.calendar}</span>Log payment for a specific month →</button></div>
   <div style="margin-bottom:18px"><button class="btn primary" id="dlUpdPdf" style="width:100%">⬇ Download this client's pipeline (PDF)</button></div>
 
   <div class="dangerzone"><div class="dz-text"><b>Delete this client</b><br>Permanently removes ${esc(l.name)} and their record from the pipeline. This can't be undone.</div>
@@ -5030,6 +5093,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   document.getElementById('delLead').onclick=()=>deleteLeadConfirm(id,l.name);
   document.getElementById('dlUpdPdf').onclick=()=>downloadClientRecordPDF(l.name,l.contact,l,myPayments,g,num(l.amtPaid),bal);
   const viewSchedBtn=document.getElementById('viewSchedBtn'); if(viewSchedBtn) viewSchedBtn.onclick=()=>route('paymentSchedule',id);
+  document.getElementById('viewLedgerBtn').onclick=()=>route('paymentSchedule',id);
 }
 // Shown when a deposit payment would push the client's deposit total past the
 // target. Both options are just a choice of what depositTarget becomes -- no payment
@@ -5174,26 +5238,34 @@ function viewPaymentSchedule(id){
   const l=DB.leads.find(x=>x.id===id); if(!l){ route('home'); return; }
   const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const sched=buildInstallmentSchedule(l,myPayments);
-  if(!sched){
-    const dep=PLAN_MONTHS[l.paymentPlan]?computeDepositStatus(l,myPayments):null;
-    toast(dep&&!dep.complete?'The deposit isn’t fully paid yet — the monthly schedule starts once it is':'This client is not on an installment plan');
-    route('updateOne',id); return;
+  if(sched){
+    const rows=sched.slots.map(s=>{
+      const meta=SCHED_STATUS_META[s.status];
+      return `<div class="rowcard" style="margin-bottom:10px;padding:14px 16px">
+        <div class="top"><div><div class="nm" style="font-size:14px">Month ${s.monthNumber} · ${s.label}</div>
+        <div class="meta">Expected ${ghs(s.expected)}${s.paid>0?(' · logged '+ghs(s.paid)):''}</div></div>
+        <span class="tag ${meta.cls}">${meta.label}</span></div>
+        <div class="foot"><button class="chip" data-logmonth="${s.slotKey}" data-expected="${s.expected}">Log payment for this month →</button></div>
+      </div>`;
+    }).join('');
+    V.innerHTML=`${back('updateOne')}<div class="pagehead"><div><div class="eyebrow">Payment schedule</div><h2>${esc(l.name)}</h2><p>${l.paymentPlan} · anchored from ${sched.anchor} (their first payment)</p></div></div>
+    ${sched.unassigned>0?`<div class="rowcard" style="margin-bottom:16px;padding:14px 16px;border-left:4px solid #B8791E">
+      <div style="font-weight:700;font-size:13.5px;color:#B8791E;display:flex;align-items:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.alert}</span>${ghs(sched.unassigned)} paid but not assigned to a month</div>
+      <div class="mini" style="margin-top:3px">This client's total-paid figure is higher than what's itemized by month below (common for older records entered as a lump sum). Log it against the month(s) it actually covers so the schedule below is accurate.</div>
+    </div>`:''}
+    <div id="schedRows">${rows}</div>`;
+    document.querySelectorAll('[data-logmonth]').forEach(b=>b.onclick=()=>openLogMonthPayment(l,b.dataset.logmonth,num(b.dataset.expected)));
+    return;
   }
-  const rows=sched.slots.map(s=>{
-    const meta=SCHED_STATUS_META[s.status];
-    return `<div class="rowcard" style="margin-bottom:10px;padding:14px 16px">
-      <div class="top"><div><div class="nm" style="font-size:14px">Month ${s.monthNumber} · ${s.label}</div>
-      <div class="meta">Expected ${ghs(s.expected)}${s.paid>0?(' · logged '+ghs(s.paid)):''}</div></div>
-      <span class="tag ${meta.cls}">${meta.label}</span></div>
-      <div class="foot"><button class="chip" data-logmonth="${s.slotKey}" data-expected="${s.expected}">Log payment for this month →</button></div>
-    </div>`;
-  }).join('');
-  V.innerHTML=`${back('updateOne')}<div class="pagehead"><div><div class="eyebrow">Payment schedule</div><h2>${esc(l.name)}</h2><p>${l.paymentPlan} · anchored from ${sched.anchor} (their first payment)</p></div></div>
-  ${sched.unassigned>0?`<div class="rowcard" style="margin-bottom:16px;padding:14px 16px;border-left:4px solid #B8791E">
-    <div style="font-weight:700;font-size:13.5px;color:#B8791E;display:flex;align-items:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.alert}</span>${ghs(sched.unassigned)} paid but not assigned to a month</div>
-    <div class="mini" style="margin-top:3px">This client's total-paid figure is higher than what's itemized by month below (common for older records entered as a lump sum). Log it against the month(s) it actually covers so the schedule below is accurate.</div>
-  </div>`:''}
-  <div id="schedRows">${rows}</div>`;
+  const ledger=buildGenericMonthLedger(l,myPayments);
+  const rows2=ledger.slots.map(s=>`<div class="rowcard" style="margin-bottom:10px;padding:14px 16px">
+    <div class="top"><div><div class="nm" style="font-size:14px">Month ${s.monthNumber} · ${s.label}</div>
+    <div class="meta">${s.paid>0?('Logged '+ghs(s.paid)):'Nothing logged this month'}</div></div>
+    ${s.paid>0?'<span class="tag ok">Logged</span>':''}</div>
+    <div class="foot"><button class="chip" data-logmonth="${s.slotKey}" data-expected="0">Log payment for this month →</button></div>
+  </div>`).join('');
+  V.innerHTML=`${back('updateOne')}<div class="pagehead"><div><div class="eyebrow">Payment history</div><h2>${esc(l.name)}</h2><p>By month, anchored from ${ledger.anchor} — pick any month to log or backfill a payment</p></div></div>
+  <div id="schedRows">${rows2||emptyState(ic.grid,'No months yet','')}</div>`;
   document.querySelectorAll('[data-logmonth]').forEach(b=>b.onclick=()=>openLogMonthPayment(l,b.dataset.logmonth,num(b.dataset.expected)));
 }
 function openLogMonthPayment(lead,slotKey,expected){
@@ -5205,7 +5277,7 @@ function openLogMonthPayment(lead,slotKey,expected){
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Log payment · ${monthLabel(slotKey)}</div><button id="closeLogMonth" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
-    <div class="mini" style="margin-bottom:14px">Expected this month: ${ghs(expected)}. Enter what the client actually paid — can be less, equal to, or more.</div>
+    <div class="mini" style="margin-bottom:14px">${expected>0?('Expected this month: '+ghs(expected)+'. '):''}Enter what the client actually paid this month.</div>
     ${fld('Amount paid (GHS)','<input id="lm_amount" type="number" placeholder="'+expected+'"/>')}
     ${fld('Date within '+monthLabel(slotKey),'<input id="lm_date" type="date" value="'+defaultDate+'" min="'+slotKey+'-01" max="'+slotKey+'-'+String(lastDay).padStart(2,'0')+'"/>')}
     <div class="formactions"><button class="btn primary" id="saveLogMonth" style="width:100%">Save payment</button></div>
@@ -5926,7 +5998,7 @@ function exportCSV(rows,cols,filename){
   const body=rows.map(r=>cols.map(c=>esc2(typeof c[1]==='function'?c[1](r):r[c[1]])).join(',')).join('\n');
   const blob=new Blob([header+'\n'+body],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob);
-  triggerDownload(url,filename,'csv');
+  triggerDownload(url,filename,'csv',blob);
   toast('Downloaded '+filename);
 }
 function agentPoints(r){ return Math.round(r.totalCollected/500 + r.dealsClosedYear*20 + r.siteVisits*5); }
@@ -6068,7 +6140,7 @@ async function downloadMasterPipelineExcel(){
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url=URL.createObjectURL(blob);
-    triggerDownload(url,'PEP_Landbank_Master_Pipeline_'+today()+'.xlsx','excel');
+    triggerDownload(url,'PEP_Landbank_Master_Pipeline_'+today()+'.xlsx','excel',blob);
     toast('Master pipeline downloaded — '+allLeads.length+' clients, A–Z');
   }catch(e){ toast('Could not build file: '+(e.message||e)); }
   btn.disabled=false; btn.textContent='⬇ Download Master Pipeline (.xlsx)';
@@ -6088,7 +6160,7 @@ function bindReportCtrls(){
       const buf=await wb.xlsx.writeBuffer();
       const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
       const url=URL.createObjectURL(blob);
-      triggerDownload(url,'Pipeline_'+agent.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx','excel');
+      triggerDownload(url,'Pipeline_'+agent.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx','excel',blob);
       toast('Downloaded');
     }catch(e){ toast('Could not build file: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='⬇ Download (.xlsx)';
@@ -6224,7 +6296,7 @@ async function downloadAgentPipelineExcel(){
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url=URL.createObjectURL(blob);
-    triggerDownload(url,'Pipeline_'+PROFILE.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx','excel');
+    triggerDownload(url,'Pipeline_'+PROFILE.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx','excel',blob);
     toast('Pipeline downloaded');
   }catch(e){ toast('Could not build file: '+(e.message||e)); }
   if(btn){ btn.disabled=false; btn.textContent='⬇ Download my pipeline (.xlsx)'; }
@@ -6425,7 +6497,7 @@ async function downloadCompanyExcel(){
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url=URL.createObjectURL(blob);
-    triggerDownload(url,'PEP_Landbank_Company_Report_'+today()+'.xlsx','excel');
+    triggerDownload(url,'PEP_Landbank_Company_Report_'+today()+'.xlsx','excel',blob);
     toast('Company report downloaded');
   }catch(e){ toast('Could not build report: '+(e.message||e)); }
   btn.disabled=false; btn.textContent='⬇ Download Company Report (.xlsx)';
@@ -6619,7 +6691,7 @@ function bindSettingsCtrls(){
       };
       const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
       const url=URL.createObjectURL(blob);
-      triggerDownload(url,'PEP_Landbank_Backup_'+today()+'.json','backup');
+      triggerDownload(url,'PEP_Landbank_Backup_'+today()+'.json','backup',blob);
       toast('Backup downloaded');
     }catch(e){ toast('Backup failed: '+(e.message||e)); }
     sysBackupBtn.disabled=false; sysBackupBtn.innerHTML=`<span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Download full data backup (.json)`;
@@ -6760,6 +6832,54 @@ function computeMyPersonalCommission(monthKey){
     if(list>0) personal+=cap*(num(p.amount)/list);
   });
   return personal;
+}
+function computeMyCommissionBreakdown(monthKey){
+  const fullCap=num(CONFIG.commissionFullCap)||1000;
+  const halfCap=num(CONFIG.commissionHalfCap)||500;
+  const leadById={}; DB.leads.forEach(l=>{ leadById[l.id]=l; });
+  const rows=(DB.payments||[]).filter(p=>(p.date||'').slice(0,7)===monthKey).map(p=>{
+    const lead=leadById[p.leadId]; if(!lead) return null;
+    const isHalf=lead.plotType==='Half Plot';
+    const cap=isHalf?halfCap:fullCap;
+    const list=isHalf?num(CONFIG.halfPrice):num(CONFIG.fullPrice);
+    const contribution=list>0?cap*(num(p.amount)/list):0;
+    return {leadId:p.leadId,clientName:lead.name,plotType:lead.plotType,paymentDate:p.date,paymentAmount:num(p.amount),contribution};
+  }).filter(Boolean);
+  return rows.sort((a,b)=>(b.paymentDate||'').localeCompare(a.paymentDate||''));
+}
+function viewMyCommission(){
+  const thisMonth=today().slice(0,7);
+  const rows=computeMyCommissionBreakdown(thisMonth);
+  const total=rows.reduce((s,r)=>s+r.contribution,0);
+  const rowOf=r=>`<div class="rowcard"><div class="top"><div><div class="nm nm-link" data-custname="${esc(r.clientName)}" data-custcontact="">${esc(r.clientName)}</div>
+    <div class="meta">${esc(r.plotType||'')} · paid ${ghs(r.paymentAmount)} on ${esc(r.paymentDate||'')}</div></div>
+    <div style="text-align:right"><div class="amt">${ghs(r.contribution)}</div><div class="meta">commission</div></div></div></div>`;
+  V.innerHTML=`${back('home')}<div class="pagehead"><div><div class="eyebrow">My commission</div><h2>${ghs(total)}</h2><p>${monthLabel(thisMonth)} · personal only, pool share confirmed by Management on the 15th</p></div></div>
+  <div class="sectitle" style="margin-top:0"><h3>Which plots earned this</h3><span class="cnt">${rows.length} payment${rows.length===1?'':'s'} counted</span></div>
+  <div class="list">${rows.length?rows.map(rowOf).join(''):emptyState(ic.grid,'Nothing counted yet this month','Commission is calculated from payments logged this month against your clients.')}</div>
+  <div style="margin-top:18px"><button class="chip" id="raiseCommDisputeBtn" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.alert}</span>This does not look right — raise a concern</button></div>`;
+  document.getElementById('raiseCommDisputeBtn').onclick=()=>openCommissionDisputeModal(thisMonth,total);
+}
+function openCommissionDisputeModal(monthKey,total){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Raise a commission concern</div>
+    <div class="mini" style="margin-bottom:14px">Sends Management a message with your ${monthLabel(monthKey)} total (${ghs(total)}) so they can look into it.</div>
+    ${fld('What looks wrong?','<textarea id="cd_note" placeholder="e.g. a payment is missing, or the amount for a client looks off…"></textarea>')}
+    <div class="formactions"><button class="btn primary" id="sendCommDispute" style="width:100%">Send to Management</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('sendCommDispute').onclick=async()=>{
+    const note=val('cd_note').trim(); if(!note){ toast('Describe the concern first'); return; }
+    const btn=document.getElementById('sendCommDispute'); btn.disabled=true; btn.textContent='Sending…';
+    try{
+      const msg=`${PROFILE.name} is raising a concern about their ${monthLabel(monthKey)} commission (currently showing ${ghs(total)}): ${note}`;
+      const rec=await apiSendMessage('manager',msg); DB.messages.push(rec);
+      toast('Sent to Management'); ov.remove();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Send to Management'; }
+  };
 }
 let commissionMonthCursor=null;
 function mgrCommission(){
