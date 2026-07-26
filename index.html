@@ -20,6 +20,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
 <style>
 :root{
+  --user-font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; --user-zoom:1;
   --ink:#0B1E3D; --ink2:#0F2A52; --green:#1D4ED8; --green2:#2563EB; --leaf:#3B82F6;
   --gold:#84CC16; --gold2:#BEF264; --paper:#F4F6F5; --card:#FFFFFF; --line:#E2E7ED;
   --text:#111827; --muted:#647085; --danger:#B4472F; --warn:#B8791E; --info:#2E6E8E; --ok:#16A34A;
@@ -53,7 +54,9 @@ body.dark .league-table tbody tr:hover{background:#182541}
 body.dark ::-webkit-scrollbar-thumb{background:rgba(190,242,100,.18)}
 body.dark ::-webkit-scrollbar-thumb:hover{background:rgba(190,242,100,.3)}
 html,body{margin:0;padding:0}
-body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--paper);color:var(--text);-webkit-font-smoothing:antialiased;line-height:1.45;overflow-x:hidden;position:relative}
+html{overscroll-behavior-x:none}
+body{font-family:var(--user-font-family);background:var(--paper);color:var(--text);-webkit-font-smoothing:antialiased;line-height:1.45;overflow-x:hidden;position:relative;overscroll-behavior-x:none}
+#app{zoom:var(--user-zoom)}
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:
     radial-gradient(650px 450px at 8% -6%, rgba(59,130,246,.07), transparent 60%),
@@ -212,14 +215,21 @@ a{color:var(--green2)}
   display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--ink);animation:badgePop .3s ease both}
 @keyframes badgePop{from{transform:scale(0)}to{transform:scale(1)}}
 .main{flex:1;padding:20px 16px 100px;max-width:1080px;width:100%;margin:0 auto}
-.bottomnav{position:fixed;left:0;right:0;bottom:0;z-index:150;display:flex;background:var(--card);border-top:1px solid var(--line);
-  padding:6px 4px calc(4px + env(safe-area-inset-bottom));box-shadow:0 -6px 20px rgba(0,0,0,.06);max-width:1080px;margin:0 auto}
-.bottomnav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:var(--muted);
-  padding:6px 2px 4px;cursor:pointer;position:relative;font-size:10.5px;font-weight:700;border-radius:12px;transition:.15s}
-.bottomnav button svg{width:21px;height:21px;display:block}
-.bottomnav button.on{color:var(--leaf)}
+.bottomnav{position:fixed;left:0;right:0;bottom:0;z-index:150;display:flex;gap:2px;background:var(--card);border-top:1px solid var(--line);
+  padding:7px 6px calc(5px + env(safe-area-inset-bottom));box-shadow:0 -6px 20px rgba(0,0,0,.06);max-width:1080px;margin:0 auto}
+.bottomnav button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:var(--muted);
+  padding:6px 1px 5px;cursor:pointer;position:relative;font-size:9.5px;font-weight:600;letter-spacing:-.01em;border-radius:12px;transition:.15s;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bottomnav button span{overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.bottomnav button svg{width:19px;height:19px;display:block}
+.bottomnav button.on{color:var(--leaf);font-weight:700}
 .bottomnav .bnBadge{position:absolute;top:0;right:22%;min-width:15px;height:15px;padding:0 3px;border-radius:100px;
   background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:8.5px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--card)}
+@media (max-width:380px){
+  .bottomnav{padding-left:2px;padding-right:2px}
+  .bottomnav button{font-size:8.8px;padding-left:0;padding-right:0}
+  .bottomnav button svg{width:18px;height:18px}
+}
 .pagehead{margin:2px 0 18px;display:flex;align-items:flex-start;justify-content:space-between;gap:14px;animation:fadeUp .4s ease both}
 .dashRefreshBtn{width:34px;height:34px;border-radius:100px;border:1px solid var(--line);background:var(--card);color:var(--muted);
   display:flex;align-items:center;justify-content:center;flex:0 0 auto;box-shadow:var(--shadow);cursor:pointer;transition:.15s}
@@ -361,6 +371,21 @@ a{color:var(--green2)}
 .appGridGlyph .fic{width:100%;height:100%;transition:transform .2s cubic-bezier(.34,1.4,.64,1)}
 body.dark .appGridIcon:hover{background:#182541}
 .appGridLabel{font-size:11.5px;font-weight:700;color:var(--ink);text-align:center;line-height:1.25}
+.glassPopup{position:fixed;inset:0;z-index:300;display:flex;align-items:flex-end;justify-content:center;background:rgba(11,30,61,0);
+  transition:background .32s ease}
+.glassPopup.show{background:rgba(11,30,61,.4)}
+.glassSheet{width:100%;max-width:520px;background:rgba(244,246,245,.78);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);
+  border-radius:26px 26px 0 0;padding:18px 0 max(18px,env(safe-area-inset-bottom));box-shadow:0 -12px 44px rgba(11,30,61,.28);
+  border-top:1px solid rgba(255,255,255,.6);transform:translateY(100%);transition:transform .34s cubic-bezier(.22,1,.36,1)}
+.glassPopup.show .glassSheet{transform:translateY(0)}
+body.dark .glassSheet{background:rgba(18,30,51,.78);border-top-color:rgba(255,255,255,.08)}
+.glassSheetHandle{width:36px;height:4px;border-radius:100px;background:rgba(100,112,133,.35);margin:0 auto 12px}
+.glassSheetHead{display:flex;align-items:center;justify-content:space-between;padding:0 20px 14px;font-weight:800;font-size:16px;color:var(--text)}
+.glassRow{display:flex;gap:14px;overflow-x:auto;padding:2px 20px 6px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+.glassRow::-webkit-scrollbar{display:none}
+.glassRow .appGridIcon{flex:0 0 auto;width:76px;scroll-snap-align:start}
+.glassRow .appGridIcon:hover{background:rgba(255,255,255,.5)}
+body.dark .glassRow .appGridIcon:hover{background:rgba(255,255,255,.08)}
 .newsGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
 .newsCard{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);transition:transform .2s ease,box-shadow .2s ease}
 .newsCard:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
@@ -534,7 +559,7 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 .league-table thead th{position:sticky;top:0;background:var(--ink);color:#fff;text-align:left;font-size:11px;letter-spacing:.08em;
   text-transform:uppercase;font-weight:700;padding:13px 16px;white-space:nowrap}
 .league-table thead th:first-child{border-radius:0}
-.league-table tbody td{padding:13px 16px;border-bottom:1px solid var(--line);font-size:13.5px;white-space:nowrap}
+.league-table tbody td{padding:13px 16px;border-bottom:1px solid var(--line);font-size:13.5px;white-space:nowrap;vertical-align:middle}
 .league-table tbody tr:last-child td{border-bottom:none}
 .league-table tbody tr:hover{background:#FAF8F1}
 .league-table tr.lg-first{background:linear-gradient(90deg,rgba(132,204,22,.10),transparent)}
@@ -555,7 +580,7 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 .catchUpBar::after{content:"";position:absolute;right:-3px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:100px;background:#fff;box-shadow:0 0 8px 2px rgba(255,255,255,.7);animation:recordPulse 1.4s ease-in-out infinite}
 .league-table tr.lg-first td{font-weight:600}
 .league-table .lg-rank{font-size:17px;text-align:center;width:50px}
-.league-table .lg-name{font-weight:600;color:var(--ink);display:flex;align-items:center}
+.league-table .lg-name{font-weight:600;color:var(--ink)}
 .league-table .lg-strong{color:#8A6E12;font-weight:700}
 .team-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line)}
 .team-row:last-child{border-bottom:none}
@@ -726,12 +751,35 @@ const favicon = document.querySelector('link[rel="icon"]'); if(favicon) favicon.
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
 let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[]};
+/* ---- display preferences (font size / family), applied via CSS custom
+   properties so they take effect instantly with no per-page rework ---- */
+const DISPLAY_FONT_FAMILIES={
+  inter:"Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif",
+  system:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
+  georgia:"Georgia,'Times New Roman',serif",
+  verdana:"Verdana,Geneva,sans-serif"
+};
+const DISPLAY_FONT_SIZES={sm:0.92,md:1,lg:1.12,xl:1.25};
+function applyDisplayPrefs(){
+  let fam='inter', size='md';
+  try{ fam=localStorage.getItem('pep_font_family')||'inter'; size=localStorage.getItem('pep_font_size')||'md'; }catch(e){}
+  document.documentElement.style.setProperty('--user-font-family', DISPLAY_FONT_FAMILIES[fam]||DISPLAY_FONT_FAMILIES.inter);
+  document.documentElement.style.setProperty('--user-zoom', DISPLAY_FONT_SIZES[size]||1);
+  return {fam,size};
+}
+applyDisplayPrefs();
 
 function cfg(){ let u=SUPABASE_URL,k=SUPABASE_ANON_KEY;
   if(!u||!k){ try{const s=JSON.parse(localStorage.getItem('pep_cfg')||'null'); if(s){u=s.url;k=s.key;}}catch(e){} }
   return {url:u,key:k}; }
 function tryInitClient(){ const c=cfg(); if(!c.url||!c.key) return false;
   try{ sb=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}); return true; }catch(e){ return false; } }
+function syncDemoBannerVisibility(){
+  const banner=document.getElementById('demoBanner'), resetLink=document.getElementById('resetDemoLink');
+  if(!banner||!resetLink) return;
+  if(DEMO_MODE){ banner.classList.remove('hidden'); resetLink.classList.remove('hidden'); }
+  else{ banner.classList.add('hidden'); resetLink.classList.add('hidden'); }
+}
 
 /* ================= helpers ================= */
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -2139,6 +2187,7 @@ function showGreetScreen(name){
   });
 }
 async function enterApp(){
+  armHistoryTrap();
   document.getElementById('view').innerHTML='<div style="padding:70px 0;text-align:center"><div class="skel" style="height:120px;border-radius:16px;margin-bottom:14px"></div><div class="skel" style="height:80px;border-radius:16px"></div></div>';
   document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden');
   document.getElementById('tbName').textContent = PROFILE.role==='manager' ? 'Management' : PROFILE.name.split(' ')[0];
@@ -2214,6 +2263,7 @@ document.getElementById('logoutBtn').onclick=async()=>{
   const ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[]};
   document.getElementById('app').classList.add('hidden'); document.getElementById('login').classList.remove('hidden');
+  syncDemoBannerVisibility();
   document.getElementById('ddLabel').textContent='Choose your name';
   document.querySelectorAll('#ddPanel .dd-item').forEach(el=>el.classList.remove('sel'));
   LOGIN_MODE='password'; document.getElementById('pinInput').value='';
@@ -2227,6 +2277,13 @@ applyDarkModePref();
 document.getElementById('darkModeBtn').onclick=()=>{
   document.body.classList.toggle('dark');
   try{ localStorage.setItem('pep_dark', document.body.classList.contains('dark')?'1':'0'); }catch(e){}
+  // Some cards choose hardcoded (non-variable) colors at render time based on
+  // dark/light mode, so a plain class toggle leaves those stuck until the next
+  // navigation -- immediately repaint whatever's on screen so it takes full
+  // effect on this one tap, not the next page visit.
+  if(typeof PROFILE!=='undefined' && PROFILE && typeof CURRENT_NAV!=='undefined' && CURRENT_NAV){
+    try{ route(CURRENT_NAV.name,CURRENT_NAV.arg,{isBack:true}); }catch(e){}
+  }
 };
 document.getElementById('accountBtn').onclick=()=>route('account');
 
@@ -2235,14 +2292,14 @@ document.getElementById('cfgLink').onclick=()=>{ document.getElementById('authCa
   const c=cfg(); document.getElementById('cfgUrl').value=c.url||''; document.getElementById('cfgKey').value=c.key||'';
   document.getElementById('cfgCard').classList.remove('hidden'); };
 document.getElementById('cfgBack').onclick=()=>{ document.getElementById('cfgCard').classList.add('hidden'); document.getElementById('authCard').classList.remove('hidden'); };
-document.getElementById('cfgClear').onclick=async()=>{ localStorage.removeItem('pep_cfg'); sb=null; LIVE_MODE=false; DEMO_MODE=true; toast('Back to demo mode'); document.getElementById('cfgBack').click(); await refreshStaffList(); buildDropdown(); document.getElementById('demoBanner').classList.remove('hidden'); document.getElementById('resetDemoLink').classList.remove('hidden'); };
+document.getElementById('cfgClear').onclick=async()=>{ localStorage.removeItem('pep_cfg'); sb=null; LIVE_MODE=false; DEMO_MODE=true; toast('Back to demo mode'); document.getElementById('cfgBack').click(); await refreshStaffList(); buildDropdown(); syncDemoBannerVisibility(); };
 document.getElementById('cfgSave').onclick=()=>{
   const u=val('cfgUrl').trim().replace(/\/+$/,''), k=val('cfgKey').trim();
   if(!u||!k){ document.getElementById('cfgErr').textContent='Both fields are required.'; return; }
   localStorage.setItem('pep_cfg',JSON.stringify({url:u,key:k}));
   if(tryInitClient()){ LIVE_MODE=true; DEMO_MODE=false; toast('Connected — sign in with real accounts now');
     document.getElementById('cfgBack').click();
-    document.getElementById('demoBanner').classList.add('hidden'); document.getElementById('resetDemoLink').classList.add('hidden');
+    syncDemoBannerVisibility();
     refreshStaffList().then(buildDropdown);
   }
   else{ document.getElementById('cfgErr').textContent='Could not connect with those values.'; }
@@ -2321,22 +2378,30 @@ async function provisionProfile(user,fallbackName){
 
 /* ================= ROUTER ================= */
 const V=document.getElementById('view');
-let ROUTE_NAV_LOCK=false;
-function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
+/* App-controlled navigation stack. We deliberately do NOT rely on browser
+   history/popstate for in-app back-navigation — on mobile, an edge-swipe
+   gesture fires popstate too, and letting that drive real routing was
+   destroying whatever the agent was in the middle of doing. The browser
+   history API is only used to trap that gesture (see popstate listener below)
+   and turn it into a plain "go back" intent that this stack resolves. */
+let NAV_STACK=[];
+let CURRENT_NAV={name:'home',arg:undefined};
+function route(name,arg,opts){ opts=opts||{}; window.scrollTo({top:0,behavior:'smooth'});
+  if(opts.reset){ NAV_STACK=[]; }
+  else if(!opts.isBack && typeof PROFILE!=='undefined' && PROFILE && CURRENT_NAV){ NAV_STACK.push(CURRENT_NAV); }
+  CURRENT_NAV={name,arg};
   ({home:agentHome,pipeline:viewPipeline,addlead:formAddLead,update:pickForUpdate,updateOne:formUpdate,
-    enquiry:formEnquiry,complaint:formComplaint,sitevisit:formSiteVisit,mgr:managerView,account:formAccount,
+    enquiry:formEnquiry,complaint:formComplaint,sitevisit:formSiteVisit,mgr:()=>{ mgrTab='overview'; managerView(); },account:formAccount,
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads}[name]||agentHome)(arg);
-  if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && PROFILE){
-    try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
-  }
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); }}[name]||agentHome)(arg);
   updateBottomNav(name);
 }
 function goBack(fallbackTo){
-  if(window.history.state && window.history.state.routeName){ history.back(); }
-  else{ route(fallbackTo); }
+  const prev=NAV_STACK.pop();
+  if(prev){ route(prev.name,prev.arg,{isBack:true}); }
+  else{ route(fallbackTo,undefined,{isBack:true}); }
 }
 /* ---- persistent bottom tab bar ---- */
 let CURRENT_ROUTE_NAME='home';
@@ -2367,14 +2432,57 @@ function renderBottomNavNow(){
     const needsBadge=t.badgeId||show;
     return `<button class="${t.key===activeTab?'on':''}" data-navtab="${t.r}">${t.icon}${needsBadge?`<span class="bnBadge${show?'':' hidden'}"${t.badgeId?` id="${t.badgeId}"`:''}>${show?(t.badge>9?'9+':t.badge):''}</span>`:''}<span>${esc(t.label)}</span></button>`;
   }).join('');
-  nav.querySelectorAll('[data-navtab]').forEach(b=>b.onclick=()=>route(b.dataset.navtab));
+  nav.querySelectorAll('[data-navtab]').forEach(b=>{
+    const key=b.dataset.navtab;
+    b.onclick=()=>{
+      if(key==='salesdesk') openGlassPopup('Sales Desk',AGENT_HUBS.salesdesk.items);
+      else if(key==='crm') openGlassPopup('CRM Tools',AGENT_HUBS.crm.items);
+      else if(key==='more') openGlassPopup('More',moreItemsForRole());
+      else route(key,undefined,{reset:true});
+    };
+  });
 }
-window.addEventListener('popstate',e=>{
+function moreItemsForRole(){
+  if(PROFILE.role==='manager'){
+    return MGR_APPS.filter(a=>a.key!=='Duties').map(a=>{
+      if(a.key==='Feedback') return {fic:a.fic,label:a.label,r:'feedback'};
+      if(a.key==='Insights') return {fic:a.fic,label:a.label,r:'insights'};
+      if(a.key==='Downloads') return {fic:a.fic,label:a.label,r:'downloads'};
+      return {fic:a.fic,label:a.label,r:'mgrTabView',arg:a.key};
+    });
+  }
+  return [
+    {fic:'target',label:'Smart Insights',r:'insights'},
+    {fic:'document',label:'Download Directory',r:'downloads'},
+    {fic:'chat',label:'Feedback',r:'feedback'},
+    ...(canManagePlots()?[{fic:'allocation',label:'Allocations',r:'allocations'}]:[]),
+    {fic:'settings',label:'Settings',r:'account'}
+  ];
+}
+function openGlassPopup(title,items){
+  let ov=document.getElementById('glassPopup'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='glassPopup'; ov.className='glassPopup';
+  ov.innerHTML=`<div class="glassSheet" id="glassSheet">
+    <div class="glassSheetHandle"></div>
+    <div class="glassSheetHead"><span>${esc(title)}</span><button id="closeGlassPopup" style="background:rgba(100,112,133,.14);border:none;border-radius:50%;color:var(--muted);width:28px;height:28px;display:grid;place-items:center;cursor:pointer;padding:0">${ic.close}</button></div>
+    <div class="glassRow">${items.map(a=>`<button class="appGridIcon" data-glassroute="${esc(a.r)}" data-glassarg="${esc(a.arg||'')}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
+  </div>`;
+  document.body.appendChild(ov);
+  requestAnimationFrame(()=>ov.classList.add('show'));
+  const close=()=>{ ov.classList.remove('show'); setTimeout(()=>ov.remove(),340); };
+  ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
+  document.getElementById('closeGlassPopup').onclick=close;
+  ov.querySelectorAll('[data-glassroute]').forEach(b=>b.onclick=()=>{ close(); route(b.dataset.glassroute,b.dataset.glassarg||undefined); });
+}
+/* Trap the browser back gesture (hardware button, or a mobile edge-swipe) so it
+   never actually traverses real browser history — it only signals "go back",
+   which our own NAV_STACK resolves. Without this, a swipe mid-form could
+   navigate the page itself and blow away unsaved work. */
+function armHistoryTrap(){ try{ history.pushState({trap:true},'',location.href); }catch(e){} }
+window.addEventListener('popstate',()=>{
   if(!PROFILE) return; // still on login screen — nothing app-side to navigate
-  ROUTE_NAV_LOCK=true;
-  if(e.state && e.state.routeName){ route(e.state.routeName,e.state.routeArg,true); }
-  else{ route(PROFILE.role==='manager'?'mgr':'home',null,true); }
-  ROUTE_NAV_LOCK=false;
+  armHistoryTrap();
+  goBack(PROFILE.role==='manager'?'mgr':'home');
 });
 document.addEventListener('click',e=>{
   const el=e.target.closest('.nm-link');
@@ -2579,7 +2687,7 @@ function viewMore(){
     grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
     grid.querySelectorAll('[data-moreapp]').forEach(b=>b.onclick=()=>{
       const key=b.dataset.moreapp;
-      if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else if(key==='Downloads') route('downloads'); else { mgrTab=key; managerView(); }
+      if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else if(key==='Downloads') route('downloads'); else route('mgrTabView',key);
     });
   } else {
     const items=[
@@ -3771,6 +3879,7 @@ function renderAllocationDone(a){
       <button class="chip" data-sendalloc="${esc(a.id)}" style="flex:1;min-width:140px">✉ Send to ${esc((a.agentName||'').split(' ')[0])}'s chat</button>
     </div>
     ${canManagePlots()?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
+      <button class="chip" data-editalloc="${esc(a.id)}" style="flex:1;min-width:140px">Edit allocated plot</button>
       <button class="chip" data-undoalloc="${esc(a.id)}" style="flex:1;min-width:140px">Mistake? Undo — send back to Pending</button>
       <button class="trashbtn" data-delalloc="${esc(a.id)}" title="Delete this allocation entirely">${ic.trash}</button>
     </div>`:''}
@@ -4663,6 +4772,7 @@ function bindAllocationDoneCtrls(a){
   const wrap=document.getElementById('allocDetail_'+a.id); if(!wrap) return;
   wrap.querySelectorAll('[data-dlalloc]').forEach(b=>b.onclick=()=>buildAllocationPDF(a));
   wrap.querySelectorAll('[data-sendalloc]').forEach(b=>b.onclick=async()=>{ b.disabled=true; b.textContent='Sending…'; await sendAllocationToChat(a); b.disabled=false; b.textContent='✉ Sent ✓'; });
+  wrap.querySelectorAll('[data-editalloc]').forEach(b=>b.onclick=()=>openEditAllocatedPlotModal(a));
   wrap.querySelectorAll('[data-undoalloc]').forEach(b=>b.onclick=async()=>{
     if(!confirm('Undo this allocation? Plot '+a.plotNumber+' goes back to Available and this request returns to Pending so you can pick a different plot.')) return;
     b.disabled=true; b.textContent='Undoing…';
@@ -4681,6 +4791,39 @@ function bindAllocationDoneCtrls(a){
       PROFILE.role==='manager'?managerView():viewAllocations();
     }catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
   });
+}
+function openEditAllocatedPlotModal(a){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Edit allocated plot — ${esc(a.clientName)}</div>
+    <div class="mini" style="margin-bottom:14px">Currently allocated: <b>Plot ${esc(a.plotNumber||'—')}</b>. Pick a different plot and the old one goes back to Available automatically.</div>
+    ${fld('New plot number','<input id="ea_plot" placeholder="e.g. B-14"/>',a.plotNumber)}
+    <div class="formactions"><button class="btn primary" id="saveEditAlloc" style="width:100%">Save change</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('ea_plot').value=a.plotNumber||'';
+  document.getElementById('saveEditAlloc').onclick=async()=>{
+    const newPlot=val('ea_plot').trim(); if(!newPlot){ toast('Enter a plot number'); return; }
+    if(newPlot.toLowerCase()===String(a.plotNumber||'').toLowerCase()){ toast('That is already the allocated plot'); return; }
+    const conflict=DB.plots.find(p=>p.plotNumber.toLowerCase()===newPlot.toLowerCase());
+    if(conflict && conflict.status==='Allocated'){ toast('Plot '+newPlot+' is already allocated'+(conflict.clientName?(' to '+conflict.clientName):'')+' — pick a different one.'); return; }
+    const btn=document.getElementById('saveEditAlloc'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const oldPlotNumber=a.plotNumber;
+      await vacatePlotForAllocation(a);
+      await apiResolveAllocation(a.id,newPlot,a.note||'');
+      if(canManagePlots()){
+        if(conflict){ await apiUpdatePlot(conflict.id,{status:'Allocated',clientName:a.clientName,agentKey:a.agentKey}); Object.assign(conflict,{status:'Allocated',clientName:a.clientName,agentKey:a.agentKey}); }
+        else{ const newPlotRec=await apiInsertPlot({site:PLOT_SITE,plotNumber:newPlot,plotType:'Full Plot',status:'Allocated',
+          price:null,clientName:a.clientName,clientContact:'',agentKey:a.agentKey,notes:'Reassigned from Plot '+(oldPlotNumber||'—')}); DB.plots.unshift(newPlotRec); }
+      }
+      Object.assign(a,{plotNumber:newPlot});
+      toast('Allocation updated — now Plot '+newPlot); ov.remove();
+      PROFILE.role==='manager'?managerView():viewAllocations();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save change'; }
+  };
 }
 
 /* ================= CUSTOMER PROFILE (timeline across leads/enquiries/complaints/visits) ================= */
@@ -5448,6 +5591,16 @@ function formAccount(){
     <div id="avatarPreview" style="width:64px;height:64px;border-radius:100px;overflow:hidden;flex:0 0 auto;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted);font-size:22px">${PROFILE.avatar?`<img src="${PROFILE.avatar}" style="width:100%;height:100%;object-fit:cover"/>`:esc((PROFILE.name||'?')[0])}</div>
     <div style="flex:1"><input type="file" id="avatarInput" accept="image/*"/><div class="mini" style="margin-top:6px">Square photos work best — resized automatically.</div></div>
   </div>
+  <div class="sectitle"><h3>Display settings</h3><span class="cnt">this device only</span></div>
+  <div class="formwrap">
+    ${fld('Text size',`<select id="dispFontSize">
+      <option value="sm">Small</option><option value="md">Medium (default)</option><option value="lg">Large</option><option value="xl">Extra large</option>
+    </select>`)}
+    ${fld('Font',`<select id="dispFontFamily">
+      <option value="inter">Inter (default)</option><option value="system">System default</option><option value="georgia">Georgia (serif)</option><option value="verdana">Verdana (wide)</option>
+    </select>`)}
+    <div class="mini" style="margin-top:2px">Changes apply immediately and are saved to this device.</div>
+  </div>
   <div class="formwrap">
     ${fld('New password *','<input id="a_p1" type="password" placeholder="At least 6 characters"/>')}
     ${fld('Confirm new password *','<input id="a_p2" type="password" placeholder="Re-enter password"/>')}
@@ -5477,6 +5630,12 @@ function formAccount(){
       paintTopbarAvatar(); toast('Profile picture updated');
     }catch(err){ toast('Could not save photo: '+(err.message||err)); }
   };
+  { const cur=applyDisplayPrefs();
+    const fsSel=document.getElementById('dispFontSize'), ffSel=document.getElementById('dispFontFamily');
+    fsSel.value=cur.size; ffSel.value=cur.fam;
+    fsSel.onchange=()=>{ try{ localStorage.setItem('pep_font_size',fsSel.value); }catch(e){} applyDisplayPrefs(); };
+    ffSel.onchange=()=>{ try{ localStorage.setItem('pep_font_family',ffSel.value); }catch(e){} applyDisplayPrefs(); };
+  }
   document.getElementById('saveAcct').onclick=saveAccountPw;
   if(hasPin){ document.getElementById('removePinBtn').onclick=()=>{ if(!confirm('Remove PIN sign-in from this device?')) return; removePinLock(PROFILE.key); toast('PIN removed from this device'); formAccount(); }; }
   else{ document.getElementById('savePinBtn').onclick=saveAccountPin; }
@@ -5525,11 +5684,10 @@ const MGR_APPS=[
   {key:'Downloads',fic:'document',label:'Download Directory'},
 ];
 async function managerView(){
-  V.innerHTML=`<div class="pagehead"><div><h2>Management Dashboard</h2><p>Live across all agents</p></div>
+  V.innerHTML=`${mgrTab!=='overview'?back('mgr'):''}<div class="pagehead"><div><h2>${mgrTab==='overview'?'Management Dashboard':esc((MGR_APPS.find(a=>a.key===mgrTab)||{label:mgrTab}).label)}</h2><p>${mgrTab==='overview'?'Live across all agents':'Management'}</p></div>
   <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
-  <div class="tabs" id="mtabs"><button data-t="overview" class="${mgrTab==='overview'?'on':''}">Overview</button>${mgrTab!=='overview'?`<button class="on">${esc((MGR_APPS.find(a=>a.key===mgrTab)||{label:mgrTab}).label)}</button>`:''}</div><div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>
+  <div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>
   <div class="footer-note">System created by Abdul Waheed (Digital Operations) © ${new Date().getFullYear()}</div>`;
-  V.querySelectorAll('#mtabs button').forEach(b=>b.onclick=()=>{ if(b.dataset.t){ mgrTab=b.dataset.t; managerView(); } });
   document.getElementById('mgrRefresh').onclick=async()=>{ toast('Refreshing…'); try{ await apiLoadAll(); managerView(); toast('Up to date'); }catch(e){ toast('Refresh failed'); } };
   const body=document.getElementById('mbody');
   if(mgrTab==='overview'){ body.innerHTML=mgrOverview(); bindTasks(); bindOverviewCtrls(); animateKpiCounts(body); bindExpectedRevenueCard(); bindPipelineHealthCard(); bindBannerSlideshow(); }
@@ -6701,6 +6859,7 @@ function hideBoot(){
   const minSplash=async()=>{ const left=900-(Date.now()-bootStart); if(left>0) await new Promise(r=>setTimeout(r,left)); };
   const connected = tryInitClient();
   LIVE_MODE = connected; DEMO_MODE = !connected;
+  syncDemoBannerVisibility();
   let joinNotice='';
   if(LIVE_MODE){
     try{ const {data}=await sb.auth.getSession();
@@ -6726,7 +6885,6 @@ function hideBoot(){
   await minSplash(); hideBoot();
   document.getElementById('login').classList.remove('hidden');
   if(joinNotice) document.getElementById('loginErr').textContent=joinNotice;
-  if(LIVE_MODE){ document.getElementById('demoBanner').classList.add('hidden'); document.getElementById('resetDemoLink').classList.add('hidden'); }
 })();
 </script>
 </body>
