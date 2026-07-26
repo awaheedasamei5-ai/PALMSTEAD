@@ -2595,6 +2595,7 @@ function renderBottomNavNow(){
 }
 window.addEventListener('popstate',e=>{
   if(!PROFILE) return; // still on login screen — nothing app-side to navigate
+  if(window.__activeFilePreviewClose){ const fn=window.__activeFilePreviewClose; window.__activeFilePreviewClose=null; fn(); return; }
   ROUTE_NAV_LOCK=true;
   if(e.state && e.state.routeName){ route(e.state.routeName,e.state.routeArg,true); }
   else{ route(PROFILE.role==='manager'?'mgr':'home',null,true); }
@@ -2961,7 +2962,17 @@ function openFilePreview(dataUrl,filename,kind){
     </div>
     <div style="flex:1;overflow:auto" id="filePreviewBody">${body}</div>`;
   document.body.appendChild(ov);
-  document.getElementById('closeFilePreview').onclick=()=>{ ov.remove(); URL.revokeObjectURL(blobUrl); };
+  /* This overlay lives outside #view, so a route change underneath it (including a
+     swipe-back gesture, which fires a real popstate) never removes it on its own --
+     it used to just sit there stuck while the page underneath silently changed, and
+     repeated swipes would eventually exhaust the history stack and force a real reload.
+     Push one dedicated history entry so closing it (either via X or swipe-back) always
+     resolves through the SAME popstate path below, without ever touching the route. */
+  let closed=false;
+  const doClose=()=>{ if(closed) return; closed=true; if(window.__activeFilePreviewClose===doClose) window.__activeFilePreviewClose=null; ov.remove(); URL.revokeObjectURL(blobUrl); };
+  window.__activeFilePreviewClose=doClose;
+  try{ history.pushState({filePreviewOpen:true},'',location.href); }catch(e){}
+  document.getElementById('closeFilePreview').onclick=()=>{ try{ history.back(); }catch(e){} setTimeout(doClose,400); };
   document.getElementById('shareFilePreview').onclick=()=>shareBlobUrl(blobUrl,filename);
   if(kind==='excel' && isDataUri){
     (async()=>{
@@ -3157,9 +3168,11 @@ function getInsightLists(leads){
   const cold=active.filter(l=>!(l.nextAction||'').trim() && daysSince(l.date)>=10);
   const nearTrigger=active.filter(l=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; if(!g) return false; const pct=num(l.amtPaid)/g*100; return pct>=20 && pct<30; })
     .map(l=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; return {...l,__pct:Math.round(num(l.amtPaid)/g*100)}; }).sort((a,b)=>b.__pct-a.__pct);
+  const readyForAllocation=active.filter(l=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; if(!g) return false; return (num(l.amtPaid)/g*100)>=30; })
+    .map(l=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; return {...l,__pct:Math.round(num(l.amtPaid)/g*100)}; }).sort((a,b)=>b.__pct-a.__pct);
   const stalledHigh=active.filter(l=>l.priority==='High' && !(l.nextAction||'').trim());
   const overdue=active.filter(l=>l.followDate && daysSince(l.followDate)>0).sort((a,b)=>daysSince(b.followDate)-daysSince(a.followDate));
-  return {cold,nearTrigger,stalledHigh,overdue};
+  return {cold,nearTrigger,readyForAllocation,stalledHigh,overdue};
 }
 /* ================= MONTHLY TARGET (quota progress + expected revenue selector) ================= */
 /* ================= MONTHLY PAYMENT PLAN CLIENTS (expected from installment payers) ================= */
@@ -3429,30 +3442,54 @@ function viewMonthlyPlanClients(){
   <div class="formwrap" style="padding:6px 15px">${owing.length?owing.map(l=>`<div class="agentrow"><div class="ai"><div><div class="nm nm-link" data-custname="${esc(l.name)}" data-custcontact="${esc(l.contact||'')}" style="font-weight:700">${esc(l.name)}</div><div class="mini">${l.agentDisplay?esc(l.agentDisplay):''}${l.nextAction?(' · Next: '+esc(l.nextAction)):''}</div></div></div><div style="text-align:right"><div class="amt mono" style="font-weight:700;color:#B4472F">${ghs(l.__bal)}</div><div class="mini">owed</div></div></div>`).join(''):'<div class="empty">Nobody owes an outstanding balance right now.</div>'}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
 }
-function renderTargetCard(closedCount,targetVal,closedVal){
+function renderTargetCard(monthCollected,targetVal){
   const quota=num(CONFIG.targetPlotsPerMonth)||2;
-  const mainPct=Math.min(100,Math.round(closedCount/quota*100));
-  const exceeded=closedCount>quota;
+  const mainPct=targetVal?Math.min(100,Math.round(monthCollected/targetVal*100)):0;
+  const plotsEquiv=targetVal?Math.round((monthCollected/targetVal*quota)*10)/10:0;
+  const exceeded=targetVal>0 && monthCollected>=targetVal;
   const mySelections=(DB.targetSelections||[]).filter(t=>t.agentKey===PROFILE.key);
   const expectedTotal=mySelections.reduce((s,t)=>s+num(t.expectedAmount),0);
+  const expectedCleared=Math.min(monthCollected,expectedTotal);
+  const expectedLeft=Math.max(expectedTotal-monthCollected,0);
+  const expectedPct=expectedTotal?Math.min(100,Math.round(monthCollected/expectedTotal*100)):0;
   return `<div class="rowcard" style="margin-bottom:18px;padding:17px 17px 18px">
   <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">
     ${progressRing(mainPct,exceeded?'#84CC16':'#3B82F6',82)}
     <div style="flex:1">
       <div style="font-weight:700;color:var(--text);font-size:14.5px;display:flex;align-items:center;gap:6px">Target · ${monthLabel(today().slice(0,7))}${exceeded?`<span style="width:15px;height:15px;display:inline-flex;color:var(--gold)">${ic.medal}</span>`:''}</div>
-      <div style="font-size:12.5px;color:var(--muted);margin-top:3px">${closedCount} of ${quota} plots closed${targetVal?(' · '+ghs(closedVal)+' of '+ghs(targetVal)):''}</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:3px">${ghs(monthCollected)} of ${ghs(targetVal)} collected${targetVal?(' · '+plotsEquiv+' of '+quota+' plots equivalent · '+mainPct+'%'):''}</div>
       ${exceeded?`<div class="mini" style="margin-top:4px;color:#8A6E12;font-weight:700">Past quota — great work this month</div>`:''}
     </div>
   </div>
-  <div style="display:flex;justify-content:space-between;align-items:center;padding-top:14px;border-top:1px solid var(--line)">
-    <div><div style="font-weight:700;font-size:13px">Expected this month</div><div class="mini">${mySelections.length} client${mySelections.length===1?'':'s'} selected</div></div>
-    <div style="text-align:right"><div style="font-size:17px;font-weight:800;font-family:'IBM Plex Mono',monospace">${ghs(expectedTotal)}</div>
-    <button class="chip" id="editTargetSelBtn" style="margin-top:4px;padding:5px 12px;font-size:11.5px;display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;display:inline-flex">${ic.edit}</span>Select clients</button></div>
+  <div style="padding-top:14px;border-top:1px solid var(--line)">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div><div style="font-weight:700;font-size:13px">Expected this month</div><div class="mini">${mySelections.length} client${mySelections.length===1?'':'s'} selected</div></div>
+      <div style="text-align:right"><div style="font-size:17px;font-weight:800;font-family:'IBM Plex Mono',monospace">${ghs(expectedTotal)}</div>
+      <button class="chip" id="editTargetSelBtn" style="margin-top:4px;padding:5px 12px;font-size:11.5px;display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;display:inline-flex">${ic.edit}</span>Select clients</button></div>
+    </div>
+    ${expectedTotal>0?`<div style="display:flex;gap:18px;margin-top:12px;font-size:12px">
+      <div><div class="mini">Cleared</div><div style="font-weight:700;color:#1E7A56">${ghs(expectedCleared)}</div></div>
+      <div><div class="mini">Left</div><div style="font-weight:700;color:${expectedLeft>0?'#B4472F':'#1E7A56'}">${ghs(expectedLeft)}</div></div>
+      <div><div class="mini">Progress</div><div style="font-weight:700">${expectedPct}%</div></div>
+    </div>`:''}
+    ${mySelections.length?`<div style="margin-top:10px;display:flex;flex-direction:column;gap:2px">${mySelections.map(t=>`<div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;padding:7px 0;border-top:1px solid var(--line)">
+      <span>${esc(t.clientName)} <span class="mini">(${esc(t.paymentType)} · ${ghs(t.expectedAmount)})</span></span>
+      <button class="chip" style="padding:3px 8px;font-size:10.5px;color:#B4472F" data-removetargetsel="${esc(t.id)}">Remove</button>
+    </div>`).join('')}</div>`:''}
   </div>
   </div>`;
 }
 function bindTargetCard(){
   const btn=document.getElementById('editTargetSelBtn'); if(btn) btn.onclick=openTargetSelector;
+  document.querySelectorAll('[data-removetargetsel]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.removetargetsel;
+    if(!confirm('Remove this client from your expected-to-close list this month?')) return;
+    try{
+      await apiDeleteTargetSelection(id);
+      DB.targetSelections=(DB.targetSelections||[]).filter(t=>t.id!==id);
+      toast('Removed'); agentHome();
+    }catch(e){ toast('Failed: '+(e.message||e)); }
+  });
 }
 async function openTargetSelector(){
   const thisMonth=today().slice(0,7);
@@ -3515,9 +3552,11 @@ async function openTargetSelector(){
 }
 function computeSmartInsights(leads,paymentsForScope){
   const insights=[];
-  const {cold,nearTrigger,stalledHigh,overdue}=getInsightLists(leads);
+  const {cold,nearTrigger,readyForAllocation,stalledHigh,overdue}=getInsightLists(leads);
 
   if(cold.length) insights.push({icon:ic.snow,cls:'warnt',text:`${cold.length} lead${cold.length===1?'':'s'} ${cold.length===1?'has':'have'} no next action set and ${cold.length===1?'is':'are'} going cold`,detail:cold.slice(0,3).map(l=>l.name).join(', ')+(cold.length>3?` +${cold.length-3} more`:''),route:'insightList',arg:'cold'});
+
+  if(readyForAllocation.length) insights.push({icon:ic.trophy,cls:'ok',text:`${readyForAllocation.length} client${readyForAllocation.length===1?' has':'s have'} crossed 30% — ready for plot allocation`,detail:readyForAllocation.slice(0,3).map(l=>l.name+' ('+l.__pct+'%)').join(', '),route:'insightList',arg:'readyForAllocation'});
 
   if(nearTrigger.length) insights.push({icon:ic.target,cls:'ok',text:`${nearTrigger.length} client${nearTrigger.length===1?' is':'s are'} within reach of the 30% allocation mark`,detail:nearTrigger.slice(0,3).map(l=>l.name+' ('+l.__pct+'%)').join(', '),route:'insightList',arg:'nearTrigger'});
 
@@ -3556,6 +3595,7 @@ function forecastNextMonth(paymentsForScope){
 }
 const INSIGHT_META={
   cold:{title:'Going cold',desc:'No next action set, added 10+ days ago'},
+  readyForAllocation:{title:'Ready for allocation',desc:'30% or more paid — eligible for a plot allocation request'},
   nearTrigger:{title:'Near the 30% allocation mark',desc:'Between 20% and 30% paid — one more payment away from triggering an allocation request'},
   stalledHigh:{title:'High priority, no follow-up planned',desc:'Marked High priority but nothing scheduled next'},
   overdue:{title:'Overdue follow-ups',desc:'The follow-up date on these has already passed'},
@@ -3587,11 +3627,8 @@ function bindSmartInsights(){ document.querySelectorAll('[data-insightroute]').f
 function agentHome(){ const k=kpisOf(DB.leads);
   const thisMonth=today().slice(0,7);
   const wonAll=DB.leads.filter(l=>isFullyPaid(l));
-  const wonMonth=wonAll.filter(l=>monthKey(l.date)===thisMonth);
-  const wonMonthVal=wonMonth.reduce((s,l)=>s+num(l.grandTotal!=null?l.grandTotal:computeLead(l).grand),0);
   const monthCollected=DB.payments.filter(p=>(p.date||'').slice(0,7)===thisMonth).reduce((s,p)=>s+num(p.amount),0);
   const target=num((CONFIG.targets||{})[PROFILE.key])||0;
-  const pct=target? Math.min(100,Math.round(wonMonthVal/target*100)):0;
   const myCommission=computeMyPersonalCommission(thisMonth);
   V.innerHTML=`<div class="pagehead"><div><h2>${esc(PROFILE.name.split(' ')[0])}'s Dashboard</h2><p>Royal Palm Enclave · Trulander JSF Limited</p></div>
   <div style="display:flex;gap:8px;flex:0 0 auto">
@@ -3606,7 +3643,7 @@ function agentHome(){ const k=kpisOf(DB.leads);
     <div style="margin-left:auto;font-size:22px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--text)">${ghs(myCommission)}</div></div>
   </div>
   <div class="kpis">${kpi('Active leads',k.leads,'','pipeline')}${kpi('Pipeline value',ghs(k.val),'gold','pipeline')}${kpi('Collected',ghs(k.coll),'','paid')}${kpi('Outstanding',ghs(k.out),'gold','owed')}${kpi('Site visits',k.sv,'','visits')}${kpi('Fully paid',wonAll.length,'','donepaying')}${kpi('Monthly collected',ghs(monthCollected),'gold','monthlyclosed')}</div>
-  ${renderTargetCard(wonMonth.length,target,wonMonthVal)}
+  ${renderTargetCard(monthCollected,target)}
   ${renderMonthlyPlanCard(DB.leads)}
   ${renderPipelineHealthCard(DB.leads)}
   <div class="footer-note">${DEMO_MODE?'<span class="demoflag"><span class="d"></span>Demo data</span>':''} Signed in as ${esc(PROFILE.email)}</div>
