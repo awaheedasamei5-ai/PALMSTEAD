@@ -1645,6 +1645,27 @@ async function apiInsertPayment(leadId,clientName,amount,paymentDate){
     return {id:data.id,leadId:data.lead_id,agentKey:data.agent_key,clientName:data.client_name,amount:data.amount,date:data.payment_date,createdAt:(data.created_at||'').slice(0,16).replace('T',' ')};
   }catch(e){ return null; } // payments table not set up yet — pipeline still saves fine, just no ledger entry
 }
+async function apiUpdatePayment(id,amount,paymentDate){
+  if(DEMO_MODE){ const d=await demoLoad(); const p=(d.payments||[]).find(x=>x.id===id); if(p){ p.amount=amount; p.date=paymentDate; } await demoSave(); return; }
+  const {error}=await sb.from('payments').update({amount,payment_date:paymentDate}).eq('id',id); if(error) throw error;
+}
+async function apiDeletePayment(id){
+  if(DEMO_MODE){ const d=await demoLoad(); d.payments=(d.payments||[]).filter(x=>x.id!==id); await demoSave(); return; }
+  const {error}=await sb.from('payments').delete().eq('id',id); if(error) throw error;
+}
+/* Keeps the lead's amtPaid/balance in exact lockstep with the itemized ledger whenever a
+   payment entry is corrected or removed -- these are two separately stored figures (amtPaid
+   is a running total on the lead; payments is the itemized ledger everything else -- payment
+   history, Agent of the Month, commission -- actually reads from), and letting them drift
+   apart is what let a deleted test payment keep feeding real financial figures. */
+async function syncLeadAfterPaymentDelta(leadId,delta){
+  const lead=DB.leads.find(x=>x.id===leadId); if(!lead) return;
+  const newPaid=Math.max(0,num(lead.amtPaid)+delta);
+  const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand;
+  const bal=Math.max(grand-newPaid,0);
+  await apiUpdateLead(lead.id,{amtPaid:newPaid,balance:bal});
+  Object.assign(lead,{amtPaid:newPaid,balance:bal});
+}
 
 /* ---- config (pricing + targets) ---- */
 async function apiLoadConfig(){
@@ -5416,7 +5437,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
     ${mySched.arrears>0?`<div class="mini" style="margin-top:9px;padding-top:9px;border-top:1px solid var(--line);color:#B8791E;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:13px;height:13px;display:inline-flex">${ic.alert}</span>${ghs(mySched.arrears)} still overdue from earlier months</div>`:''}
     <button class="chip" id="viewSchedBtn" style="margin-top:10px;width:100%">View full month-by-month schedule →</button>
   </div>`:''}
-  ${fld('Total paid to date (GHS)','<input id="u_paidtotal" type="number" value="'+num(l.amtPaid)+'"/>','edit directly to correct a mistake, or use the field below to just add a new payment')}
+  ${fld('Total paid to date (GHS)','<input id="u_paidtotal" type="number" value="'+num(l.amtPaid)+'"/>','only for a lump sum not yet itemized below — to correct or remove a specific logged payment, use Payment schedule instead')}
   ${fld(mySched?"This month's payment (GHS)":(myDep&&!myDep.complete?'Deposit payment (GHS)':'...or add a new payment now (GHS)'),'<input id="u_pay" type="number" placeholder="0"/>'+(mySched?'<div id="u_payCompare" class="mini" style="margin-top:7px;font-weight:700"></div>':''),mySched?('expected '+ghs(mySched.monthlyInstallment)+' this month — enter what they actually paid'):(myDep&&!myDep.complete?(ghs(myDep.remaining)+' left on the deposit'):'adds on top of the total above'))}
   <div class="sectitle"><h3>Stage &amp; follow-up</h3></div>
   <div class="grid2">${fld('Move stage to',stageSel('u_stage',l.stage))}${fld('Contact method',sel('u_method',['Phone Call','WhatsApp','Email','In-person']))}</div>
@@ -5571,7 +5592,12 @@ async function saveUpdate(id,resolvedDepositTarget){ const l=DB.leads.find(x=>x.
   const discount=num(val('u_discount')); const plan=val('u_plan'); const stage=val('u_stage');
   const oldDiscount=num(l.discount);
   const tmp={...l,plotType,noPlots,unitPrice,discount,paymentPlan:plan}; const cc=computeLead(tmp);
-  const pay=num(val('u_pay')); const newPaid=num(val('u_paidtotal'))+(pay>0?pay:0);
+  const pay=num(val('u_pay')); const paidTotalInput=num(val('u_paidtotal')); const newPaid=paidTotalInput+(pay>0?pay:0);
+  const ledgerSum=(DB.payments||[]).filter(p=>p.leadId===l.id).reduce((s,p)=>s+num(p.amount),0);
+  if(paidTotalInput<ledgerSum-0.5){
+    toast("Total paid can't be set below "+ghs(ledgerSum)+" — that's already itemized in the payment ledger. Edit or delete the specific entry there instead (Payment schedule, below).");
+    return;
+  }
   const next=val('u_next').trim()||l.nextAction; const notes=val('u_notes').trim(); const tags=val('u_tags').trim();
   const sv=val('u_sv')==='Mark as visited'?'Yes':l.siteVisit; const bal=Math.max(cc.grand-newPaid,0);
   const deptargetEl=document.getElementById('u_deptarget');
@@ -5600,6 +5626,26 @@ const SCHED_STATUS_META={
   over:{label:'Paid extra',cls:'ok'},
   paid:{label:'Paid in full',cls:'ok'}
 };
+function entriesRowsHtml(entries){
+  if(!entries.length) return '';
+  return `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px">
+    ${entries.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div class="mini">${esc(p.date||'')} · ${ghs(num(p.amount))}</div>
+      <div style="display:flex;gap:6px;flex:0 0 auto">
+        <button class="chip" style="padding:4px 9px;font-size:11px" data-editpayment="${esc(p.id)}">Edit</button>
+        <button class="chip" style="padding:4px 9px;font-size:11px;color:#B4472F" data-delpayment="${esc(p.id)}">Delete</button>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+function bindPaymentEntryCtrls(l,allEntries){
+  document.querySelectorAll('[data-editpayment]').forEach(b=>b.onclick=()=>{
+    const p=allEntries.find(x=>x.id===b.dataset.editpayment); if(p) openEditPaymentModal(p,l);
+  });
+  document.querySelectorAll('[data-delpayment]').forEach(b=>b.onclick=()=>{
+    const p=allEntries.find(x=>x.id===b.dataset.delpayment); if(p) deletePaymentEntry(p,l);
+  });
+}
 function viewPaymentSchedule(id){
   const l=DB.leads.find(x=>x.id===id); if(!l){ route('home'); return; }
   const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -5607,10 +5653,12 @@ function viewPaymentSchedule(id){
   if(sched){
     const rows=sched.slots.map(s=>{
       const meta=SCHED_STATUS_META[s.status];
+      const entries=myPayments.filter(p=>(p.date||'').slice(0,7)===s.slotKey);
       return `<div class="rowcard" style="margin-bottom:10px;padding:14px 16px">
         <div class="top"><div><div class="nm" style="font-size:14px">Month ${s.monthNumber} · ${s.label}</div>
         <div class="meta">Expected ${ghs(s.expected)}${s.paid>0?(' · logged '+ghs(s.paid)):''}</div></div>
         <span class="tag ${meta.cls}">${meta.label}</span></div>
+        ${entriesRowsHtml(entries)}
         <div class="foot"><button class="chip" data-logmonth="${s.slotKey}" data-expected="${s.expected}">Log payment for this month →</button></div>
       </div>`;
     }).join('');
@@ -5621,18 +5669,64 @@ function viewPaymentSchedule(id){
     </div>`:''}
     <div id="schedRows">${rows}</div>`;
     document.querySelectorAll('[data-logmonth]').forEach(b=>b.onclick=()=>openLogMonthPayment(l,b.dataset.logmonth,num(b.dataset.expected)));
+    bindPaymentEntryCtrls(l,myPayments);
     return;
   }
   const ledger=buildGenericMonthLedger(l,myPayments);
-  const rows2=ledger.slots.map(s=>`<div class="rowcard" style="margin-bottom:10px;padding:14px 16px">
+  const rows2=ledger.slots.map(s=>{
+    const entries=myPayments.filter(p=>(p.date||'').slice(0,7)===s.slotKey);
+    return `<div class="rowcard" style="margin-bottom:10px;padding:14px 16px">
     <div class="top"><div><div class="nm" style="font-size:14px">Month ${s.monthNumber} · ${s.label}</div>
     <div class="meta">${s.paid>0?('Logged '+ghs(s.paid)):'Nothing logged this month'}</div></div>
     ${s.paid>0?'<span class="tag ok">Logged</span>':''}</div>
+    ${entriesRowsHtml(entries)}
     <div class="foot"><button class="chip" data-logmonth="${s.slotKey}" data-expected="0">Log payment for this month →</button></div>
-  </div>`).join('');
+  </div>`;}).join('');
   V.innerHTML=`${back('updateOne')}<div class="pagehead"><div><div class="eyebrow">Payment history</div><h2>${esc(l.name)}</h2><p>By month, anchored from ${ledger.anchor} — pick any month to log or backfill a payment</p></div></div>
   <div id="schedRows">${rows2||emptyState(ic.grid,'No months yet','')}</div>`;
   document.querySelectorAll('[data-logmonth]').forEach(b=>b.onclick=()=>openLogMonthPayment(l,b.dataset.logmonth,num(b.dataset.expected)));
+  bindPaymentEntryCtrls(l,myPayments);
+}
+function openEditPaymentModal(p,lead){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Edit payment</div><button id="closeEditPayment" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:14px">Correcting this updates the payment history, Agent of the Month, and commission figures everywhere they're used — not just this client's total.</div>
+    ${fld('Amount paid (GHS)','<input id="ep_amount" type="number" value="'+num(p.amount)+'"/>')}
+    ${fld('Date','<input id="ep_date" type="date" value="'+esc(p.date||'')+'"/>')}
+    <div class="formactions"><button class="btn primary" id="saveEditPayment" style="width:100%">Save correction</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeEditPayment').onclick=()=>ov.remove();
+  document.getElementById('saveEditPayment').onclick=async()=>{
+    const newAmount=num(val('ep_amount')); const newDate=val('ep_date');
+    if(newAmount<=0){ toast('Enter an amount, or use Delete to remove this payment entirely'); return; }
+    if(!newDate){ toast('Pick a date'); return; }
+    const btn=document.getElementById('saveEditPayment'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const oldAmount=num(p.amount);
+      await apiUpdatePayment(p.id,newAmount,newDate);
+      p.amount=newAmount; p.date=newDate;
+      await syncLeadAfterPaymentDelta(lead.id,newAmount-oldAmount);
+      await checkAllocationTrigger(lead);
+      await addActivity(lead.name,'Payment corrected',ghs(oldAmount)+' → '+ghs(newAmount)+' ('+monthLabel(newDate.slice(0,7))+')','','',null);
+      toast('Payment corrected'); ov.remove();
+      route('paymentSchedule',lead.id);
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save correction'; }
+  };
+}
+async function deletePaymentEntry(p,lead){
+  if(!confirm('Delete this '+ghs(num(p.amount))+' payment dated '+(p.date||'')+'? This also removes it from payment history, Agent of the Month, and commission.')) return;
+  try{
+    await apiDeletePayment(p.id);
+    DB.payments=DB.payments.filter(x=>x.id!==p.id);
+    await syncLeadAfterPaymentDelta(lead.id,-num(p.amount));
+    await addActivity(lead.name,'Payment deleted',ghs(num(p.amount))+' removed ('+monthLabel((p.date||'').slice(0,7))+')','','',null);
+    toast('Payment deleted');
+    route('paymentSchedule',lead.id);
+  }catch(e){ toast('Failed: '+(e.message||e)); }
 }
 function openLogMonthPayment(lead,slotKey,expected){
   const [y,m]=slotKey.split('-').map(Number);
