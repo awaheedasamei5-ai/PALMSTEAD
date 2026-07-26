@@ -2745,8 +2745,8 @@ function viewDownloads(){
   const rowOf=d=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(d.filename)}</div><div class="meta">${esc((d.createdAt||'').slice(0,16).replace('T',' '))}${PROFILE.role==='manager'?(' · '+esc(d.userName)):''}</div></div>
     <span class="tag ghost">${esc((d.kind||'').toUpperCase())}</span></div>
     <div class="foot">
-      ${isPreviewableDownload(d)?`<button class="chip" data-dlview="${esc(d.id)}">${ic.eye} View</button>`:''}
-      <button class="chip" data-dlsend="${esc(d.id)}">${ic.upload} Send</button>
+      ${isPreviewableDownload(d)?`<button class="chip" data-dlview="${esc(d.id)}" style="display:inline-flex;align-items:center;gap:6px"><span style="width:13px;height:13px;display:inline-flex">${ic.eye}</span>View</button>`:''}
+      <button class="chip" data-dlsend="${esc(d.id)}" style="display:inline-flex;align-items:center;gap:6px"><span style="width:13px;height:13px;display:inline-flex">${ic.upload}</span>Send</button>
     </div></div>`;
   V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><h2>Download Directory</h2><p>${all.length} file${all.length===1?'':'s'} · ${PROFILE.role==='manager'?'every file downloaded by the team':'everything you have downloaded from this account'}</p></div></div>
   ${kinds.length>1?`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"><button class="chip ${!downloadsKindFilter?'on':''}" data-dlkind="">All</button>${kinds.map(k=>`<button class="chip ${downloadsKindFilter===k?'on':''}" data-dlkind="${esc(k)}">${esc(k.toUpperCase())}</button>`).join('')}</div>`:''}
@@ -5064,7 +5064,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
 
   <div class="sectitle"><h3>Payment history</h3><span class="cnt">${myPayments.length} payment${myPayments.length===1?'':'s'}</span></div>
   <div class="formwrap" style="padding:6px 15px;margin-bottom:12px">${myPayments.length?myPayments.map(p=>`<div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">${esc(p.date||'')}</div></div></div><div class="amt mono" style="font-weight:700;color:#1E7A56">+${ghs(num(p.amount))}</div></div>`).join(''):'<div class="empty">No individual payments logged yet — only a starting total.</div>'}</div>
-  <div style="margin-bottom:18px"><button class="chip" id="viewLedgerBtn" style="width:100%">${ic.calendar} Log payment for a specific month →</button></div>
+  <div style="margin-bottom:18px"><button class="chip" id="viewLedgerBtn" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.calendar}</span>Log payment for a specific month →</button></div>
   <div style="margin-bottom:18px"><button class="btn primary" id="dlUpdPdf" style="width:100%">⬇ Download this client's pipeline (PDF)</button></div>
 
   <div class="dangerzone"><div class="dz-text"><b>Delete this client</b><br>Permanently removes ${esc(l.name)} and their record from the pipeline. This can't be undone.</div>
@@ -6857,7 +6857,7 @@ function viewMyCommission(){
   V.innerHTML=`${back('home')}<div class="pagehead"><div><div class="eyebrow">My commission</div><h2>${ghs(total)}</h2><p>${monthLabel(thisMonth)} · personal only, pool share confirmed by Management on the 15th</p></div></div>
   <div class="sectitle" style="margin-top:0"><h3>Which plots earned this</h3><span class="cnt">${rows.length} payment${rows.length===1?'':'s'} counted</span></div>
   <div class="list">${rows.length?rows.map(rowOf).join(''):emptyState(ic.grid,'Nothing counted yet this month','Commission is calculated from payments logged this month against your clients.')}</div>
-  <div style="margin-top:18px"><button class="chip" id="raiseCommDisputeBtn" style="width:100%">${ic.alert} This does not look right — raise a concern</button></div>`;
+  <div style="margin-top:18px"><button class="chip" id="raiseCommDisputeBtn" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.alert}</span>This does not look right — raise a concern</button></div>`;
   document.getElementById('raiseCommDisputeBtn').onclick=()=>openCommissionDisputeModal(thisMonth,total);
 }
 function openCommissionDisputeModal(monthKey,total){
