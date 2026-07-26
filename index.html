@@ -13,7 +13,7 @@
 <link rel="icon" href="./favicon-32.png"/>
 <title>Palmstead — PEP Landbank</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="preconnect" href="https://lrahgcnftetnyxunaljs.supabase.co">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js" defer></script>
@@ -64,7 +64,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 button{font-family:inherit;cursor:pointer}
 input,select,textarea{font-family:inherit;font-size:16px}
 .mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
-h1,h2,h3{font-family:Fraunces,Georgia,serif;font-weight:600;letter-spacing:-.01em;margin:0}
+h1,h2,h3{font-family:Inter,system-ui,sans-serif;font-weight:800;letter-spacing:-.01em;margin:0}
 a{color:var(--green2)}
 .hidden{display:none!important}
 ::selection{background:var(--gold2);color:#1a1a1a}
@@ -76,6 +76,9 @@ a{color:var(--green2)}
 @keyframes shimmer{0%{background-position:-300px 0}100%{background-position:300px 0}}
 @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 @keyframes ringPulse{0%{box-shadow:0 0 0 0 rgba(132,204,22,.45)}100%{box-shadow:0 0 0 14px rgba(132,204,22,0)}}
+@keyframes letterIn{0%{opacity:0;transform:translateX(16px) scale(.6)}60%{opacity:1}100%{opacity:1;transform:translateX(0) scale(1)}}
+@keyframes glyphSettle{0%{transform:scale(1)}45%{transform:scale(1.14)}100%{transform:scale(1)}}
+@keyframes lockupFlash{0%,100%{filter:drop-shadow(0 0 0 rgba(190,242,100,0))}50%{filter:drop-shadow(0 0 10px rgba(190,242,100,.65))}}
 .view-enter{animation:fadeUp .38s cubic-bezier(.2,.8,.2,1) both}
 .skel{background:linear-gradient(90deg,#EDEAE0 25%,#F6F4EC 37%,#EDEAE0 63%);background-size:400px 100%;animation:shimmer 1.3s infinite linear;border-radius:10px}
 
@@ -95,8 +98,8 @@ a{color:var(--green2)}
 .brand .mark{display:flex;justify-content:center;align-items:center;margin-bottom:16px}
 .brand .glyph{width:76px;height:76px;border-radius:22px;overflow:hidden;box-shadow:0 10px 26px rgba(11,30,61,.4),0 0 0 1px rgba(255,255,255,.08) inset;animation:floaty 5s ease-in-out infinite}
 .brand .glyph img{width:100%;height:100%;display:block}
-.brand .wm{font-family:Fraunces,serif;font-weight:700;font-size:19px;letter-spacing:.16em;color:#fff}
-.brand h1{font-size:32px;line-height:1.06;color:#fff}
+.brand .wm{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;letter-spacing:.16em;color:#fff}
+.brand h1{font-family:'Space Grotesk',sans-serif;font-size:30px;line-height:1.06;letter-spacing:.03em;text-transform:uppercase;color:#fff}
 .brand .sub{color:#A9BEDD;font-size:13.5px;margin-top:11px;letter-spacing:.02em}
 .card-auth{position:relative;width:100%;max-width:404px;background:rgba(255,255,255,.055);
   border:1px solid rgba(255,255,255,.14);border-radius:22px;padding:22px;backdrop-filter:blur(10px);
@@ -168,7 +171,7 @@ a{color:var(--green2)}
 @keyframes sheenSlide{0%{background-position:130% 0}100%{background-position:-30% 0}}
 .topbar .glyph{width:34px;height:34px;border-radius:10px;overflow:hidden;flex:0 0 auto;box-shadow:0 4px 12px rgba(0,0,0,.3),0 0 0 1px rgba(190,242,100,.25)}
 .topbar .glyph img{width:100%;height:100%;display:block}
-.topbar .tt{font-family:Fraunces,serif;font-weight:700;font-size:14.5px;letter-spacing:.09em;line-height:1}
+.topbar .tt{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14.5px;letter-spacing:.09em;line-height:1}
 .topbar .ts{font-size:10.5px;color:#9DB2CC;letter-spacing:.05em;margin-top:3px;display:flex;align-items:center;gap:6px}
 .demodot{width:6px;height:6px;border-radius:50%;background:var(--gold2);animation:ringPulse 1.8s infinite}
 .topbar .spacer{flex:1}
@@ -209,6 +212,14 @@ a{color:var(--green2)}
   display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--ink);animation:badgePop .3s ease both}
 @keyframes badgePop{from{transform:scale(0)}to{transform:scale(1)}}
 .main{flex:1;padding:20px 16px 100px;max-width:1080px;width:100%;margin:0 auto}
+.bottomnav{position:fixed;left:0;right:0;bottom:0;z-index:150;display:flex;background:var(--card);border-top:1px solid var(--line);
+  padding:6px 4px calc(4px + env(safe-area-inset-bottom));box-shadow:0 -6px 20px rgba(0,0,0,.06);max-width:1080px;margin:0 auto}
+.bottomnav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:var(--muted);
+  padding:6px 2px 4px;cursor:pointer;position:relative;font-size:10.5px;font-weight:700;border-radius:12px;transition:.15s}
+.bottomnav button svg{width:21px;height:21px;display:block}
+.bottomnav button.on{color:var(--leaf)}
+.bottomnav .bnBadge{position:absolute;top:0;right:22%;min-width:15px;height:15px;padding:0 3px;border-radius:100px;
+  background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:8.5px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--card)}
 .pagehead{margin:2px 0 18px;display:flex;align-items:flex-start;justify-content:space-between;gap:14px;animation:fadeUp .4s ease both}
 .dashRefreshBtn{width:34px;height:34px;border-radius:100px;border:1px solid var(--line);background:var(--card);color:var(--muted);
   display:flex;align-items:center;justify-content:center;flex:0 0 auto;box-shadow:var(--shadow);cursor:pointer;transition:.15s}
@@ -216,9 +227,9 @@ a{color:var(--green2)}
 .dashRefreshBtn:hover{color:var(--ink);transform:rotate(45deg)}
 .dashRefreshBtn.spinning svg{animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.pagehead .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:700;display:inline-flex;align-items:center;gap:6px}
+.pagehead .eyebrow{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--leaf);font-weight:800;display:inline-flex;align-items:center;gap:6px;margin-bottom:2px}
 .pagehead .eyebrow::before{content:"";width:6px;height:6px;border-radius:100px;background:linear-gradient(150deg,var(--gold),var(--leaf));box-shadow:0 0 0 3px rgba(132,204,22,.18);flex:0 0 auto}
-.pagehead h2{font-size:27px;margin-top:5px;position:relative;display:inline-block}
+.pagehead h2{font-size:27px;margin-top:9px;position:relative;display:inline-block}
 .pagehead p{color:var(--muted);margin:6px 0 0;font-size:14px}
 .pagehead .hicon{width:50px;height:50px;border-radius:15px;flex:0 0 auto;display:grid;place-items:center;
   box-shadow:var(--shadow);animation:pop .4s ease both}
@@ -408,7 +419,7 @@ body.dark .insightCard.ok{color:#A3E635}body.dark .insightCard.warnt{color:#FBBF
 .task.c-cmp .ic{background:linear-gradient(150deg,#E0836A,#B4472F)}
 .task.c-visit .ic{background:linear-gradient(150deg,#4FBFA6,#1E7A6E)}
 .task.c-grid .ic{background:linear-gradient(150deg,#8C7BC7,#5D4E9E)}
-.task .tn{font-weight:700;font-size:15px;color:var(--ink);font-family:Fraunces,serif}
+.task .tn{font-weight:700;font-size:15px;color:var(--ink);font-family:Inter,sans-serif}
 .task .td{font-size:12px;color:var(--muted);margin-top:-4px}
 .task.wide{grid-column:1/-1;flex-direction:row;align-items:center;min-height:0}
 .task.wide .ic{flex:0 0 auto}
@@ -504,7 +515,7 @@ body.dark .insightCard.ok{color:#A3E635}body.dark .insightCard.warnt{color:#FBBF
 .empty{text-align:center;color:var(--muted);padding:42px 18px;background:var(--card);border:1.5px dashed var(--line);border-radius:18px;animation:fadeUp .3s ease both}
 .empty .bigicon{width:56px;height:56px;border-radius:18px;margin:0 auto 14px;display:grid;place-items:center;
   background:linear-gradient(135deg,#EEF1F6,#F4F6F5);color:var(--muted);box-shadow:inset 0 0 0 1px var(--line);animation:floaty 4.5s ease-in-out infinite}
-.empty .big{font-family:Fraunces,serif;font-size:17.5px;color:var(--text);margin-bottom:4px}
+.empty .big{font-family:Inter,sans-serif;font-weight:800;font-size:17.5px;color:var(--text);margin-bottom:4px}
 body.dark .empty .bigicon{background:linear-gradient(135deg,#182541,#132038)}
 
 .tabs{display:flex;gap:7px;overflow-x:auto;padding-bottom:6px;margin-bottom:15px;-webkit-overflow-scrolling:touch}
@@ -555,24 +566,47 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 .demoflag{display:inline-flex;align-items:center;gap:6px;background:#F6EBD3;color:#8A6E12;font-weight:700;font-size:10.5px;
   padding:4px 10px;border-radius:100px;letter-spacing:.04em;text-transform:uppercase}
 .demoflag .d{width:6px;height:6px;border-radius:50%;background:#8A6E12;animation:ringPulse 1.6s infinite}
-.bootscreen{position:fixed;inset:0;z-index:200;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+.bootscreen{position:fixed;inset:0;z-index:200;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
   background:radial-gradient(130% 100% at 50% 30%, #163B7A 0%, var(--ink) 60%, #050E1F 100%);
   opacity:1;transition:opacity .45s ease;}
 .bootscreen.fade{opacity:0;pointer-events:none}
-.bootscreen .glyphwrap{position:relative;width:76px;height:76px;display:grid;place-items:center}
+.bootLockup{display:flex;align-items:center;gap:14px}
+.bootscreen .glyphwrap{position:relative;width:76px;height:76px;display:grid;place-items:center;animation:glyphSettle .7s .5s ease both}
 .bootscreen .ring{position:absolute;inset:0;border-radius:22px;border:2px solid rgba(132,204,22,.5);animation:ringPulse 1.7s ease-out infinite}
-.bootscreen .glyph{width:64px;height:64px;border-radius:20px;overflow:hidden;animation:floaty 1.8s ease-in-out infinite;box-shadow:0 14px 34px rgba(0,0,0,.45);position:relative;z-index:1}
+.bootscreen .glyph{width:64px;height:64px;border-radius:20px;overflow:hidden;animation:floaty 1.8s ease-in-out infinite,lockupFlash 1s .5s ease both;box-shadow:0 14px 34px rgba(0,0,0,.45);position:relative;z-index:1}
 .bootscreen .glyph img{width:100%;height:100%;display:block}
-.bootscreen .boot-word{font-family:Fraunces,serif;font-weight:700;font-size:15px;letter-spacing:.22em;color:#fff;opacity:0;animation:fadeIn .6s .25s ease forwards}
-.bootscreen .boot-sub{font-size:11.5px;color:#8FAE9C;letter-spacing:.05em;opacity:0;animation:fadeIn .6s .4s ease forwards;margin-top:-8px}
+.bootscreen .boot-word{display:flex;gap:2px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;color:#fff}
+.bootscreen .boot-word span{display:inline-block;opacity:0;animation:letterIn .5s cubic-bezier(.2,.8,.3,1.2) forwards}
+.bootscreen .boot-word span:nth-child(1){animation-delay:.28s}
+.bootscreen .boot-word span:nth-child(2){animation-delay:.32s}
+.bootscreen .boot-word span:nth-child(3){animation-delay:.36s}
+.bootscreen .boot-word span:nth-child(4){animation-delay:.40s}
+.bootscreen .boot-word span:nth-child(5){animation-delay:.44s}
+.bootscreen .boot-word span:nth-child(6){animation-delay:.48s}
+.bootscreen .boot-word span:nth-child(7){animation-delay:.52s}
+.bootscreen .boot-word span:nth-child(8){animation-delay:.56s}
+.bootscreen .boot-word span:nth-child(9){animation-delay:.60s}
+.bootscreen .boot-sub{font-size:11.5px;color:#8FAE9C;letter-spacing:.05em;opacity:0;animation:fadeIn .6s .85s ease forwards}
+.greetScreen{position:fixed;inset:0;z-index:250;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+  background:radial-gradient(130% 100% at 50% 30%, #163B7A 0%, var(--ink) 60%, #050E1F 100%);opacity:1;transition:opacity .5s ease;cursor:pointer;padding:24px;text-align:center}
+.greetScreen.fade{opacity:0;pointer-events:none}
+.greetScreen .glyphwrap{position:relative;width:70px;height:70px;display:grid;place-items:center}
+.greetScreen .ring{position:absolute;inset:0;border-radius:100px;border:2px solid rgba(132,204,22,.5);animation:ringPulse 1.7s ease-out infinite}
+.greetScreen .gIcon{width:56px;height:56px;border-radius:100px;background:rgba(255,255,255,.06);display:grid;place-items:center;color:var(--gold2);opacity:0;animation:fadeUp .6s .1s ease forwards}
+.greetScreen .gIcon svg{width:28px;height:28px;display:block}
+.greetScreen .gText{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:25px;color:#fff;max-width:420px;opacity:0;animation:fadeUp .6s .3s ease forwards}
+.greetScreen .gSub{font-size:12.5px;color:#9DB2CC;letter-spacing:.03em;opacity:0;animation:fadeUp .6s .5s ease forwards}
+.greetScreen .gTap{position:absolute;bottom:34px;font-size:10.5px;color:#5E7396;opacity:0;animation:fadeIn .6s 1.1s ease forwards;letter-spacing:.1em;text-transform:uppercase}
 </style>
 </head>
 <body>
 
 <!-- BOOT -->
 <div class="bootscreen" id="boot">
-  <span class="glyphwrap"><span class="ring"></span><span class="glyph"><img alt="" id="bootLogo"/></span></span>
-  <div class="boot-word">PALMSTEAD</div>
+  <div class="bootLockup">
+    <span class="glyphwrap"><span class="ring"></span><span class="glyph"><img alt="" id="bootLogo"/></span></span>
+    <div class="boot-word"><span>P</span><span>A</span><span>L</span><span>M</span><span>S</span><span>T</span><span>E</span><span>A</span><span>D</span></div>
+  </div>
   <div class="boot-sub">by PEP Landbank</div>
 </div>
 
@@ -652,12 +686,12 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
     <div class="whoami"><span id="tbAvatar" class="tb-avatar hidden"></span><span class="tb-name" id="tbName"></span>
       <button class="iconbtn" id="darkModeBtn" title="Toggle dark mode"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
       <button class="iconbtn" id="globalSearchBtn" title="Search"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-      <button class="iconbtn chatnavbtn" id="chatNavBtn" title="Chat"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 4h16v12H7l-3 3V4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span class="badge hidden" id="chatNavBadge"></span></button>
       <button class="iconbtn" id="accountBtn" title="Change password"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button class="iconbtn" id="logoutBtn" title="Sign out"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M15 12H4m0 0l4-4m-4 4l4 4M14 5h4a2 2 0 012 2v10a2 2 0 01-2 2h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>
   </header>
   <main class="main" id="view"></main>
+  <nav class="bottomnav" id="bottomnav"></nav>
 </section>
 
 <div id="toast"><span class="dot"></span><span id="toastMsg"></span></div>
@@ -691,7 +725,7 @@ const favicon = document.querySelector('link[rel="icon"]'); if(favicon) favicon.
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
-let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[]};
+let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[]};
 
 function cfg(){ let u=SUPABASE_URL,k=SUPABASE_ANON_KEY;
   if(!u||!k){ try{const s=JSON.parse(localStorage.getItem('pep_cfg')||'null'); if(s){u=s.url;k=s.key;}}catch(e){} }
@@ -1376,6 +1410,7 @@ async function apiLoadAll(){
     DB.agentMonthStats=await apiLoadAgentMonthStats();
     DB.tasks=await apiLoadTasks();
     DB.feedback=await apiLoadFeedback();
+    DB.downloads=await apiLoadDownloads();
     return;
   }
   const q=async t=>{const {data,error}=await sb.from(t).select('*').order('created_at',{ascending:false});if(error)throw error;return data||[];};
@@ -1406,7 +1441,7 @@ async function apiLoadAll(){
     q('leads'),q('enquiries'),q('complaints'),q('site_visits'),q('activity_log'),
     loadProfiles(),loadPayments(),loadPlots(),
     apiLoadAnnouncements(),apiLoadAllocations(),apiLoadMessages(),apiLoadTargetSelections(today().slice(0,7),PROFILE.role==='manager'),
-    apiLoadAgentMonthStats(),apiLoadTasks(),apiLoadFeedback()
+    apiLoadAgentMonthStats(),apiLoadTasks(),apiLoadFeedback(),apiLoadDownloads()
   ]);
   const [le,en,cm,sv,ac]=results;
   DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key||PROFILE.role==='manager').map(mapLead);
@@ -1416,6 +1451,7 @@ async function apiLoadAll(){
   DB.tasks=results[13];
   DB.agentMonthStats=results[12];
   DB.feedback=results[14];
+  DB.downloads=results[15];
 }
 async function apiInsertLead(l,c){
   if(DEMO_MODE){ const d=await demoLoad(); const row={id:uid(),agent:PROFILE.key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal,
@@ -1592,7 +1628,8 @@ async function apiLoadAgentMonthStats(){
 /* ---- duties / tasks (operations, non-sales work: assigned by management OR self/peer-assigned) ---- */
 const mapTask=r=>({id:r.id,title:r.title,description:r.description,category:r.category,priority:r.priority,
   assignedTo:r.assigned_to,assignedToName:r.assigned_to_name,assignedBy:r.assigned_by,assignedByName:r.assigned_by_name,
-  status:r.status,dueDate:r.due_date,createdAt:r.created_at,completedAt:r.completed_at});
+  status:r.status,dueDate:r.due_date,createdAt:r.created_at,completedAt:r.completed_at,
+  escalatedTo:r.escalated_to,escalatedToName:r.escalated_to_name,escalatedBy:r.escalated_by,escalatedByName:r.escalated_by_name,escalatedAt:r.escalated_at,escalationNote:r.escalation_note});
 async function apiLoadTasks(){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.tasks||[]).slice(); }
   try{ const {data,error}=await sb.from('tasks').select('*').order('created_at',{ascending:false}); if(error) throw error;
@@ -1615,6 +1652,15 @@ async function apiDeleteTask(id){
   if(DEMO_MODE){ const d=await demoLoad(); d.tasks=(d.tasks||[]).filter(x=>x.id!==id); await demoSave(); return; }
   const {error}=await sb.from('tasks').delete().eq('id',id); if(error) throw error;
 }
+async function apiEscalateTask(id,toKey,toName,note){
+  const escalatedAt=new Date().toISOString();
+  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id);
+    if(t){ t.assignedTo=toKey; t.assignedToName=toName; t.escalatedTo=toKey; t.escalatedToName=toName; t.escalatedBy=PROFILE.key; t.escalatedByName=PROFILE.name; t.escalatedAt=escalatedAt; t.escalationNote=note||null; }
+    await demoSave(); return; }
+  const {error}=await sb.from('tasks').update({assigned_to:toKey,assigned_to_name:toName,escalated_to:toKey,escalated_to_name:toName,
+    escalated_by:PROFILE.key,escalated_by_name:PROFILE.name,escalated_at:escalatedAt,escalation_note:note||null}).eq('id',id);
+  if(error) throw error;
+}
 /* ---- feedback forum (bugs, suggestions, things people want changed) ---- */
 const mapFeedback=r=>({id:r.id,authorKey:r.author_key,authorName:r.author_name,category:r.category,body:r.body,createdAt:r.created_at});
 async function apiLoadFeedback(){
@@ -1632,6 +1678,34 @@ async function apiInsertFeedback(category,body){
 async function apiDeleteFeedback(id){
   if(DEMO_MODE){ const d=await demoLoad(); d.feedback=(d.feedback||[]).filter(x=>x.id!==id); await demoSave(); return; }
   const {error}=await sb.from('feedback').delete().eq('id',id); if(error) throw error;
+}
+/* ---- download directory ---- */
+const mapDownload=r=>({id:r.id,userKey:r.user_key,userName:r.user_name,filename:r.filename,kind:r.kind,fileData:r.file_data,createdAt:r.created_at});
+async function apiLoadDownloads(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.downloads||[]).slice(); }
+  try{ const {data,error}=await sb.from('downloads').select('id,user_key,user_name,filename,kind,created_at').order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapDownload); }
+  catch(e){ return []; }
+}
+async function apiLogDownload(filename,kind,fileData){
+  const rec={id:uid(),userKey:PROFILE.key,userName:PROFILE.name,filename,kind,fileData:fileData||null,createdAt:new Date().toISOString()};
+  if(DEMO_MODE){ const d=await demoLoad(); d.downloads=d.downloads||[]; d.downloads.unshift(rec); await demoSave(); return rec; }
+  try{ const {data,error}=await sb.from('downloads').insert({user_key:PROFILE.key,user_name:PROFILE.name,filename,kind,file_data:fileData||null}).select().single();
+    if(error) throw error; return mapDownload(data); }
+  catch(e){ return rec; }
+}
+function logDownload(filename,kind,fileData){
+  DB.downloads=DB.downloads||[];
+  apiLogDownload(filename,kind,fileData).then(rec=>{ DB.downloads.unshift(rec); }).catch(()=>{});
+}
+async function apiLoadDownloadFile(id){
+  if(DEMO_MODE) return (DB.downloads.find(d=>d.id===id)||{}).fileData||null;
+  try{ const {data,error}=await sb.from('downloads').select('file_data').eq('id',id).single(); if(error) throw error; return data.file_data||null; }
+  catch(e){ return null; }
+}
+function triggerDownload(url,filename,kind){
+  const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  logDownload(filename,kind);
 }
 async function apiInsertAnnouncement(title,body,image){
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),title,body,image:image||null,active:true,createdBy:PROFILE.name,createdAt:today()+' '+nowTime()};
@@ -2035,6 +2109,35 @@ async function doLogin(){
     PROFILE={...prof,key:prof.agent_key}; USER=data.user; await enterApp();
   }catch(e){ err.textContent='Connection problem — check your internet or Supabase keys.'; btn.textContent='Sign in'; syncSign(); }
 }
+const GREETINGS={
+  morning:['Good morning, {n} ☀️','Rise and shine, {n} — make today count','Morning, {n}. Ready when you are','Hello {n}, time to get to it'],
+  afternoon:['Good afternoon, {n}','Hey {n}, hope your day is going well','Afternoon, {n} — keep the momentum going','Welcome back, {n}'],
+  evening:['Good evening, {n}','Evening, {n} — wrapping up strong?','Hey {n}, welcome back','Welcome back, {n}. Finish the day right'],
+  night:['Working late, {n}? Good evening','Good evening, {n} — the quiet hours begin','Hey {n}, still at it','Welcome back, {n}. Steady progress, even at night']
+};
+function pickGreeting(name){
+  const h=new Date().getHours();
+  const bucket = h>=5&&h<12?'morning' : h>=12&&h<17?'afternoon' : h>=17&&h<21?'evening' : 'night';
+  const list=GREETINGS[bucket];
+  const tpl=list[Math.floor(Math.random()*list.length)];
+  return {text:tpl.replace('{n}',name), bucket};
+}
+function showGreetScreen(name){
+  return new Promise(resolve=>{
+    const {text,bucket}=pickGreeting(name);
+    const icon=(bucket==='morning'||bucket==='afternoon')?ic.sun:ic.moon;
+    const el=document.createElement('div'); el.className='greetScreen'; el.id='greetScreen';
+    el.innerHTML=`<span class="glyphwrap"><span class="ring"></span><span class="gIcon">${icon}</span></span>
+      <div class="gText">${esc(text)}</div>
+      <div class="gSub">${esc(new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'}))}</div>
+      <div class="gTap">Tap to continue</div>`;
+    document.body.appendChild(el);
+    let done=false;
+    const finish=()=>{ if(done) return; done=true; el.classList.add('fade'); setTimeout(()=>{ el.remove(); resolve(); },500); };
+    el.addEventListener('click',finish);
+    setTimeout(finish,2600);
+  });
+}
 async function enterApp(){
   document.getElementById('view').innerHTML='<div style="padding:70px 0;text-align:center"><div class="skel" style="height:120px;border-radius:16px;margin-bottom:14px"></div><div class="skel" style="height:80px;border-radius:16px"></div></div>';
   document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden');
@@ -2050,6 +2153,7 @@ async function enterApp(){
   checkClockSanity();
   checkBirthdaysToday();
   checkMonthlyCommissionReport();
+  await showGreetScreen(PROFILE.role==='manager'?'Management':PROFILE.name.split(' ')[0]);
   route(PROFILE.role==='manager'?'mgr':'home');
 }
 /* ---- time-awareness: month rollover watchdog + device clock sanity check ---- */
@@ -2108,7 +2212,7 @@ document.getElementById('logoutBtn').onclick=async()=>{
   if(CHAT_CHANNEL){ try{ sb.removeChannel(CHAT_CHANNEL); }catch(e){} CHAT_CHANNEL=null; }
   const bub=document.getElementById('announceBubble'); if(bub) bub.remove();
   const ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
-  USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[]};
+  USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[]};
   document.getElementById('app').classList.add('hidden'); document.getElementById('login').classList.remove('hidden');
   document.getElementById('ddLabel').textContent='Choose your name';
   document.querySelectorAll('#ddPanel .dd-item').forEach(el=>el.classList.remove('sel'));
@@ -2124,7 +2228,6 @@ document.getElementById('darkModeBtn').onclick=()=>{
   document.body.classList.toggle('dark');
   try{ localStorage.setItem('pep_dark', document.body.classList.contains('dark')?'1':'0'); }catch(e){}
 };
-document.getElementById('chatNavBtn').onclick=()=>route('chat');
 document.getElementById('accountBtn').onclick=()=>route('account');
 
 /* config screen */
@@ -2225,14 +2328,46 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback}[name]||agentHome)(arg);
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads}[name]||agentHome)(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && PROFILE){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
+  updateBottomNav(name);
 }
 function goBack(fallbackTo){
   if(window.history.state && window.history.state.routeName){ history.back(); }
   else{ route(fallbackTo); }
+}
+/* ---- persistent bottom tab bar ---- */
+let CURRENT_ROUTE_NAME='home';
+function tabForRoute(name){
+  if(['salesdesk','addlead','update','updateOne','myDataCheck','plots','pipeline'].includes(name)) return 'salesdesk';
+  if(['crm','sitevisit','enquiry','complaint'].includes(name)) return 'crm';
+  if(name==='duties') return 'operations';
+  if(name==='chat'||name==='chatThread') return 'chat';
+  if(name==='home'||name==='mgr') return 'home';
+  return 'more';
+}
+function updateBottomNav(routeName){ CURRENT_ROUTE_NAME=routeName; renderBottomNavNow(); }
+function renderBottomNavNow(){
+  const nav=document.getElementById('bottomnav'); if(!nav||typeof PROFILE==='undefined'||!PROFILE) return;
+  const activeTab=tabForRoute(CURRENT_ROUTE_NAME);
+  const isMgr=PROFILE.role==='manager';
+  const openTasks=computeDutiesSummary((DB.tasks||[]).filter(t=>isMgr||t.assignedTo===PROFILE.key)).openCount;
+  const unread=totalUnread();
+  const tabDefs=[
+    {key:'home',label:'Home',icon:ic.home,r:isMgr?'mgr':'home'},
+    ...(isMgr?[]:[{key:'salesdesk',label:'Sales Desk',icon:ic.briefcase2,r:'salesdesk'},{key:'crm',label:'CRM Tools',icon:ic.phone,r:'crm'}]),
+    {key:'operations',label:'Operations',icon:ic.check2,r:'duties',badge:openTasks},
+    {key:'chat',label:'Chat',icon:ic.chat,r:'chat',badge:unread,badgeId:'bnChatBadge'},
+    {key:'more',label:'More',icon:ic.more,r:'more'}
+  ];
+  nav.innerHTML=tabDefs.map(t=>{
+    const show=t.badge>0;
+    const needsBadge=t.badgeId||show;
+    return `<button class="${t.key===activeTab?'on':''}" data-navtab="${t.r}">${t.icon}${needsBadge?`<span class="bnBadge${show?'':' hidden'}"${t.badgeId?` id="${t.badgeId}"`:''}>${show?(t.badge>9?'9+':t.badge):''}</span>`:''}<span>${esc(t.label)}</span></button>`;
+  }).join('');
+  nav.querySelectorAll('[data-navtab]').forEach(b=>b.onclick=()=>route(b.dataset.navtab));
 }
 window.addEventListener('popstate',e=>{
   if(!PROFILE) return; // still on login screen — nothing app-side to navigate
@@ -2253,7 +2388,12 @@ const ic={
  complaint:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
  visit:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-5.3-7-11a7 7 0 0114 0c0 5.7-7 11-7 11z" stroke="currentColor" stroke-width="1.9"/><circle cx="12" cy="10" r="2.4" stroke="currentColor" stroke-width="1.9"/></svg>',
  grid:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>',
- spark:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
+ spark:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+ home:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 11l8-7 8 7v8a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1v-8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+ briefcase2:'<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="8" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 8V6a2 2 0 012-2h4a2 2 0 012 2v2" stroke="currentColor" stroke-width="1.8"/></svg>',
+ more:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+ sun:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2.2 2.2M16.8 16.8L19 19M19 5l-2.2 2.2M7.2 16.8L5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+ moon:'<svg viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 119.5 4a7 7 0 0010.5 10.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>'
 };
 const kpiIc={
  grid:'<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="3" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="14" width="7" height="7" rx="2" stroke="currentColor" stroke-width="1.8"/></svg>',
@@ -2332,7 +2472,8 @@ const FIC_GLYPHS={
  backup:{g:'gLime',p:'<ellipse cx="28" cy="20" rx="11" ry="4" fill="#fff"/><path d="M17 20v6c0 2.2 5 4 11 4s11-1.8 11-4v-6" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M17 26v6c0 2.2 5 4 11 4s11-1.8 11-4v-6" fill="none" stroke="#fff" stroke-width="2.6"/>'},
  alert:{g:'gGold',p:'<path d="M28 16l12 21a1.5 1.5 0 01-1.3 2.3H17.3A1.5 1.5 0 0116 37l12-21z" fill="#fff"/><path d="M28 25v6" stroke="#B45309" stroke-width="2.8" stroke-linecap="round"/><circle cx="28" cy="35" r="1.8" fill="#B45309"/>'},
  settings:{g:'gNavy',p:'<circle cx="28" cy="27" r="4" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M28 15v4M28 35v4M16 27h4M36 27h4M19.5 18.5l2.8 2.8M33.7 32.7l2.8 2.8M36.5 18.5l-2.8 2.8M22.3 32.7l-2.8 2.8" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>'},
- enquiry:{g:'gBlue',p:'<path d="M16 21h24a3 3 0 013 3v10a3 3 0 01-3 3H27l-7 5.5V37h-4a3 3 0 01-3-3V24a3 3 0 013-3z" fill="#fff"/><path d="M25 27a3 3 0 116 0c0 2-3 2-3 4M28 35h.01" stroke="#1D4ED8" stroke-width="2.4" stroke-linecap="round"/>'}
+ enquiry:{g:'gBlue',p:'<path d="M16 21h24a3 3 0 013 3v10a3 3 0 01-3 3H27l-7 5.5V37h-4a3 3 0 01-3-3V24a3 3 0 013-3z" fill="#fff"/><path d="M25 27a3 3 0 116 0c0 2-3 2-3 4M28 35h.01" stroke="#1D4ED8" stroke-width="2.4" stroke-linecap="round"/>'},
+ addlead:{g:'gLime',p:'<circle cx="28" cy="27" r="12" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M28 21v12M22 27h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>'}
 };
 function fic(name,size){size=size||44;var G=FIC_GLYPHS[name];if(!G)return '';return '<svg class="fic" width="'+size+'" height="'+size+'" viewBox="0 0 56 56" style="vertical-align:middle;flex:0 0 auto">'+ficChip(G.g)+G.p+'</svg>';}
 const KPI_STYLE={
@@ -2382,6 +2523,11 @@ function svgDonut(segments,opts={}){
   }).join('');
   return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${arcs}</svg>`;
 }
+function progressRing(pct,color,size){
+  size=size||84;
+  const donut=svgDonut([{value:pct,color:color},{value:Math.max(0,100-pct),color:'#EEF1F6'}],{size,stroke:Math.round(size*0.14)});
+  return `<div style="position:relative;width:${size}px;height:${size}px;flex:0 0 auto">${donut}<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:${Math.round(size*0.19)}px;font-family:'IBM Plex Mono',monospace;color:var(--text)">${pct}%</div></div>`;
+}
 function chartLegend(segments){
   const total=segments.reduce((s,x)=>s+x.value,0)||1;
   return `<div style="display:flex;flex-direction:column;gap:8px">${segments.filter(s=>s.value>0).map(s=>`
@@ -2391,9 +2537,116 @@ function chartLegend(segments){
       <span style="color:var(--muted)">${s.value} · ${Math.round(s.value/total*100)}%</span>
     </div>`).join('')}</div>`;
 }
-function task(r,n,d,icon,cls=''){return `<button class="task c-${cls}" data-r="${r}"><span class="ic">${icon}</span><span class="tn">${n}</span><span class="td">${d}</span><svg class="arrow" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;}
-function taskWide(r,n,d,icon,cls){return `<button class="task wide c-${cls}" data-r="${r}"><span class="ic">${icon}</span><span><span class="tn">${n}</span><br><span class="td">${d}</span></span><svg class="arrow" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;}
 function bindTasks(){ V.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>route(b.dataset.r)); }
+const AGENT_HUBS={
+  salesdesk:{title:'Sales Desk',items:[
+    {r:'addlead',fic:'addlead',label:'New lead'},
+    {r:'update',fic:'analytics',label:'Update pipeline'},
+    {r:'myDataCheck',fic:'datacheck',label:'Data check'},
+    {r:'plots',fic:'map',label:'Plot availability'},
+    {r:'pipeline',fic:'document',label:'My pipeline'}
+  ]},
+  crm:{title:'CRM Tools',items:[
+    {r:'sitevisit',fic:'location',label:'Site visit'},
+    {r:'enquiry',fic:'enquiry',label:'Client enquiry'},
+    {r:'complaint',fic:'alert',label:'Client complaint'}
+  ]}
+};
+function viewSmartInsights(){
+  const homeRoute=PROFILE.role==='manager'?'mgr':'home';
+  const scope=PROFILE.role==='manager'?allAgentLists().flatMap(a=>a.list):DB.leads;
+  V.innerHTML=`${back(homeRoute)}${renderSmartInsights(scope,DB.payments)}`;
+  bindSmartInsights();
+}
+function viewSalesDesk(){
+  const hub=AGENT_HUBS.salesdesk;
+  V.innerHTML=`<div class="pagehead"><div><h2>Sales Desk</h2><p>Leads, pipeline &amp; plots — everything for your book of clients</p></div></div>
+  <div class="appGrid">${hub.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`;
+  V.querySelectorAll('[data-hubroute]').forEach(b=>b.onclick=()=>route(b.dataset.hubroute));
+}
+function viewCRM(){
+  const hub=AGENT_HUBS.crm;
+  V.innerHTML=`<div class="pagehead"><div><h2>CRM Tools</h2><p>Site visits, enquiries &amp; complaints</p></div></div>
+  <div class="appGrid">${hub.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`;
+  V.querySelectorAll('[data-hubroute]').forEach(b=>b.onclick=()=>route(b.dataset.hubroute));
+}
+function viewMore(){
+  V.innerHTML=`<div class="pagehead"><div><h2>More</h2><p>Additional tools and settings</p></div></div>
+  <div class="appGrid" id="moreGrid"></div>`;
+  const grid=document.getElementById('moreGrid');
+  if(PROFILE.role==='manager'){
+    const items=MGR_APPS.filter(a=>a.key!=='Duties');
+    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+    grid.querySelectorAll('[data-moreapp]').forEach(b=>b.onclick=()=>{
+      const key=b.dataset.moreapp;
+      if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else if(key==='Downloads') route('downloads'); else { mgrTab=key; managerView(); }
+    });
+  } else {
+    const items=[
+      {key:'insights',fic:'target',label:'Smart Insights'},
+      {key:'downloads',fic:'document',label:'Download Directory'},
+      {key:'feedback',fic:'chat',label:'Feedback'},
+      ...(canManagePlots()?[{key:'allocations',fic:'allocation',label:'Allocations'}]:[]),
+      {key:'account',fic:'settings',label:'Settings'}
+    ];
+    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+    grid.querySelectorAll('[data-moreapp]').forEach(b=>b.onclick=()=>route(b.dataset.moreapp));
+  }
+}
+let downloadsKindFilter='';
+function isPreviewableDownload(d){
+  if(d.kind==='pdf') return true;
+  if(d.kind==='attachment') return /\.(png|jpe?g|gif|webp|bmp)$/i.test(d.filename||'');
+  return false;
+}
+function viewDownloads(){
+  const homeRoute=PROFILE.role==='manager'?'mgr':'home';
+  const all=(DB.downloads||[]);
+  const kinds=[...new Set(all.map(d=>d.kind))];
+  const list=downloadsKindFilter?all.filter(d=>d.kind===downloadsKindFilter):all;
+  const rowOf=d=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(d.filename)}</div><div class="meta">${esc((d.createdAt||'').slice(0,16).replace('T',' '))}${PROFILE.role==='manager'?(' · '+esc(d.userName)):''}</div></div>
+    <span class="tag ghost">${esc((d.kind||'').toUpperCase())}</span></div>
+    ${isPreviewableDownload(d)?`<div class="foot"><button class="chip" data-dlview="${esc(d.id)}">${ic.eye} View</button></div>`:''}</div>`;
+  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><h2>Download Directory</h2><p>${all.length} file${all.length===1?'':'s'} · ${PROFILE.role==='manager'?'every file downloaded by the team':'everything you have downloaded from this account'}</p></div></div>
+  ${kinds.length>1?`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"><button class="chip ${!downloadsKindFilter?'on':''}" data-dlkind="">All</button>${kinds.map(k=>`<button class="chip ${downloadsKindFilter===k?'on':''}" data-dlkind="${esc(k)}">${esc(k.toUpperCase())}</button>`).join('')}</div>`:''}
+  <div class="list">${list.length?list.map(rowOf).join(''):emptyState(ic.doc,'Nothing downloaded yet','PDFs, Excel exports and backups you generate will show up here.')}</div>`;
+  V.querySelectorAll('[data-dlkind]').forEach(b=>b.onclick=()=>{ downloadsKindFilter=b.dataset.dlkind; viewDownloads(); });
+  V.querySelectorAll('[data-dlview]').forEach(b=>b.onclick=async()=>{
+    const d=list.find(x=>x.id===b.dataset.dlview); if(!d) return;
+    b.disabled=true; b.textContent='Loading…';
+    const fileData=d.fileData||await apiLoadDownloadFile(d.id);
+    b.disabled=false; b.innerHTML=`${ic.eye} View`;
+    if(!fileData){ toast('Preview not available for this file'); return; }
+    openFilePreview(fileData,d.filename,d.kind==='pdf'?'pdf':'image');
+  });
+}
+function dataUriToBlobUrl(dataUri){
+  const comma=dataUri.indexOf(',');
+  const header=dataUri.slice(0,comma), b64=dataUri.slice(comma+1);
+  const mime=(header.match(/data:(.*?);base64/)||[])[1]||'application/octet-stream';
+  const bin=atob(b64); const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes],{type:mime}));
+}
+function openFilePreview(dataUrl,filename,kind){
+  let ov=document.getElementById('filePreviewOverlay'); if(ov) ov.remove();
+  const blobUrl=dataUrl.startsWith('data:')?dataUriToBlobUrl(dataUrl):dataUrl;
+  const body=kind==='pdf'
+    ? `<iframe src="${blobUrl}" style="width:100%;height:100%;border:none;background:#525659"></iframe>`
+    : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000"><img src="${blobUrl}" style="max-width:100%;max-height:100%;object-fit:contain"/></div>`;
+  ov=document.createElement('div'); ov.id='filePreviewOverlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.9);display:flex;flex-direction:column';
+  ov.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#111">
+      <div style="font-weight:700;font-size:14px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:12px">${esc(filename)}</div>
+      <div style="display:flex;gap:8px;flex:0 0 auto">
+        <a href="${blobUrl}" download="${esc(filename)}" style="background:rgba(255,255,255,.14);border-radius:8px;color:#fff;width:34px;height:34px;display:grid;place-items:center;text-decoration:none">${ic.download}</a>
+        <button id="closeFilePreview" style="background:rgba(255,255,255,.14);border:none;border-radius:8px;color:#fff;width:34px;height:34px;display:grid;place-items:center;cursor:pointer">${ic.close}</button>
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto">${body}</div>`;
+  document.body.appendChild(ov);
+  document.getElementById('closeFilePreview').onclick=()=>{ ov.remove(); URL.revokeObjectURL(blobUrl); };
+}
 function animateKpiCounts(container){
   (container||V).querySelectorAll('.kpi .v').forEach(el=>{
     const raw=el.textContent.trim();
@@ -2661,17 +2914,16 @@ function openSingleAnnounceModal(id){
 function renderPipelineHealthCard(leads,routeArg){
   const h=computePipelineComposition(leads);
   return `<div class="rowcard" style="margin-bottom:18px;padding:16px;cursor:pointer" data-gopipelinehealth="${esc(routeArg||'')}">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
       <div><div style="font-weight:700;font-size:13.5px">Pipeline health</div><div class="mini">how much of your pipeline is real vs speculative</div></div>
       <span class="tag ${h.healthCls}">${h.healthLabel}</span>
     </div>
-    <div style="height:14px;border-radius:100px;overflow:hidden;display:flex;background:#EEF1F6;margin-bottom:10px">
-      ${h.committedPct?`<span style="width:${h.committedPct}%;background:linear-gradient(90deg,#4D7C0F,#84CC16)"></span>`:''}
-      ${h.prospectPct?`<span style="width:${h.prospectPct}%;background:linear-gradient(90deg,#94A3B8,#CBD5E1)"></span>`:''}
-    </div>
-    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <div><span style="display:inline-block;width:8px;height:8px;border-radius:100px;background:#84CC16;margin-right:5px"></span><b>${h.committedCount}</b> committed <span class="mini">(${ghs(h.committedVal)} · ${h.committedPct}%)</span></div>
-      <div><span style="display:inline-block;width:8px;height:8px;border-radius:100px;background:#CBD5E1;margin-right:5px"></span><b>${h.prospectCount}</b> prospects <span class="mini">(${ghs(h.prospectVal)} · ${h.prospectPct}%)</span></div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <div style="position:relative;width:78px;height:78px;flex:0 0 auto">${svgDonut([{value:h.committedCount,color:'#84CC16'},{value:h.prospectCount,color:'#CBD5E1'}],{size:78,stroke:13})}<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;font-family:'IBM Plex Mono',monospace">${h.committedPct}%</div></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><span style="width:9px;height:9px;border-radius:3px;background:#84CC16;flex:0 0 auto"></span><b>${h.committedCount}</b> committed <span class="mini">${ghs(h.committedVal)} · ${h.committedPct}%</span></div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><span style="width:9px;height:9px;border-radius:3px;background:#CBD5E1;flex:0 0 auto"></span><b>${h.prospectCount}</b> prospects <span class="mini">${ghs(h.prospectVal)} · ${h.prospectPct}%</span></div>
+      </div>
     </div>
   </div>`;
 }
@@ -2702,10 +2954,13 @@ function getMonthlyPlanClients(leads){
 function renderMonthlyPlanCard(leads){
   const list=getMonthlyPlanClients(leads);
   const total=list.reduce((s,l)=>s+l.__sched.expectedThisMonth,0);
+  const behind=list.filter(l=>l.__sched.arrears>0).length;
+  const onTrack=list.length-behind;
+  const pct=list.length?Math.round(onTrack/list.length*100):100;
   return `<div class="rowcard" style="margin-bottom:18px;padding:16px;cursor:pointer" data-gomonthlyplan="1">
-    <div style="display:flex;align-items:center;gap:12px">
-      <span class="kpi-ic teal" style="margin-bottom:0">${kpiIc.check||''}📅</span>
-      <div style="flex:1"><div style="font-weight:700;font-size:13.5px">Expected from monthly-plan clients</div><div class="mini">${list.length} client${list.length===1?'':'s'} on an installment plan · this month</div></div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <div style="position:relative;width:58px;height:58px;flex:0 0 auto">${svgDonut([{value:onTrack,color:'#3B82F6'},{value:behind,color:'#F59E0B'}],{size:58,stroke:10})}<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11.5px;font-family:'IBM Plex Mono',monospace">${pct}%</div></div>
+      <div style="flex:1"><div style="font-weight:700;font-size:13.5px">Expected from monthly-plan clients</div><div class="mini">${list.length} client${list.length===1?'':'s'} on an installment plan${behind?(' · '+behind+' behind'):''}</div></div>
       <div style="text-align:right"><div style="font-size:19px;font-weight:800;font-family:'IBM Plex Mono',monospace">${ghs(total)}</div><div class="mini">tap for details →</div></div>
     </div>
   </div>`;
@@ -2788,25 +3043,19 @@ function viewMonthlyPlanClients(){
 function renderTargetCard(closedCount,targetVal,closedVal){
   const quota=num(CONFIG.targetPlotsPerMonth)||2;
   const mainPct=Math.min(100,Math.round(closedCount/quota*100));
-  const overPct=closedCount>quota?Math.min(100,Math.round((closedCount-quota)/quota*100)):0;
   const exceeded=closedCount>quota;
   const mySelections=(DB.targetSelections||[]).filter(t=>t.agentKey===PROFILE.key);
   const expectedTotal=mySelections.reduce((s,t)=>s+num(t.expectedAmount),0);
   return `<div class="rowcard" style="margin-bottom:18px;padding:17px 17px 18px">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">
-    <div style="display:flex;align-items:center;gap:11px">
-      <span class="kpi-ic ${exceeded?'lime':'blue'}" style="margin-bottom:0">${exceeded?kpiIc.trophy:kpiIc.coins}</span>
-      <div><div style="font-weight:700;color:var(--text);font-size:14.5px">Target · ${monthLabel(today().slice(0,7))}</div>
-      <div style="font-size:12px;color:var(--muted);margin-top:1px">${closedCount} of ${quota} plots closed${targetVal?(' · '+ghs(closedVal)+' of '+ghs(targetVal)):''}</div></div>
+  <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">
+    ${progressRing(mainPct,exceeded?'#84CC16':'#3B82F6',82)}
+    <div style="flex:1">
+      <div style="font-weight:700;color:var(--text);font-size:14.5px;display:flex;align-items:center;gap:6px">Target · ${monthLabel(today().slice(0,7))}${exceeded?`<span style="width:15px;height:15px;display:inline-flex;color:var(--gold)">${ic.medal}</span>`:''}</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:3px">${closedCount} of ${quota} plots closed${targetVal?(' · '+ghs(closedVal)+' of '+ghs(targetVal)):''}</div>
+      ${exceeded?`<div class="mini" style="margin-top:4px;color:#8A6E12;font-weight:700">Past quota — great work this month</div>`:''}
     </div>
-    <span class="tag ${exceeded?'ok':'ghost'}" style="font-size:13px;padding:6px 12px;flex:0 0 auto;display:inline-flex;align-items:center;gap:5px">${mainPct}%${exceeded?`<span style="width:12px;height:12px;display:inline-flex">${ic.trophy}</span>`:''}</span>
   </div>
-  <div style="height:11px;background:#EEF1F6;border-radius:100px;overflow:hidden;position:relative">
-    <div style="height:100%;width:${mainPct}%;background:linear-gradient(90deg,var(--leaf),var(--green));border-radius:100px;transition:width .8s cubic-bezier(.22,1,.36,1)"></div>
-  </div>
-  ${exceeded?`<div style="margin-top:6px"><div class="mini" style="margin-bottom:4px;color:#8A6E12;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;display:inline-flex">${ic.medal}</span>Past quota — extra plots this month</div>
-  <div style="height:9px;background:#FBF3DE;border-radius:100px;overflow:hidden"><div style="height:100%;width:${overPct}%;background:linear-gradient(90deg,var(--gold2),var(--gold));border-radius:100px;transition:width 1s cubic-bezier(.22,1,.36,1) .3s;animation:goldPulse 2s ease-in-out infinite"></div></div></div>`:''}
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding-top:14px;border-top:1px solid var(--line)">
     <div><div style="font-weight:700;font-size:13px">Expected this month</div><div class="mini">${mySelections.length} client${mySelections.length===1?'':'s'} selected</div></div>
     <div style="text-align:right"><div style="font-size:17px;font-weight:800;font-family:'IBM Plex Mono',monospace">${ghs(expectedTotal)}</div>
     <button class="chip" id="editTargetSelBtn" style="margin-top:4px;padding:5px 12px;font-size:11.5px;display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;display:inline-flex">${ic.edit}</span>Select clients</button></div>
@@ -2954,39 +3203,32 @@ function agentHome(){ const k=kpisOf(DB.leads);
   const monthCollected=DB.payments.filter(p=>(p.date||'').slice(0,7)===thisMonth).reduce((s,p)=>s+num(p.amount),0);
   const target=num((CONFIG.targets||{})[PROFILE.key])||0;
   const pct=target? Math.min(100,Math.round(wonMonthVal/target*100)):0;
-  const pendingAlloc=canManagePlots()?(DB.allocations||[]).filter(a=>a.status==='Pending').length:0;
-  const myIssueCount=runDataIntegrityCheck(DB.leads).length;
   const myCommission=computeMyPersonalCommission(thisMonth);
-  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Welcome back</div><h2>${esc(PROFILE.name.split(' ')[0])}'s desk</h2><p>Royal Palm Enclave · Trulander JSF Limited</p></div>
+  V.innerHTML=`<div class="pagehead"><div><h2>${esc(PROFILE.name.split(' ')[0])}'s Dashboard</h2><p>Royal Palm Enclave · Trulander JSF Limited</p></div>
   <div style="display:flex;gap:8px;flex:0 0 auto">
-  <button class="dashRefreshBtn" id="dutiesQuickBtn" title="Duties" style="position:relative">${ic.check2}${computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount?`<span class="badge" style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:100px;background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center">${computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount}</span>`:''}</button>
   <button class="dashRefreshBtn" id="dashRefreshBtn" title="Refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div></div>
   ${renderBannerSlideshow()}
   ${renderAllocationBanners()}
   ${renderComplaintAssignBanners()}
-  ${renderSmartInsights(DB.leads,DB.payments)}
   <div class="rowcard" style="margin-bottom:18px;padding:16px;background:linear-gradient(120deg,#F4F8FF,#EEF6F1);border:1px solid rgba(59,130,246,.18)">
     <div style="display:flex;align-items:center;gap:12px"><span class="kpi-ic blue" style="margin-bottom:0">${kpiIc.coins||kpiIc.check}</span>
     <div><div style="font-weight:700;font-size:13.5px">My commission — ${monthLabel(thisMonth)}</div><div class="mini">Personal only · your pool share is confirmed by Management on the 15th</div></div>
     <div style="margin-left:auto;font-size:22px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--text)">${ghs(myCommission)}</div></div>
   </div>
-  ${renderDutiesCard()}
   <div class="kpis">${kpi('Active leads',k.leads,'','pipeline')}${kpi('Pipeline value',ghs(k.val),'gold','pipeline')}${kpi('Collected',ghs(k.coll),'','paid')}${kpi('Outstanding',ghs(k.out),'gold','owed')}${kpi('Site visits',k.sv,'','visits')}${kpi('Fully paid',wonAll.length,'','donepaying')}${kpi('Monthly collected',ghs(monthCollected),'gold','monthlyclosed')}</div>
   ${renderTargetCard(wonMonth.length,target,wonMonthVal)}
   ${renderMonthlyPlanCard(DB.leads)}
   ${renderPipelineHealthCard(DB.leads)}
-  <div class="sectitle"><h3>What do you want to do?</h3></div>
-  <div class="tasks">${task('addlead','New lead','Add to your pipeline',ic.lead,'lead')}${task('update','Update pipeline','Log payment · move stage',ic.update,'update')}${task('enquiry','Client enquiry','Log a new enquiry',ic.enquiry,'enq')}${task('complaint','Client complaint','Record &amp; assign',ic.complaint,'cmp')}${task('sitevisit','Site visit','Request for a client',ic.visit,'visit')}${task('plots','Plot availability','Check before you promise a plot',ic.grid,'grid')}${task('myDataCheck','Data check',myIssueCount?(myIssueCount+' to review'):'All clear',ic.complaint,myIssueCount?'cmp':'lead')}${task('duties','Duties',computeDutiesSummary((DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key)).openCount+' open',ic.check2,'lead')}${task('feedback','Feedback',(DB.feedback||[]).length+' posted',ic.chat,'enq')}${canManagePlots()?task('allocations','Allocation requests',pendingAlloc+' pending',ic.lead,pendingAlloc?'update':'lead'):''}${taskWide('pipeline','View my full pipeline',k.leads+' leads on record',ic.grid,'grid')}</div>
-  <div class="footer-note">${DEMO_MODE?'<span class="demoflag"><span class="d"></span>Demo data</span>':''} Signed in as ${esc(PROFILE.email)}</div>`;
+  <div class="footer-note">${DEMO_MODE?'<span class="demoflag"><span class="d"></span>Demo data</span>':''} Signed in as ${esc(PROFILE.email)}</div>
+  <div class="footer-note" style="padding-top:2px">System created by Abdul Waheed (Digital Operations) © ${new Date().getFullYear()}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
-  bindTasks(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindSmartInsights(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow(); bindDutiesCard();
+  bindTasks(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow();
   document.getElementById('dashRefreshBtn').onclick=async(e)=>{
     const btn=e.currentTarget; btn.classList.add('spinning'); btn.disabled=true;
     try{ await apiLoadAll(); toast('Up to date'); agentHome(); }
     catch(err){ toast('Refresh failed'); btn.classList.remove('spinning'); btn.disabled=false; }
   };
-  document.getElementById('dutiesQuickBtn').onclick=()=>route('duties');
 }
 
 /* ================= PIPELINE ================= */
@@ -2996,28 +3238,29 @@ function viewPipeline(){
   const recent=getRecentlyViewed();
   V.innerHTML=`${back('home')}<div class="pagehead"><div><div class="eyebrow">My pipeline</div><h2>${DB.leads.length} leads</h2><p>${paidCount} paid in full</p></div></div>
   ${recent.length?`<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px">${recent.map(r=>`<button class="chip" style="flex:0 0 auto" data-recentcust="${esc(r.name)}" data-recentcontact="${esc(r.contact||'')}">🕓 ${esc(r.name)}</button>`).join('')}</div>`:''}
-  <div class="rowcard" style="margin-bottom:16px;padding:14px 16px">
+  <div class="rowcard" style="margin-bottom:16px;padding:16px 16px 6px">
     <div style="font-weight:700;font-size:14px;margin-bottom:2px">Your pipeline as Excel</div>
-    <div class="mini" style="margin-bottom:12px">Download it, edit offline (add clients, update payments/stage/notes), then import it back — the system reads your changes and updates live.</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="chip" id="xlMyPipelineBtn" style="flex:1;min-width:160px">⬇ Download my pipeline (.xlsx)</button>
-      <button class="chip" id="xlImportBtn" style="flex:1;min-width:160px">⬆ Import edited file</button>
+    <div class="mini" style="margin-bottom:6px">Download it, edit offline (add clients, update payments/stage/notes), then import it back — the system reads your changes and updates live.</div>
+    <div class="appGrid" style="grid-template-columns:repeat(2,1fr)">
+      <button class="appGridIcon" id="xlMyPipelineBtn"><span class="appGridGlyph">${fic('document')}</span><span class="appGridLabel">Download pipeline</span></button>
+      <button class="appGridIcon" id="xlImportBtn"><span class="appGridGlyph">${fic('backup')}</span><span class="appGridLabel">Import edited file</span></button>
     </div>
     <input type="file" id="xlImportFile" accept=".xlsx" class="hidden"/>
   </div>
-  <div class="rowcard" style="margin-bottom:16px;padding:14px 16px">
+  <div class="rowcard" style="margin-bottom:16px;padding:16px 16px 6px">
     <div style="font-weight:700;font-size:14px;margin-bottom:2px">Backup &amp; restore</div>
-    <div class="mini" style="margin-bottom:12px">Before deleting a client — or your whole pipeline — back them up here, full payment history included. Restoring always creates new records; it never overwrites anything live.</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="chip" id="pipeBackupBtn" style="flex:1;min-width:160px">Back up clients</button>
-      <button class="chip" id="pipeRestoreBtn" style="flex:1;min-width:160px">Restore from backup</button>
+    <div class="mini" style="margin-bottom:6px">Before deleting a client — or your whole pipeline — back them up here, full payment history included. Restoring always creates new records; it never overwrites anything live.</div>
+    <div class="appGrid" style="grid-template-columns:repeat(2,1fr)">
+      <button class="appGridIcon" id="pipeBackupBtn"><span class="appGridGlyph">${fic('savings')}</span><span class="appGridLabel">Back up clients</span></button>
+      <button class="appGridIcon" id="pipeRestoreBtn"><span class="appGridGlyph">${fic('access')}</span><span class="appGridLabel">Restore backup</span></button>
     </div>
     <input type="file" id="pipeRestoreFile" accept=".json" class="hidden"/>
   </div>
   <div class="searchbar"><input id="pq" placeholder="Search name or contact…" value="${esc(pf.q)}"/>
   <select id="ps"><option value="">All stages</option>${STAGES.map(s=>`<option value="${s}" ${s===pf.stage?'selected':''}>${STAGE_LABELS[s]}</option>`).join('')}</select></div>
   <div style="margin-bottom:14px"><button class="chip ${pf.paidOnly?'on':''}" id="paidOnlyBtn">✓ Fully paid only${pf.paidOnly?' ✕':''}</button></div>
-  <div class="list" id="plist"></div>`;
+  <div class="list" id="plist"></div>
+  <div class="footer-note">System created by Abdul Waheed (Digital Operations) © ${new Date().getFullYear()}</div>`;
   document.getElementById('pq').oninput=e=>{pf.q=e.target.value;paintPipe();};
   document.getElementById('ps').onchange=e=>{pf.stage=e.target.value;paintPipe();};
   document.getElementById('paidOnlyBtn').onclick=()=>{pf.paidOnly=!pf.paidOnly;viewPipeline();};
@@ -3054,9 +3297,9 @@ function buildPipelineBackup(clientIds){
 function downloadPipelineBackup(clientIds){
   const backup=buildPipelineBackup(clientIds);
   const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
-  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  const url=URL.createObjectURL(blob);
   const scope=clientIds.length===DB.leads.length?'AllClients':(clientIds.length===1?(DB.leads.find(l=>l.id===clientIds[0])||{name:'Client'}).name.replace(/\s+/g,'_'):clientIds.length+'Clients');
-  a.href=url; a.download='PEP_Pipeline_Backup_'+scope+'_'+today()+'.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  triggerDownload(url,'PEP_Pipeline_Backup_'+scope+'_'+today()+'.json','backup');
 }
 function openPipelineBackupModal(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
@@ -3588,7 +3831,8 @@ function buildAuthorizationPDF(a,plotsList,siteManagerName){
   doc.text(today()+' '+nowTime(),118,y+24);
 
   const uri=doc.output('datauristring');
-  doc.save('Authorization_'+(a.clientName||'client').replace(/\s+/g,'_')+'.pdf');
+  const fname='Authorization_'+(a.clientName||'client').replace(/\s+/g,'_')+'.pdf';
+  doc.save(fname); logDownload(fname,'pdf',uri);
   return uri;
 }
 function buildAllocationPDF(a){
@@ -3611,7 +3855,7 @@ function buildAllocationPDF(a){
   y+=Math.max(h1,h2)*5+9;
   y=pdfSectionBar(doc,y,pageW,'TIMELINE');
   y=pdfFields(doc,y,[['Allocation requested',a.createdAt],['Allocation confirmed',a.resolvedAt||''],['Note',a.note||'—']]);
-  doc.save('Allocation_'+(a.clientName||'client').replace(/\s+/g,'_')+'.pdf');
+  { const fname='Allocation_'+(a.clientName||'client').replace(/\s+/g,'_')+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri); }
   return doc;
 }
 function staffKeyByName(name){
@@ -3698,8 +3942,8 @@ function openGlobalSearch(){
   input.addEventListener('input',runSearch);
 }
 function refreshChatNavBadge(){
-  const btn=document.getElementById('chatNavBtn'); if(!btn) return;
-  const n=totalUnread(); const badge=document.getElementById('chatNavBadge');
+  const badge=document.getElementById('bnChatBadge'); if(!badge) return;
+  const n=totalUnread();
   if(n>0){ badge.textContent=n>9?'9+':n; badge.classList.remove('hidden'); } else badge.classList.add('hidden');
 }
 function lastMsgPreview(m){
@@ -3781,8 +4025,7 @@ function renderChatLog(otherKey){
   }).join('');
 }
 function viewChat(){
-  const homeRoute=PROFILE.role==='manager'?'mgr':'home';
-  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Team chat</div><h2>Conversations</h2><p>${DEMO_MODE?'Demo mode — messages stay on this device only.':'Live · real-time'}</p></div></div>
+  V.innerHTML=`<div class="pagehead"><div><h2>Team Chat</h2><p>${DEMO_MODE?'Demo mode — messages stay on this device only.':'Live · real-time'}</p></div></div>
   <div class="convList">${renderConversationList()}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
   V.querySelectorAll('[data-openchat]').forEach(b=>b.onclick=()=>route('chatThread',b.dataset.openchat));
@@ -3858,6 +4101,7 @@ async function sendChatAttachment(otherKey,file){
 function downloadChatFile(m){
   const a=document.createElement('a'); a.href=m.attachData; a.download=m.attachName||'file';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  logDownload(m.attachName||'file','attachment',m.attachType==='image'?m.attachData:null);
 }
 function openForwardPicker(msgId){
   const m=DB.messages.find(x=>x.id===msgId); if(!m) return;
@@ -4058,6 +4302,9 @@ function renderAllocMonthFilterChips(resolved){
 const TASK_CATEGORIES=['Sales','Digital Operations','Site Operations','Executive/Admin','Facilities','General'];
 const TASK_STATUSES=['Open','In Progress','Done','Cancelled'];
 let dutiesFilter='mine';
+let dutiesSearch='';
+let dutiesCatFilter='';
+let dutiesStatusFilter='';
 function daysBetween(a,b){ const d1=new Date(a),d2=new Date(b); if(isNaN(d1)||isNaN(d2)) return null; return Math.max(0,Math.round((d2-d1)/86400000)); }
 function taskDaysOpen(t){ const end=t.completedAt||new Date().toISOString(); return daysBetween(t.createdAt,end); }
 function computeDutiesSummary(tasks){
@@ -4067,26 +4314,30 @@ function computeDutiesSummary(tasks){
   const avgDays=done.length?Math.round(done.reduce((s,t)=>s+(daysBetween(t.createdAt,t.completedAt)||0),0)/done.length):null;
   return {openCount:open.length,overdueCount:overdue.length,doneCount:done.length,avgDaysToClose:avgDays};
 }
-function renderDutiesCard(){
-  const mine=(DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key);
-  const s=computeDutiesSummary(mine);
-  if(!(DB.tasks||[]).length) return '';
-  return `<div class="rowcard" style="margin-bottom:18px;padding:16px;cursor:pointer" data-goduties="1">
-    <div style="display:flex;align-items:center;gap:12px">
-      <span class="kpi-ic blue" style="margin-bottom:0">${kpiIc.check}</span>
-      <div style="flex:1"><div style="font-weight:700;font-size:13.5px">My duties</div><div class="mini">${s.openCount} open${s.overdueCount?(' · '+s.overdueCount+' overdue'):''}</div></div>
-      <div style="text-align:right"><div class="mini">tap to view →</div></div>
-    </div>
-  </div>`;
-}
-function bindDutiesCard(){ const el=document.querySelector('[data-goduties]'); if(el) el.onclick=()=>route('duties'); }
 function viewDuties(){
-  const homeRoute=PROFILE.role==='manager'?'mgr':'home';
   const all=DB.tasks||[];
   const mine=all.filter(t=>t.assignedTo===PROFILE.key);
   const byMe=all.filter(t=>t.assignedBy===PROFILE.key&&t.assignedTo!==PROFILE.key);
-  const list=dutiesFilter==='mine'?mine:dutiesFilter==='byme'?byMe:all;
   const teamSummary=computeDutiesSummary(all);
+  V.innerHTML=`<div class="pagehead"><div><h2>Operations Tracker</h2><p>Every task, who owns it, and how long it's been open</p></div></div>
+  <div class="kpis">${kpi('Open',teamSummary.openCount)}${kpi('Overdue',teamSummary.overdueCount)}${kpi('Completed',teamSummary.doneCount)}${kpi('Avg days to close',teamSummary.avgDaysToClose!=null?teamSummary.avgDaysToClose:'—')}</div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><button class="chip ${dutiesFilter==='mine'?'on':''}" data-dutiesfilter="mine">Mine (${mine.length})</button><button class="chip ${dutiesFilter==='byme'?'on':''}" data-dutiesfilter="byme">Assigned by me (${byMe.length})</button><button class="chip ${dutiesFilter==='all'?'on':''}" data-dutiesfilter="all">Team (${all.length})</button></div>
+  <div class="searchbar" style="margin-bottom:10px"><input id="dutiesSearchInput" placeholder="Filter by name or title…" value="${esc(dutiesSearch)}"/>
+  <select id="dutiesCatSelect"><option value="">All categories</option>${TASK_CATEGORIES.map(c=>`<option value="${esc(c)}" ${c===dutiesCatFilter?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">${TASK_STATUSES.map(s=>`<button class="chip ${dutiesStatusFilter===s?'on':''}" data-dutiesstatus="${esc(s)}">${esc(s)}</button>`).join('')}${dutiesStatusFilter?`<button class="chip" data-dutiesstatus="">✕ Clear status</button>`:''}</div>
+  <div style="margin-bottom:16px"><button class="btn primary" id="newTaskBtn" style="width:100%">+ New task</button></div>
+  <div class="list" id="dutiesList"></div>`;
+  bindDutiesCtrls();
+  paintDuties();
+  renderBottomNavNow();
+}
+function paintDuties(){
+  const all=DB.tasks||[];
+  let list=dutiesFilter==='mine'?all.filter(t=>t.assignedTo===PROFILE.key):dutiesFilter==='byme'?all.filter(t=>t.assignedBy===PROFILE.key&&t.assignedTo!==PROFILE.key):all;
+  const q=dutiesSearch.trim().toLowerCase();
+  if(q) list=list.filter(t=>(t.assignedToName||t.assignedTo||'').toLowerCase().includes(q)||(t.title||'').toLowerCase().includes(q));
+  if(dutiesCatFilter) list=list.filter(t=>t.category===dutiesCatFilter);
+  if(dutiesStatusFilter) list=list.filter(t=>t.status===dutiesStatusFilter);
   const statusMeta={Open:{cls:'ghost'},'In Progress':{cls:'warnt'},Done:{cls:'ok'},Cancelled:{cls:'dgr'}};
   const rowOf=t=>{
     const overdue=t.dueDate&&t.dueDate<today()&&t.status!=='Done'&&t.status!=='Cancelled';
@@ -4095,43 +4346,74 @@ function viewDuties(){
     <div class="top"><div><div class="nm">${esc(t.title)}</div><div class="meta">${esc(t.category)} · ${esc(t.assignedToName||t.assignedTo)}${t.assignedBy!==t.assignedTo?(' · assigned by '+esc(t.assignedByName||t.assignedBy)):' · self-assigned'}</div></div>
     <span class="tag ${statusMeta[t.status].cls}">${esc(t.status)}</span></div>
     ${t.description?`<div class="mini" style="margin-top:4px">${esc(t.description)}</div>`:''}
-    <div class="foot"><span class="tag ${t.priority==='Critical'||t.priority==='High'?'warnt':'ghost'}">${esc(t.priority)} priority</span>${t.dueDate?`<span class="tag ${overdue?'dgr':'ghost'}">${overdue?'Overdue: ':'Due '}${esc(t.dueDate)}</span>`:''}<span class="tag ghost">${daysOpen} day${daysOpen===1?'':'s'} open</span></div>
+    <div class="foot"><span class="tag ${t.priority==='Critical'||t.priority==='High'?'warnt':'ghost'}">${esc(t.priority)} priority</span>${t.dueDate?`<span class="tag ${overdue?'dgr':'ghost'}">${overdue?'Overdue: ':'Due '}${esc(t.dueDate)}</span>`:''}<span class="tag ghost">Opened ${esc((t.createdAt||'').slice(0,10))}</span>${t.completedAt?`<span class="tag ok">Completed ${esc((t.completedAt||'').slice(0,10))}</span>`:`<span class="tag ghost">${daysOpen} day${daysOpen===1?'':'s'} open</span>`}</div>
+    ${t.escalatedTo?`<div class="mini" style="margin-top:4px;padding-top:6px;border-top:1px solid var(--line);color:#B4472F;display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;display:inline-flex">${ic.alert}</span>Escalated to ${esc(t.escalatedToName||t.escalatedTo)} by ${esc(t.escalatedByName||t.escalatedBy)} · ${esc((t.escalatedAt||'').slice(0,10))}${t.escalationNote?(': '+esc(t.escalationNote)):''}</div>`:''}
     ${t.status!=='Done'&&t.status!=='Cancelled'?`<div class="foot">
       <button class="chip" data-taskstatus="${t.id}|In Progress">Mark in progress</button>
       <button class="chip" data-taskstatus="${t.id}|Done">Mark done</button>
+      <button class="chip" data-taskescalate="${t.id}">⬆ Escalate</button>
       ${t.assignedBy===PROFILE.key||PROFILE.role==='manager'?`<button class="trashbtn" data-taskdel="${t.id}">${ic.trash}</button>`:''}
     </div>`:''}
   </div>`;};
-  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Duties</div><h2>${teamSummary.openCount} open across the team</h2><p>${teamSummary.overdueCount} overdue${teamSummary.avgDaysToClose!=null?(' · avg '+teamSummary.avgDaysToClose+' day'+(teamSummary.avgDaysToClose===1?'':'s')+' to close'):''}</p></div></div>
-  <div style="display:flex;gap:8px;margin-bottom:14px"><button class="chip ${dutiesFilter==='mine'?'on':''}" data-dutiesfilter="mine">Mine (${mine.length})</button><button class="chip ${dutiesFilter==='byme'?'on':''}" data-dutiesfilter="byme">Assigned by me (${byMe.length})</button><button class="chip ${dutiesFilter==='all'?'on':''}" data-dutiesfilter="all">Team (${all.length})</button></div>
-  <div style="margin-bottom:16px"><button class="btn primary" id="newTaskBtn" style="width:100%">+ New duty</button></div>
-  <div class="list">${list.length?list.map(rowOf).join(''):emptyState(ic.grid,'Nothing here','Assign a duty to yourself or someone else to get started.')}</div>`;
-  bindDutiesCtrls();
+  document.getElementById('dutiesList').innerHTML=list.length?list.map(rowOf).join(''):emptyState(ic.grid,'Nothing here','Try adjusting your filters, or assign a task to get started.');
+  bindDutiesRowCtrls();
 }
 function bindDutiesCtrls(){
   document.querySelectorAll('[data-dutiesfilter]').forEach(b=>b.onclick=()=>{ dutiesFilter=b.dataset.dutiesfilter; viewDuties(); });
+  document.querySelectorAll('[data-dutiesstatus]').forEach(b=>b.onclick=()=>{ dutiesStatusFilter=b.dataset.dutiesstatus; viewDuties(); });
+  document.getElementById('dutiesSearchInput').oninput=e=>{ dutiesSearch=e.target.value; paintDuties(); };
+  document.getElementById('dutiesCatSelect').onchange=e=>{ dutiesCatFilter=e.target.value; paintDuties(); };
   document.getElementById('newTaskBtn').onclick=openNewTaskModal;
+}
+function bindDutiesRowCtrls(){
   document.querySelectorAll('[data-taskstatus]').forEach(b=>b.onclick=async()=>{
     const [id,status]=b.dataset.taskstatus.split('|');
-    try{ await apiUpdateTaskStatus(id,status); const t=DB.tasks.find(x=>x.id===id); if(t){ t.status=status; if(status==='Done') t.completedAt=new Date().toISOString(); } toast('Duty updated'); viewDuties(); }
+    try{ await apiUpdateTaskStatus(id,status); const t=DB.tasks.find(x=>x.id===id); if(t){ t.status=status; if(status==='Done') t.completedAt=new Date().toISOString(); } toast('Task updated'); viewDuties(); }
     catch(e){ toast('Failed: '+(e.message||e)); }
   });
   document.querySelectorAll('[data-taskdel]').forEach(b=>b.onclick=async()=>{
-    if(!confirm('Delete this duty?')) return;
-    try{ await apiDeleteTask(b.dataset.taskdel); DB.tasks=DB.tasks.filter(x=>x.id!==b.dataset.taskdel); toast('Duty deleted'); viewDuties(); }
+    if(!confirm('Delete this task?')) return;
+    try{ await apiDeleteTask(b.dataset.taskdel); DB.tasks=DB.tasks.filter(x=>x.id!==b.dataset.taskdel); toast('Task deleted'); viewDuties(); }
     catch(e){ toast('Failed: '+(e.message||e)); }
   });
+  document.querySelectorAll('[data-taskescalate]').forEach(b=>b.onclick=()=>openEscalateTaskModal(b.dataset.taskescalate));
+}
+function openEscalateTaskModal(id){
+  const t=(DB.tasks||[]).find(x=>x.id===id); if(!t) return;
+  const options=STAFF_LIST.filter(s=>s.key!==t.assignedTo);
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Escalate — ${esc(t.title)}</div>
+    <div class="mini" style="margin-bottom:14px">Reassigns this task and notifies them in chat with your reason.</div>
+    ${fld('Escalate to',`<select id="esc_to">${options.map(s=>`<option value="${s.key}">${esc(s.name)}</option>`).join('')}</select>`)}
+    ${fld('Reason','<textarea id="esc_note" placeholder="Why this needs their attention…"></textarea>')}
+    <div class="formactions"><button class="btn primary" id="doEscalate" style="width:100%">Escalate</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('doEscalate').onclick=async()=>{
+    const toKey=val('esc_to'); const toStaff=STAFF_LIST.find(s=>s.key===toKey); const note=val('esc_note').trim();
+    const btn=document.getElementById('doEscalate'); btn.disabled=true; btn.textContent='Escalating…';
+    try{
+      await apiEscalateTask(id,toKey,toStaff?toStaff.name:toKey,note);
+      Object.assign(t,{assignedTo:toKey,assignedToName:toStaff?toStaff.name:toKey,escalatedTo:toKey,escalatedToName:toStaff?toStaff.name:toKey,
+        escalatedBy:PROFILE.key,escalatedByName:PROFILE.name,escalatedAt:new Date().toISOString(),escalationNote:note||null});
+      try{ const rec=await apiSendMessage(toKey,`${PROFILE.name} escalated "${t.title}" to you${note?(': '+note):''}`); DB.messages.push(rec); }catch(e){}
+      toast('Escalated to '+(toStaff?toStaff.name:toKey)); ov.remove(); viewDuties();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Escalate'; }
+  };
 }
 function openNewTaskModal(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">New duty</div><button id="closeNewTask" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">New task</div><button id="closeNewTask" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     ${fld('Title *','<input id="nt_title" placeholder="e.g. Post this week on Instagram"/>')}
     ${fld('Description','<textarea id="nt_desc" placeholder="Details, context…"></textarea>')}
     <div class="grid2">${fld('Category',sel('nt_cat',TASK_CATEGORIES))}${fld('Priority',sel('nt_pri',['Low','Medium','High','Critical'],'Medium'))}</div>
     <div class="grid2">${fld('Assign to',`<select id="nt_to">${STAFF_LIST.map(s=>`<option value="${s.key}" ${s.key===PROFILE.key?'selected':''}>${esc(s.name)}${s.key===PROFILE.key?' (myself)':''}</option>`).join('')}</select>`)}${fld('Due date','<input id="nt_due" type="date"/>')}</div>
-    <div class="formactions"><button class="btn primary" id="saveNewTask" style="width:100%">Assign duty</button></div>
+    <div class="formactions"><button class="btn primary" id="saveNewTask" style="width:100%">Assign task</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
@@ -4144,13 +4426,14 @@ function openNewTaskModal(){
       const rec=await apiInsertTask({title,description:val('nt_desc').trim(),category:val('nt_cat'),priority:val('nt_pri'),
         assignedTo:toKey,assignedToName:toStaff?toStaff.name:toKey,dueDate:val('nt_due')||null});
       rec.assignedByName=PROFILE.name; rec.assignedBy=PROFILE.key;
-      DB.tasks.unshift(rec); toast('Duty assigned'); ov.remove(); viewDuties();
-    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Assign duty'; }
+      DB.tasks.unshift(rec); toast('Task assigned'); ov.remove(); viewDuties();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Assign task'; }
   };
 }
 
 /* ================= FEEDBACK FORUM (bugs, suggestions, things to change) ================= */
 const FEEDBACK_CATEGORIES=['Bug','Suggestion','Feature Request','Other'];
+let FEEDBACK_COMMENTS_CACHE={};
 function viewFeedback(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
   const all=DB.feedback||[];
@@ -4158,9 +4441,10 @@ function viewFeedback(){
     <div class="top"><div><div class="nm">${esc(f.authorName)}</div><div class="meta">${esc((f.createdAt||'').slice(0,16).replace('T',' '))}</div></div>
     <span class="tag ${f.category==='Bug'?'dgr':f.category==='Suggestion'?'ok':'ghost'}">${esc(f.category)}</span></div>
     <div class="mini" style="margin-top:6px;line-height:1.5">${esc(f.body)}</div>
-    ${f.authorKey===PROFILE.key||PROFILE.role==='manager'?`<div class="foot"><button class="trashbtn" data-fbdel="${f.id}">${ic.trash}</button></div>`:''}
+    <div class="foot"><button class="chip" data-fbtogglecomments="${f.id}">💬 Comments</button>${f.authorKey===PROFILE.key||PROFILE.role==='manager'?`<button class="trashbtn" data-fbdel="${f.id}">${ic.trash}</button>`:''}</div>
+    <div id="fbCommentsSection_${f.id}" class="hidden"></div>
   </div>`;
-  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Feedback</div><h2>Suggestions &amp; bug reports</h2><p>${all.length} posted · visible to the whole team</p></div></div>
+  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><h2>Feedback</h2><p>Suggestions &amp; bug reports · ${all.length} posted · visible to the whole team</p></div></div>
   <div class="formwrap" style="margin-bottom:16px">
   <div class="sectitle" style="margin-top:0"><h3>New post</h3></div>
   ${fld('Category',sel('fb_cat',FEEDBACK_CATEGORIES))}
@@ -4184,8 +4468,45 @@ function bindFeedbackCtrls(){
     try{ await apiDeleteFeedback(b.dataset.fbdel); DB.feedback=DB.feedback.filter(x=>x.id!==b.dataset.fbdel); toast('Deleted'); viewFeedback(); }
     catch(e){ toast('Failed: '+(e.message||e)); }
   });
+  document.querySelectorAll('[data-fbtogglecomments]').forEach(b=>b.onclick=()=>toggleFeedbackComments(b.dataset.fbtogglecomments));
   const pdfBtn=document.getElementById('fbDownloadPdf');
   if(pdfBtn) pdfBtn.onclick=buildFeedbackPDF;
+}
+async function toggleFeedbackComments(id){
+  const sec=document.getElementById('fbCommentsSection_'+id); if(!sec) return;
+  if(sec.classList.contains('hidden')){
+    sec.classList.remove('hidden');
+    if(!sec.dataset.loaded){ sec.innerHTML='<div class="mini" style="padding:6px 0">Loading…</div>'; await loadAndRenderFeedbackComments(id); sec.dataset.loaded='1'; }
+  } else { sec.classList.add('hidden'); }
+}
+async function loadAndRenderFeedbackComments(id){
+  let comments=FEEDBACK_COMMENTS_CACHE[id];
+  if(!comments){
+    if(DEMO_MODE){ comments=[]; }
+    else{ try{ const {data,error}=await sb.from('feedback_comments').select('*').eq('feedback_id',id).order('created_at',{ascending:true}); if(error) throw error;
+      comments=(data||[]).map(r=>({id:r.id,authorName:r.author_name,body:r.body,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')})); }catch(e){ comments=[]; } }
+    FEEDBACK_COMMENTS_CACHE[id]=comments;
+  }
+  const wrap=document.getElementById('fbCommentsSection_'+id); if(!wrap) return;
+  wrap.innerHTML=`<div>${comments.length?comments.map(c=>`<div class="commentItem"><b>${esc(c.authorName)}:</b> ${esc(c.body)}</div>`).join(''):'<div class="mini" style="padding:6px 0">No replies yet — be the first.</div>'}</div>
+    <div class="commentRow"><input id="fbCommentInput_${id}" placeholder="Write a reply…"/><button data-fbpostcomment="${id}">Send</button></div>`;
+  const input=document.getElementById('fbCommentInput_'+id);
+  input.onkeydown=e=>{ if(e.key==='Enter') postFeedbackComment(id); };
+  wrap.querySelector('[data-fbpostcomment]').onclick=()=>postFeedbackComment(id);
+}
+async function postFeedbackComment(id){
+  const input=document.getElementById('fbCommentInput_'+id); if(!input) return;
+  const body=input.value.trim(); if(!body) return;
+  input.value=''; input.disabled=true;
+  try{
+    let rec;
+    if(DEMO_MODE){ rec={id:uid(),authorName:PROFILE.name,body,createdAt:today()+' '+nowTime()}; }
+    else{ const {data,error}=await sb.from('feedback_comments').insert({feedback_id:id,author_key:PROFILE.key,author_name:PROFILE.name,body}).select().single(); if(error) throw error;
+      rec={id:data.id,authorName:data.author_name,body:data.body,createdAt:(data.created_at||'').slice(0,16).replace('T',' ')}; }
+    FEEDBACK_COMMENTS_CACHE[id]=(FEEDBACK_COMMENTS_CACHE[id]||[]).concat([rec]);
+    loadAndRenderFeedbackComments(id);
+  }catch(e){ toast('Reply failed to send'); }
+  input.disabled=false;
 }
 function buildFeedbackPDF(){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
@@ -4203,7 +4524,7 @@ function buildFeedbackPDF(){
     const lines=doc.splitTextToSize(f.body,pageW-24);
     doc.text(lines,12,y); y+=lines.length*4.6+9;
   });
-  doc.save('PEP_Feedback_'+today()+'.pdf');
+  { const fname='PEP_Feedback_'+today()+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri); }
 }
 function viewAllocations(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
@@ -4851,7 +5172,7 @@ function buildEnquiryFormPDF(rec,asDataUri){
   y+=3; doc.setDrawColor(226,231,237); doc.line(12,y,pageW-12,y); y+=6;
   pdfFields(doc,y,[['Logged by',rec.agentName],['Logged at',rec.createdAt]]);
   if(asDataUri) return doc.output('datauristring');
-  doc.save('Enquiry_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf');
+  { const fname='Enquiry_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri); }
 }
 function buildComplaintFormPDF(rec,asDataUri){
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
@@ -4882,7 +5203,7 @@ function buildComplaintFormPDF(rec,asDataUri){
   y+=3; doc.setDrawColor(226,231,237); doc.line(12,y,pageW-12,y); y+=6;
   pdfFields(doc,y,[['Logged by',rec.agentName],['Logged at',rec.createdAt]]);
   if(asDataUri) return doc.output('datauristring');
-  doc.save('Complaint_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf');
+  { const fname='Complaint_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri); }
 }
 /* ---- Site visit PDF: sectioned form layout matching the real TSOPOLI request form ---- */
 function pdfSectionBar(doc,y,pageW,label){
@@ -4961,7 +5282,7 @@ function buildSiteVisitFormPDF(rec,asDataUri){
   doc.setDrawColor(226,231,237); doc.line(12,y,pageW-12,y); y+=6;
   pdfFields(doc,y,[['Status',rec.status],['Logged at',rec.createdAt]]);
   if(asDataUri) return doc.output('datauristring');
-  doc.save('SiteVisit_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf');
+  { const fname='SiteVisit_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri); }
 }
 function downloadClientRecordPDF(name,contact,lead,payments,totalValue,totalPaid,totalBal){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load \u2014 check your connection.'); return; }
@@ -5007,7 +5328,7 @@ function downloadClientRecordPDF(name,contact,lead,payments,totalValue,totalPaid
       doc.text(String(p.date||''),12,y); doc.setTextColor(22,163,74); doc.text('+'+ghs(num(p.amount)),pageW-32,y); doc.setTextColor(20,20,20); y+=6.5;
     });
   }
-  doc.save('Client_'+name.replace(/\s+/g,'_')+'_Record.pdf');
+  { const fname='Client_'+name.replace(/\s+/g,'_')+'_Record.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri); }
 }
 function showSavedScreen(kind,rec,message){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
@@ -5196,38 +5517,22 @@ const MGR_APPS=[
   {key:'Site visits',fic:'location',label:'Site Visits'},
   {key:'News',fic:'announce',label:'News & Announcements'},
   {key:'Commission',fic:'savings',label:'Commission'},
-  {key:'Duties',fic:'clipboard',label:'Duties'},
+  {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
   {key:'Feedback',fic:'chat',label:'Feedback'},
+  {key:'Insights',fic:'target',label:'Smart Insights'},
   {key:'Settings',fic:'settings',label:'Settings'},
   {key:'Activity',fic:'clipboard',label:'Activity'},
+  {key:'Downloads',fic:'document',label:'Download Directory'},
 ];
-function openMgrAppGrid(){
-  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
-  ov=document.createElement('div'); ov.id='announceOverlay';
-  ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div style="font-weight:800;font-size:16px">Management apps</div><button id="closeAppGrid" style="background:var(--paper);border:1px solid var(--line);border-radius:50%;color:var(--muted);width:30px;height:30px;display:grid;place-items:center;cursor:pointer;padding:0">${ic.close}</button></div>
-    <div class="appGrid">${MGR_APPS.map(a=>`<button class="appGridIcon" data-mgrapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
-  </div>`;
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
-  document.getElementById('closeAppGrid').onclick=()=>ov.remove();
-  ov.querySelectorAll('[data-mgrapp]').forEach(b=>b.onclick=()=>{
-    const key=b.dataset.mgrapp; ov.remove();
-    if(key==='Duties') route('duties'); else if(key==='Feedback') route('feedback'); else { mgrTab=key; managerView(); }
-  });
-}
 async function managerView(){
-  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Management</div><h2>Team overview</h2><p>Live across all agents</p></div>
-  <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-  <button class="iconbtn" id="mgrDutiesBtn" title="Duties" style="background:#F1EFE7;border-color:var(--line);color:var(--ink);position:relative"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M5 12.5l4.5 4.5L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>${computeDutiesSummary(DB.tasks||[]).openCount?`<span class="badge" style="position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:100px;background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center">${computeDutiesSummary(DB.tasks||[]).openCount}</span>`:''}</button>
-  <button class="iconbtn" id="mgrAppGridBtn" title="More" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><circle cx="5" cy="5" r="1.8"/><circle cx="12" cy="5" r="1.8"/><circle cx="19" cy="5" r="1.8"/><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/><circle cx="5" cy="19" r="1.8"/><circle cx="12" cy="19" r="1.8"/><circle cx="19" cy="19" r="1.8"/></svg></button></div></div>
-  <div class="tabs" id="mtabs"><button data-t="overview" class="${mgrTab==='overview'?'on':''}">Overview</button>${mgrTab!=='overview'?`<button class="on">${esc((MGR_APPS.find(a=>a.key===mgrTab)||{label:mgrTab}).label)}</button>`:''}</div><div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  V.innerHTML=`<div class="pagehead"><div><h2>Management Dashboard</h2><p>Live across all agents</p></div>
+  <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
+  <div class="tabs" id="mtabs"><button data-t="overview" class="${mgrTab==='overview'?'on':''}">Overview</button>${mgrTab!=='overview'?`<button class="on">${esc((MGR_APPS.find(a=>a.key===mgrTab)||{label:mgrTab}).label)}</button>`:''}</div><div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>
+  <div class="footer-note">System created by Abdul Waheed (Digital Operations) © ${new Date().getFullYear()}</div>`;
   V.querySelectorAll('#mtabs button').forEach(b=>b.onclick=()=>{ if(b.dataset.t){ mgrTab=b.dataset.t; managerView(); } });
-  document.getElementById('mgrAppGridBtn').onclick=openMgrAppGrid;
   document.getElementById('mgrRefresh').onclick=async()=>{ toast('Refreshing…'); try{ await apiLoadAll(); managerView(); toast('Up to date'); }catch(e){ toast('Refresh failed'); } };
-  document.getElementById('mgrDutiesBtn').onclick=()=>route('duties');
   const body=document.getElementById('mbody');
-  if(mgrTab==='overview'){ body.innerHTML=mgrOverview(); bindTasks(); bindOverviewCtrls(); animateKpiCounts(body); bindSmartInsights(); bindExpectedRevenueCard(); bindPipelineHealthCard(); bindBannerSlideshow(); }
+  if(mgrTab==='overview'){ body.innerHTML=mgrOverview(); bindTasks(); bindOverviewCtrls(); animateKpiCounts(body); bindExpectedRevenueCard(); bindPipelineHealthCard(); bindBannerSlideshow(); }
   else if(mgrTab==='Data Check'){ const renderMgrDataCheck=()=>{ body.innerHTML=renderDataCheck(null); bindDataCheckCtrls(null,renderMgrDataCheck); }; renderMgrDataCheck(); }
   else if(mgrTab==='Leaderboard'){ body.innerHTML=mgrLeaderboard(); bindLeagueCtrls(); }
   else if(mgrTab==='Reports'){ body.innerHTML=mgrReports(); bindReportCtrls(); }
@@ -5344,8 +5649,13 @@ function mgrOverview(){ let tot={leads:0,val:0,coll:0,out:0,sv:0,hi:0};
   const srcSegments=Object.keys(srcCounts).map(s=>({label:s,value:srcCounts[s],color:SRC_COLORS[s]||'#94A3B8'}));
   const fullyPaid=allLeads.filter(l=>isFullyPaid(l));
 
+  const mySmartInsightsMgr=computeSmartInsights(allLeads,DB.payments);
   return `${renderBannerSlideshow()}
-  ${renderSmartInsights(allLeads,DB.payments)}
+  <button class="rowcard" id="mgrInsightsTeaser" style="margin-bottom:18px;padding:16px;width:100%;text-align:left;display:flex;align-items:center;gap:12px;cursor:pointer;border:1px solid rgba(52,211,153,.25);background:linear-gradient(120deg,#F4FBEA,#F4F8FF)">
+    <span class="kpi-ic green" style="margin-bottom:0">${ic.spark}</span>
+    <div style="flex:1"><div style="font-weight:700;font-size:13.5px">Smart Insights</div><div class="mini">${mySmartInsightsMgr.length} auto-generated ${mySmartInsightsMgr.length===1?'insight':'insights'} from live company data</div></div>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="color:var(--muted)"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
   ${renderExpectedRevenueCard()}
   ${renderPipelineHealthCard(allLeads)}
   <div class="kpis">${kpi('Total leads',tot.leads,'','pipeline')}${kpi('Pipeline value',ghs(tot.val),'gold','pipeline')}${kpi('Collected',ghs(tot.coll),'','paid')}${kpi('Outstanding',ghs(tot.out),'gold','owed')}${kpi('Fully paid',fullyPaid.length,'','donepaying')}${kpi('Open complaints',DB.complaints.filter(c=>c.status!=='Resolved').length)}${kpi('Escalated',escalated,escalated?'gold':'')}</div>
@@ -5360,6 +5670,7 @@ function mgrOverview(){ let tot={leads:0,val:0,coll:0,out:0,sv:0,hi:0};
 function bindOverviewCtrls(){
   V.querySelectorAll('[data-agentkey]').forEach(b=>b.onclick=()=>route('agentDetail',b.dataset.agentkey));
   V.querySelectorAll('[data-stage]').forEach(b=>b.onclick=()=>route('stageList',b.dataset.stage));
+  const insightsTeaser=document.getElementById('mgrInsightsTeaser'); if(insightsTeaser) insightsTeaser.onclick=()=>route('insights');
 }
 function viewStageList(stage){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
@@ -5456,8 +5767,8 @@ function exportCSV(rows,cols,filename){
   const header=cols.map(c=>c[0]).join(',');
   const body=rows.map(r=>cols.map(c=>esc2(typeof c[1]==='function'?c[1](r):r[c[1]])).join(',')).join('\n');
   const blob=new Blob([header+'\n'+body],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob); const a=document.createElement('a');
-  a.href=url; a.download=filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  const url=URL.createObjectURL(blob);
+  triggerDownload(url,filename,'csv');
   toast('Downloaded '+filename);
 }
 function agentPoints(r){ return Math.round(r.totalCollected/500 + r.dealsClosedYear*20 + r.siteVisits*5); }
@@ -5598,8 +5909,8 @@ async function downloadMasterPipelineExcel(){
     writeLeadsIntoTemplate(wb,allLeads,true);
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='PEP_Landbank_Master_Pipeline_'+today()+'.xlsx'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    const url=URL.createObjectURL(blob);
+    triggerDownload(url,'PEP_Landbank_Master_Pipeline_'+today()+'.xlsx','excel');
     toast('Master pipeline downloaded — '+allLeads.length+' clients, A–Z');
   }catch(e){ toast('Could not build file: '+(e.message||e)); }
   btn.disabled=false; btn.textContent='⬇ Download Master Pipeline (.xlsx)';
@@ -5618,8 +5929,8 @@ function bindReportCtrls(){
       writeLeadsIntoTemplate(wb,sorted,false);
       const buf=await wb.xlsx.writeBuffer();
       const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-      const url=URL.createObjectURL(blob); const a=document.createElement('a');
-      a.href=url; a.download='Pipeline_'+agent.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+      const url=URL.createObjectURL(blob);
+      triggerDownload(url,'Pipeline_'+agent.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx','excel');
       toast('Downloaded');
     }catch(e){ toast('Could not build file: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='⬇ Download (.xlsx)';
@@ -5754,8 +6065,8 @@ async function downloadAgentPipelineExcel(){
     writeLeadsIntoTemplate(wb,DB.leads,false);
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='Pipeline_'+PROFILE.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    const url=URL.createObjectURL(blob);
+    triggerDownload(url,'Pipeline_'+PROFILE.name.replace(/\s+/g,'_')+'_'+today()+'.xlsx','excel');
     toast('Pipeline downloaded');
   }catch(e){ toast('Could not build file: '+(e.message||e)); }
   if(btn){ btn.disabled=false; btn.textContent='⬇ Download my pipeline (.xlsx)'; }
@@ -5955,8 +6266,8 @@ async function downloadCompanyExcel(){
 
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    const url=URL.createObjectURL(blob); const a=document.createElement('a');
-    a.href=url; a.download='PEP_Landbank_Company_Report_'+today()+'.xlsx'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    const url=URL.createObjectURL(blob);
+    triggerDownload(url,'PEP_Landbank_Company_Report_'+today()+'.xlsx','excel');
     toast('Company report downloaded');
   }catch(e){ toast('Could not build report: '+(e.message||e)); }
   btn.disabled=false; btn.textContent='⬇ Download Company Report (.xlsx)';
@@ -6149,8 +6460,8 @@ function bindSettingsCtrls(){
         config:CONFIG
       };
       const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
-      const url=URL.createObjectURL(blob); const a=document.createElement('a');
-      a.href=url; a.download='PEP_Landbank_Backup_'+today()+'.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+      const url=URL.createObjectURL(blob);
+      triggerDownload(url,'PEP_Landbank_Backup_'+today()+'.json','backup');
       toast('Backup downloaded');
     }catch(e){ toast('Backup failed: '+(e.message||e)); }
     sysBackupBtn.disabled=false; sysBackupBtn.innerHTML=`<span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Download full data backup (.json)`;
@@ -6352,7 +6663,7 @@ function buildCommissionReportPDF(data){
   doc.setFont('helvetica','bold'); doc.setFontSize(10.5);
   doc.text('Total payable: '+ghs(grandTotal),12,y);
 
-  doc.save('PEP_Commission_'+data.monthKey+'.pdf');
+  { const fname='PEP_Commission_'+data.monthKey+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri); }
   return doc;
 }
 // Runs from a Management session only, same reasoning as birthdays: the eligibility
