@@ -20,7 +20,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
 <style>
 :root{
-  --user-font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; --user-zoom:1;
+  --user-font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
   --ink:#0B1E3D; --ink2:#0F2A52; --green:#1D4ED8; --green2:#2563EB; --leaf:#3B82F6;
   --gold:#84CC16; --gold2:#BEF264; --paper:#F4F6F5; --card:#FFFFFF; --line:#E2E7ED;
   --text:#111827; --muted:#647085; --danger:#B4472F; --warn:#B8791E; --info:#2E6E8E; --ok:#16A34A;
@@ -56,11 +56,6 @@ body.dark ::-webkit-scrollbar-thumb:hover{background:rgba(190,242,100,.3)}
 html,body{margin:0;padding:0}
 html{overscroll-behavior-x:none}
 body{font-family:var(--user-font-family);background:var(--paper);color:var(--text);-webkit-font-smoothing:antialiased;line-height:1.45;overflow-x:hidden;position:relative;overscroll-behavior-x:none}
-/* Font-size scaling is scoped to #view only (not #app) -- #app also contains the
-   fixed .topbar/.bottomnav, and zooming a container that has fixed-position
-   descendants desyncs their real on-screen box from the zoomed content around
-   them, which was pushing whole pages left with a dead gap on the right. */
-#view{zoom:var(--user-zoom)}
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:
     radial-gradient(650px 450px at 8% -6%, rgba(59,130,246,.07), transparent 60%),
@@ -340,7 +335,7 @@ a{color:var(--green2)}
 .eventCardBody{padding:8px 12px;background:rgba(0,0,0,.03);font-size:12.5px}
 
 /* Floating announcement bubble */
-#announceBubble{position:fixed;right:18px;bottom:22px;z-index:200;width:58px;height:58px;border-radius:100px;
+#announceBubble{position:fixed;right:18px;bottom:calc(88px + env(safe-area-inset-bottom));z-index:200;width:58px;height:58px;border-radius:100px;touch-action:none;
   background:linear-gradient(150deg,#0B1E3D,#1D4ED8);box-shadow:0 10px 30px rgba(11,30,61,.45);
   display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;
   animation:bubbleIn .5s cubic-bezier(.34,1.56,.64,1) both}
@@ -375,21 +370,6 @@ a{color:var(--green2)}
 .appGridGlyph .fic{width:100%;height:100%;transition:transform .2s cubic-bezier(.34,1.4,.64,1)}
 body.dark .appGridIcon:hover{background:#182541}
 .appGridLabel{font-size:11.5px;font-weight:700;color:var(--ink);text-align:center;line-height:1.25}
-.glassPopup{position:fixed;inset:0;z-index:300;display:flex;align-items:flex-end;justify-content:center;background:rgba(11,30,61,0);
-  transition:background .32s ease}
-.glassPopup.show{background:rgba(11,30,61,.4)}
-.glassSheet{width:100%;max-width:520px;background:rgba(244,246,245,.78);backdrop-filter:blur(22px) saturate(180%);-webkit-backdrop-filter:blur(22px) saturate(180%);
-  border-radius:26px 26px 0 0;padding:18px 0 max(18px,env(safe-area-inset-bottom));box-shadow:0 -12px 44px rgba(11,30,61,.28);
-  border-top:1px solid rgba(255,255,255,.6);transform:translateY(100%);transition:transform .34s cubic-bezier(.22,1,.36,1)}
-.glassPopup.show .glassSheet{transform:translateY(0)}
-body.dark .glassSheet{background:rgba(18,30,51,.78);border-top-color:rgba(255,255,255,.08)}
-.glassSheetHandle{width:36px;height:4px;border-radius:100px;background:rgba(100,112,133,.35);margin:0 auto 12px}
-.glassSheetHead{display:flex;align-items:center;justify-content:space-between;padding:0 20px 14px;font-weight:800;font-size:16px;color:var(--text)}
-.glassRow{display:flex;gap:14px;overflow-x:auto;padding:2px 20px 6px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
-.glassRow::-webkit-scrollbar{display:none}
-.glassRow .appGridIcon{flex:0 0 auto;width:76px;scroll-snap-align:start}
-.glassRow .appGridIcon:hover{background:rgba(255,255,255,.5)}
-body.dark .glassRow .appGridIcon:hover{background:rgba(255,255,255,.08)}
 .newsGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
 .newsCard{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);transition:transform .2s ease,box-shadow .2s ease}
 .newsCard:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
@@ -763,13 +743,11 @@ const DISPLAY_FONT_FAMILIES={
   georgia:"Georgia,'Times New Roman',serif",
   verdana:"Verdana,Geneva,sans-serif"
 };
-const DISPLAY_FONT_SIZES={sm:0.92,md:1,lg:1.12,xl:1.25};
 function applyDisplayPrefs(){
-  let fam='inter', size='md';
-  try{ fam=localStorage.getItem('pep_font_family')||'inter'; size=localStorage.getItem('pep_font_size')||'md'; }catch(e){}
+  let fam='inter';
+  try{ fam=localStorage.getItem('pep_font_family')||'inter'; }catch(e){}
   document.documentElement.style.setProperty('--user-font-family', DISPLAY_FONT_FAMILIES[fam]||DISPLAY_FONT_FAMILIES.inter);
-  document.documentElement.style.setProperty('--user-zoom', DISPLAY_FONT_SIZES[size]||1);
-  return {fam,size};
+  return {fam};
 }
 applyDisplayPrefs();
 
@@ -2213,11 +2191,10 @@ function showGreetScreen(name){
     let done=false;
     const finish=()=>{ if(done) return; done=true; el.classList.add('fade'); setTimeout(()=>{ el.remove(); resolve(); },500); };
     el.addEventListener('click',finish);
-    setTimeout(finish,2600);
+    setTimeout(finish,5000);
   });
 }
 async function enterApp(){
-  armHistoryTrap();
   document.getElementById('view').innerHTML='<div style="padding:70px 0;text-align:center"><div class="skel" style="height:120px;border-radius:16px;margin-bottom:14px"></div><div class="skel" style="height:80px;border-radius:16px"></div></div>';
   document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden');
   document.getElementById('tbName').textContent = PROFILE.role==='manager' ? 'Management' : PROFILE.name.split(' ')[0];
@@ -2300,6 +2277,8 @@ document.getElementById('logoutBtn').onclick=async()=>{
   document.getElementById('pw').value=''; document.getElementById('signBtn').disabled=true; document.getElementById('signBtn').textContent='Sign in';
   document.getElementById('forgotWrap').classList.add('hidden'); document.getElementById('pinSwitchWrap').classList.add('hidden');
   renderLoginMode();
+  pickStaff=null; closeDD();
+  refreshStaffList().then(buildDropdown);
 };
 document.getElementById('globalSearchBtn').onclick=openGlobalSearch;
 function applyDarkModePref(){ try{ if(localStorage.getItem('pep_dark')==='1') document.body.classList.add('dark'); }catch(e){} }
@@ -2311,8 +2290,8 @@ document.getElementById('darkModeBtn').onclick=()=>{
   // dark/light mode, so a plain class toggle leaves those stuck until the next
   // navigation -- immediately repaint whatever's on screen so it takes full
   // effect on this one tap, not the next page visit.
-  if(typeof PROFILE!=='undefined' && PROFILE && typeof CURRENT_NAV!=='undefined' && CURRENT_NAV){
-    try{ route(CURRENT_NAV.name,CURRENT_NAV.arg,{isBack:true}); }catch(e){}
+  if(typeof PROFILE!=='undefined' && PROFILE && history.state && history.state.routeName){
+    try{ route(history.state.routeName,history.state.routeArg,true); }catch(e){}
   }
 };
 document.getElementById('accountBtn').onclick=()=>route('account');
@@ -2408,30 +2387,22 @@ async function provisionProfile(user,fallbackName){
 
 /* ================= ROUTER ================= */
 const V=document.getElementById('view');
-/* App-controlled navigation stack. We deliberately do NOT rely on browser
-   history/popstate for in-app back-navigation — on mobile, an edge-swipe
-   gesture fires popstate too, and letting that drive real routing was
-   destroying whatever the agent was in the middle of doing. The browser
-   history API is only used to trap that gesture (see popstate listener below)
-   and turn it into a plain "go back" intent that this stack resolves. */
-let NAV_STACK=[];
-let CURRENT_NAV={name:'home',arg:undefined};
-function route(name,arg,opts){ opts=opts||{}; window.scrollTo({top:0,behavior:'smooth'});
-  if(opts.reset){ NAV_STACK=[]; }
-  else if(!opts.isBack && typeof PROFILE!=='undefined' && PROFILE && CURRENT_NAV){ NAV_STACK.push(CURRENT_NAV); }
-  CURRENT_NAV={name,arg};
+let ROUTE_NAV_LOCK=false;
+function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
   ({home:agentHome,pipeline:viewPipeline,addlead:formAddLead,update:pickForUpdate,updateOne:formUpdate,
     enquiry:formEnquiry,complaint:formComplaint,sitevisit:formSiteVisit,mgr:()=>{ mgrTab='overview'; managerView(); },account:formAccount,
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission}[name]||agentHome)(arg);
+  if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && PROFILE){
+    try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
+  }
   updateBottomNav(name);
 }
 function goBack(fallbackTo){
-  const prev=NAV_STACK.pop();
-  if(prev){ route(prev.name,prev.arg,{isBack:true}); }
-  else{ route(fallbackTo,undefined,{isBack:true}); }
+  if(window.history.state && window.history.state.routeName){ history.back(); }
+  else{ route(fallbackTo); }
 }
 /* ---- persistent bottom tab bar ---- */
 let CURRENT_ROUTE_NAME='home';
@@ -2462,57 +2433,14 @@ function renderBottomNavNow(){
     const needsBadge=t.badgeId||show;
     return `<button class="${t.key===activeTab?'on':''}" data-navtab="${t.r}">${t.icon}${needsBadge?`<span class="bnBadge${show?'':' hidden'}"${t.badgeId?` id="${t.badgeId}"`:''}>${show?(t.badge>9?'9+':t.badge):''}</span>`:''}<span>${esc(t.label)}</span></button>`;
   }).join('');
-  nav.querySelectorAll('[data-navtab]').forEach(b=>{
-    const key=b.dataset.navtab;
-    b.onclick=()=>{
-      if(key==='salesdesk') openGlassPopup('Sales Desk',AGENT_HUBS.salesdesk.items);
-      else if(key==='crm') openGlassPopup('CRM Tools',AGENT_HUBS.crm.items);
-      else if(key==='more') openGlassPopup('More',moreItemsForRole());
-      else route(key,undefined,{reset:true});
-    };
-  });
+  nav.querySelectorAll('[data-navtab]').forEach(b=>b.onclick=()=>route(b.dataset.navtab));
 }
-function moreItemsForRole(){
-  if(PROFILE.role==='manager'){
-    return MGR_APPS.filter(a=>a.key!=='Duties').map(a=>{
-      if(a.key==='Feedback') return {fic:a.fic,label:a.label,r:'feedback'};
-      if(a.key==='Insights') return {fic:a.fic,label:a.label,r:'insights'};
-      if(a.key==='Downloads') return {fic:a.fic,label:a.label,r:'downloads'};
-      return {fic:a.fic,label:a.label,r:'mgrTabView',arg:a.key};
-    });
-  }
-  return [
-    {fic:'target',label:'Smart Insights',r:'insights'},
-    {fic:'document',label:'Download Directory',r:'downloads'},
-    {fic:'chat',label:'Feedback',r:'feedback'},
-    ...(canManagePlots()?[{fic:'allocation',label:'Allocations',r:'allocations'}]:[]),
-    {fic:'settings',label:'Settings',r:'account'}
-  ];
-}
-function openGlassPopup(title,items){
-  let ov=document.getElementById('glassPopup'); if(ov) ov.remove();
-  ov=document.createElement('div'); ov.id='glassPopup'; ov.className='glassPopup';
-  ov.innerHTML=`<div class="glassSheet" id="glassSheet">
-    <div class="glassSheetHandle"></div>
-    <div class="glassSheetHead"><span>${esc(title)}</span><button id="closeGlassPopup" style="background:rgba(100,112,133,.14);border:none;border-radius:50%;color:var(--muted);width:28px;height:28px;display:grid;place-items:center;cursor:pointer;padding:0">${ic.close}</button></div>
-    <div class="glassRow">${items.map(a=>`<button class="appGridIcon" data-glassroute="${esc(a.r)}" data-glassarg="${esc(a.arg||'')}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
-  </div>`;
-  document.body.appendChild(ov);
-  requestAnimationFrame(()=>ov.classList.add('show'));
-  const close=()=>{ ov.classList.remove('show'); setTimeout(()=>ov.remove(),340); };
-  ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
-  document.getElementById('closeGlassPopup').onclick=close;
-  ov.querySelectorAll('[data-glassroute]').forEach(b=>b.onclick=()=>{ close(); route(b.dataset.glassroute,b.dataset.glassarg||undefined); });
-}
-/* Trap the browser back gesture (hardware button, or a mobile edge-swipe) so it
-   never actually traverses real browser history — it only signals "go back",
-   which our own NAV_STACK resolves. Without this, a swipe mid-form could
-   navigate the page itself and blow away unsaved work. */
-function armHistoryTrap(){ try{ history.pushState({trap:true},'',location.href); }catch(e){} }
-window.addEventListener('popstate',()=>{
+window.addEventListener('popstate',e=>{
   if(!PROFILE) return; // still on login screen — nothing app-side to navigate
-  armHistoryTrap();
-  goBack(PROFILE.role==='manager'?'mgr':'home');
+  ROUTE_NAV_LOCK=true;
+  if(e.state && e.state.routeName){ route(e.state.routeName,e.state.routeArg,true); }
+  else{ route(PROFILE.role==='manager'?'mgr':'home',null,true); }
+  ROUTE_NAV_LOCK=false;
 });
 document.addEventListener('click',e=>{
   const el=e.target.closest('.nm-link');
@@ -2734,7 +2662,7 @@ function viewMore(){
 let downloadsKindFilter='';
 function isPreviewableDownload(d){
   if(d.kind==='pdf') return true;
-  if(d.kind==='attachment') return /\.(png|jpe?g|gif|webp|bmp)$/i.test(d.filename||'');
+  if(d.kind==='attachment') return /\.(png|jpe?g|gif|webp|bmp|pdf)$/i.test(d.filename||'');
   return false;
 }
 function viewDownloads(){
@@ -2758,7 +2686,7 @@ function viewDownloads(){
     const fileData=d.fileData||await apiLoadDownloadFile(d.id);
     b.disabled=false; b.innerHTML=orig;
     if(!fileData){ toast('This file is no longer available to preview — download it again to get a fresh copy.'); return; }
-    openFilePreview(fileData,d.filename,d.kind==='pdf'?'pdf':'image');
+    openFilePreview(fileData,d.filename,/\.pdf$/i.test(d.filename||'')?'pdf':'image');
   });
   V.querySelectorAll('[data-dlsend]').forEach(b=>b.onclick=async()=>{
     const d=list.find(x=>x.id===b.dataset.dlsend); if(!d) return;
@@ -2849,9 +2777,48 @@ function refreshAnnounceBubble(){
     bub=document.createElement('button'); bub.id='announceBubble';
     bub.innerHTML=`<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M11 5.9V4a1 1 0 012 0v1.9a7 7 0 015 6.72V16l1.6 2.4a1 1 0 01-.83 1.6H5.23a1 1 0 01-.83-1.6L6 16v-3.38a7 7 0 015-6.72z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.5 20a2.5 2.5 0 005 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span class="badge"></span>`;
     document.body.appendChild(bub);
-    bub.onclick=openAnnounceModal;
+    applySavedBubblePos(bub);
+    bindBubbleDrag(bub);
   }
   bub.querySelector('.badge').textContent=active.length;
+}
+function applySavedBubblePos(bub){
+  try{
+    const pos=JSON.parse(localStorage.getItem('pep_bubble_pos')||'null');
+    if(pos && typeof pos.left==='number' && typeof pos.top==='number'){
+      bub.style.left=pos.left+'px'; bub.style.top=pos.top+'px';
+      bub.style.right='auto'; bub.style.bottom='auto';
+    }
+  }catch(e){}
+}
+function bindBubbleDrag(bub){
+  let dragging=false, moved=false, startX=0, startY=0, origLeft=0, origTop=0;
+  bub.addEventListener('pointerdown',e=>{
+    dragging=true; moved=false;
+    const r=bub.getBoundingClientRect();
+    origLeft=r.left; origTop=r.top; startX=e.clientX; startY=e.clientY;
+    bub.setPointerCapture(e.pointerId);
+  });
+  bub.addEventListener('pointermove',e=>{
+    if(!dragging) return;
+    const dx=e.clientX-startX, dy=e.clientY-startY;
+    if(Math.abs(dx)>6||Math.abs(dy)>6) moved=true;
+    if(!moved) return;
+    const w=bub.offsetWidth, h=bub.offsetHeight;
+    let left=Math.min(Math.max(4,origLeft+dx),window.innerWidth-w-4);
+    let top=Math.min(Math.max(4,origTop+dy),window.innerHeight-h-4);
+    bub.style.left=left+'px'; bub.style.top=top+'px';
+    bub.style.right='auto'; bub.style.bottom='auto';
+  });
+  bub.addEventListener('pointerup',e=>{
+    dragging=false;
+    if(moved){
+      const r=bub.getBoundingClientRect();
+      try{ localStorage.setItem('pep_bubble_pos',JSON.stringify({left:r.left,top:r.top})); }catch(err){}
+    }else{
+      openAnnounceModal();
+    }
+  });
 }
 async function openAnnounceModal(){
   const active=activeAnnouncements();
@@ -3022,7 +2989,9 @@ function renderBannerSlideshow(){
 function bindBannerSlideshow(){
   const el=document.getElementById('bannerSlideshow'); if(!el) return;
   const slides=el.querySelectorAll('.bannerSlide'); const dots=el.querySelectorAll('.bannerDot');
+  let tSwiped=false;
   slides.forEach(s=>{ s.onclick=()=>{
+    if(tSwiped) return;
     const kind=s.dataset.bslidekind, arg=s.dataset.bslidearg;
     if(kind==='agentOfMonth') viewAgentOfMonthDetail(arg);
     else if(kind==='announcement') openSingleAnnounceModal(arg);
@@ -3032,6 +3001,20 @@ function bindBannerSlideshow(){
   dots.forEach(d=>d.onclick=e=>{ e.stopPropagation(); show(+d.dataset.bslide); resetBannerTimer(); });
   function resetBannerTimer(){ clearInterval(BANNER_TIMER); BANNER_TIMER=setInterval(()=>show((BANNER_SLIDE_IDX+1)%slides.length),5000); }
   resetBannerTimer();
+  let tStartX=0,tStartY=0;
+  el.addEventListener('touchstart',e=>{ const t=e.touches[0]; tStartX=t.clientX; tStartY=t.clientY; tSwiped=false; },{passive:true});
+  el.addEventListener('touchmove',e=>{
+    const t=e.touches[0]; const dx=t.clientX-tStartX, dy=t.clientY-tStartY;
+    if(Math.abs(dx)>Math.abs(dy) && Math.abs(dx)>10) tSwiped=true;
+  },{passive:true});
+  el.addEventListener('touchend',e=>{
+    if(!tSwiped) return;
+    const t=e.changedTouches[0]; const dx=t.clientX-tStartX;
+    if(Math.abs(dx)>40){
+      show(dx<0 ? (BANNER_SLIDE_IDX+1)%slides.length : (BANNER_SLIDE_IDX-1+slides.length)%slides.length);
+      resetBannerTimer();
+    }
+  });
 }
 function viewAgentOfMonthDetail(agentKey){
   const thisMonth=today().slice(0,7);
@@ -3690,7 +3673,11 @@ function clientDatalist(){ const names=[...new Set(DB.leads.map(l=>l.name).filte
   return `<datalist id="knownClients">${names.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`; }
 function refreshPlotsView(){
   if(PLOTS_CONTEXT==='manager'){ const body=document.getElementById('mbody'); if(body){ body.innerHTML=renderPlotsGrid(); bindPlotsGrid(); } }
-  else{ viewPlots(); }
+  else{
+    const wrap=document.getElementById('plotsGridWrap');
+    if(wrap){ wrap.innerHTML=renderPlotsGrid(); bindPlotsGrid(); }
+    else{ viewPlots(); }
+  }
 }
 function renderPlotDetail(p,isManager){
   if(!isManager){
@@ -3885,7 +3872,7 @@ async function splitSelectedPlot(){
 function viewPlots(){
   PLOTS_CONTEXT='standalone';
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
-  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Plot inventory</div><h2>${PLOT_SITE}</h2><p>${PROFILE.role==='manager'?'Manage status, pricing and allocation.':'Check availability before you promise a plot to a client.'}</p></div></div>`+renderPlotsGrid();
+  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Plot inventory</div><h2>${PLOT_SITE}</h2><p>${PROFILE.role==='manager'?'Manage status, pricing and allocation.':'Check availability before you promise a plot to a client.'}</p></div></div><div id="plotsGridWrap">`+renderPlotsGrid()+`</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
   bindPlotsGrid();
 }
@@ -4272,7 +4259,7 @@ async function sendChatAttachment(otherKey,file){
 function downloadChatFile(m){
   const a=document.createElement('a'); a.href=m.attachData; a.download=m.attachName||'file';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  logDownload(m.attachName||'file','attachment',m.attachType==='image'?m.attachData:null);
+  logDownload(m.attachName||'file','attachment',m.attachData||null);
 }
 function openForwardPicker(msgId){
   const m=DB.messages.find(x=>x.id===msgId); if(!m) return;
@@ -5665,9 +5652,6 @@ function formAccount(){
   </div>
   <div class="sectitle"><h3>Display settings</h3><span class="cnt">this device only</span></div>
   <div class="formwrap">
-    ${fld('Text size',`<select id="dispFontSize">
-      <option value="sm">Small</option><option value="md">Medium (default)</option><option value="lg">Large</option><option value="xl">Extra large</option>
-    </select>`)}
     ${fld('Font',`<select id="dispFontFamily">
       <option value="inter">Inter (default)</option><option value="system">System default</option><option value="georgia">Georgia (serif)</option><option value="verdana">Verdana (wide)</option>
     </select>`)}
@@ -5703,9 +5687,8 @@ function formAccount(){
     }catch(err){ toast('Could not save photo: '+(err.message||err)); }
   };
   { const cur=applyDisplayPrefs();
-    const fsSel=document.getElementById('dispFontSize'), ffSel=document.getElementById('dispFontFamily');
-    fsSel.value=cur.size; ffSel.value=cur.fam;
-    fsSel.onchange=()=>{ try{ localStorage.setItem('pep_font_size',fsSel.value); }catch(e){} applyDisplayPrefs(); };
+    const ffSel=document.getElementById('dispFontFamily');
+    ffSel.value=cur.fam;
     ffSel.onchange=()=>{ try{ localStorage.setItem('pep_font_family',ffSel.value); }catch(e){} applyDisplayPrefs(); };
   }
   document.getElementById('saveAcct').onclick=saveAccountPw;
@@ -5864,7 +5847,7 @@ function mgrOverview(){ let tot={leads:0,val:0,coll:0,out:0,sv:0,hi:0};
   const escalated=DB.complaints.filter(c=>c.status==='Escalated').length;
 
   const STAGE_COLORS={'1':'#94A3B8','2A':'#64748B','2B':'#3B82F6','3':'#F59E0B','4':'#16A34A','Lost':'#EF4444'};
-  const stages=Object.keys(STAGE_COLORS);
+  const stages=STAGES;
   const allLeads=agents.flatMap(a=>a.list);
   const stageMax=Math.max(1,...stages.map(s=>allLeads.filter(l=>l.stage===s).length));
   const funnel=stages.map(s=>{ const n=allLeads.filter(l=>l.stage===s).length;
