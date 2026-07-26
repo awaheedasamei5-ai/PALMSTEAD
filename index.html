@@ -1745,37 +1745,90 @@ async function apiLoadAgentMonthStats(){
 const mapTask=r=>({id:r.id,title:r.title,description:r.description,category:r.category,priority:r.priority,
   assignedTo:r.assigned_to,assignedToName:r.assigned_to_name,assignedBy:r.assigned_by,assignedByName:r.assigned_by_name,
   status:r.status,dueDate:r.due_date,createdAt:r.created_at,completedAt:r.completed_at,
+  openedAt:r.opened_at,startedAt:r.started_at,cancelledAt:r.cancelled_at,
   escalatedTo:r.escalated_to,escalatedToName:r.escalated_to_name,escalatedBy:r.escalated_by,escalatedByName:r.escalated_by_name,escalatedAt:r.escalated_at,escalationNote:r.escalation_note});
+const mapTaskEvent=r=>({id:r.id,taskId:r.task_id,type:r.type,actorKey:r.actor_key,actorName:r.actor_name,
+  fromKey:r.from_key,fromName:r.from_name,toKey:r.to_key,toName:r.to_name,note:r.note,createdAt:r.created_at});
 async function apiLoadTasks(){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.tasks||[]).slice(); }
   try{ const {data,error}=await sb.from('tasks').select('*').order('created_at',{ascending:false}); if(error) throw error;
     return (data||[]).map(mapTask); }
   catch(e){ return []; }
 }
+async function apiLoadTaskEvents(taskId){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.taskEvents||[]).filter(e=>e.taskId===taskId).slice(); }
+  try{ const {data,error}=await sb.from('task_events').select('*').eq('task_id',taskId).order('created_at',{ascending:true}); if(error) throw error;
+    return (data||[]).map(mapTaskEvent); }
+  catch(e){ return []; }
+}
+async function apiLogTaskEvent(taskId,type,extra){
+  const rec={taskId,type,actorKey:PROFILE.key,actorName:PROFILE.name,fromKey:null,fromName:null,toKey:null,toName:null,note:null,...(extra||{})};
+  if(DEMO_MODE){ const d=await demoLoad(); d.taskEvents=d.taskEvents||[];
+    const stored={...rec,id:uid(),createdAt:new Date().toISOString()}; d.taskEvents.push(stored); await demoSave(); return stored; }
+  const row={task_id:taskId,type,actor_key:rec.actorKey,actor_name:rec.actorName,from_key:rec.fromKey,from_name:rec.fromName,
+    to_key:rec.toKey,to_name:rec.toName,note:rec.note};
+  const {data,error}=await sb.from('task_events').insert(row).select().single(); if(error) throw error; return mapTaskEvent(data);
+}
 async function apiInsertTask(t){
-  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),...t,status:'Open',createdAt:new Date().toISOString(),completedAt:null};
-    d.tasks=d.tasks||[]; d.tasks.unshift(rec); await demoSave(); return rec; }
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),...t,status:'Open',createdAt:new Date().toISOString(),completedAt:null,openedAt:null,startedAt:null,cancelledAt:null};
+    d.tasks=d.tasks||[]; d.tasks.unshift(rec);
+    await apiLogTaskEvent(rec.id,'assigned',{toKey:t.assignedTo,toName:t.assignedToName,note:t.description||null});
+    await demoSave(); return rec; }
   const row={title:t.title,description:t.description||null,category:t.category,priority:t.priority,
     assigned_to:t.assignedTo,assigned_to_name:t.assignedToName,assigned_by:PROFILE.key,assigned_by_name:PROFILE.name,due_date:t.dueDate||null};
-  const {data,error}=await sb.from('tasks').insert(row).select().single(); if(error) throw error; return mapTask(data);
+  const {data,error}=await sb.from('tasks').insert(row).select().single(); if(error) throw error;
+  const rec=mapTask(data);
+  try{ await apiLogTaskEvent(rec.id,'assigned',{toKey:t.assignedTo,toName:t.assignedToName,note:t.description||null}); }catch(e){}
+  return rec;
 }
-async function apiUpdateTaskStatus(id,status){
-  const completedAt=status==='Done'?new Date().toISOString():null;
-  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id); if(t){ t.status=status; t.completedAt=completedAt; } await demoSave(); return; }
-  const {error}=await sb.from('tasks').update({status,completed_at:completedAt}).eq('id',id); if(error) throw error;
+async function apiUpdateTaskStatus(id,status,fromStatus){
+  const now=new Date().toISOString();
+  const patch={status};
+  let eventType='reopened';
+  if(status==='In Progress' && fromStatus==='Open'){ patch.started_at=now; eventType='started'; }
+  else if(status==='Done'){ patch.completed_at=now; eventType='done'; }
+  else if(status==='Cancelled'){ patch.cancelled_at=now; eventType='cancelled'; }
+  else if(status==='Open'||status==='In Progress'){ patch.completed_at=null; patch.cancelled_at=null; eventType='reopened'; }
+  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id);
+    if(t){ t.status=status; if('completed_at' in patch) t.completedAt=patch.completed_at; if('started_at' in patch) t.startedAt=patch.started_at; if('cancelled_at' in patch) t.cancelledAt=patch.cancelled_at; }
+    await apiLogTaskEvent(id,eventType,{}); await demoSave(); return; }
+  const {error}=await sb.from('tasks').update(patch).eq('id',id); if(error) throw error;
+  try{ await apiLogTaskEvent(id,eventType,{}); }catch(e){}
 }
 async function apiDeleteTask(id){
-  if(DEMO_MODE){ const d=await demoLoad(); d.tasks=(d.tasks||[]).filter(x=>x.id!==id); await demoSave(); return; }
+  if(DEMO_MODE){ const d=await demoLoad(); d.tasks=(d.tasks||[]).filter(x=>x.id!==id); d.taskEvents=(d.taskEvents||[]).filter(e=>e.taskId!==id); await demoSave(); return; }
   const {error}=await sb.from('tasks').delete().eq('id',id); if(error) throw error;
 }
 async function apiEscalateTask(id,toKey,toName,note){
   const escalatedAt=new Date().toISOString();
   if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id);
-    if(t){ t.assignedTo=toKey; t.assignedToName=toName; t.escalatedTo=toKey; t.escalatedToName=toName; t.escalatedBy=PROFILE.key; t.escalatedByName=PROFILE.name; t.escalatedAt=escalatedAt; t.escalationNote=note||null; }
+    if(t){ const fromKey=t.assignedTo,fromName=t.assignedToName;
+      t.assignedTo=toKey; t.assignedToName=toName; t.escalatedTo=toKey; t.escalatedToName=toName; t.escalatedBy=PROFILE.key; t.escalatedByName=PROFILE.name; t.escalatedAt=escalatedAt; t.escalationNote=note||null;
+      t.openedAt=null; t.startedAt=null;
+      await apiLogTaskEvent(id,'escalated',{fromKey,fromName,toKey,toName,note:note||null}); }
     await demoSave(); return; }
+  const {data:cur}=await sb.from('tasks').select('assigned_to,assigned_to_name').eq('id',id).single();
   const {error}=await sb.from('tasks').update({assigned_to:toKey,assigned_to_name:toName,escalated_to:toKey,escalated_to_name:toName,
-    escalated_by:PROFILE.key,escalated_by_name:PROFILE.name,escalated_at:escalatedAt,escalation_note:note||null}).eq('id',id);
+    escalated_by:PROFILE.key,escalated_by_name:PROFILE.name,escalated_at:escalatedAt,escalation_note:note||null,
+    opened_at:null,started_at:null}).eq('id',id);
   if(error) throw error;
+  try{ await apiLogTaskEvent(id,'escalated',{fromKey:cur?cur.assigned_to:null,fromName:cur?cur.assigned_to_name:null,toKey,toName,note:note||null}); }catch(e){}
+}
+async function apiEditTaskContent(id,newTitle,newDescription){
+  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id);
+    if(t){ t.title=newTitle; t.description=newDescription; await apiLogTaskEvent(id,'edited',{note:'Content updated'}); }
+    await demoSave(); return; }
+  const {error}=await sb.from('tasks').update({title:newTitle,description:newDescription}).eq('id',id); if(error) throw error;
+  try{ await apiLogTaskEvent(id,'edited',{note:'Content updated'}); }catch(e){}
+}
+async function apiMarkTaskOpened(id){
+  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id);
+    if(t && !t.openedAt){ t.openedAt=new Date().toISOString(); await apiLogTaskEvent(id,'opened',{}); await demoSave(); return t.openedAt; }
+    return t?t.openedAt:null; }
+  const now=new Date().toISOString();
+  const {data,error}=await sb.from('tasks').update({opened_at:now}).eq('id',id).is('opened_at',null).select().maybeSingle();
+  if(!error && data){ try{ await apiLogTaskEvent(id,'opened',{}); }catch(e){} return now; }
+  return null;
 }
 /* ---- feedback forum (bugs, suggestions, things people want changed) ---- */
 const mapFeedback=r=>({id:r.id,authorKey:r.author_key,authorName:r.author_name,category:r.category,body:r.body,createdAt:r.created_at});
@@ -2478,7 +2531,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission}[name]||agentHome)(arg);
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission}[name]||agentHome)(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && PROFILE){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -2493,7 +2546,7 @@ let CURRENT_ROUTE_NAME='home';
 function tabForRoute(name){
   if(['salesdesk','addlead','update','updateOne','myDataCheck','plots','pipeline'].includes(name)) return 'salesdesk';
   if(['crm','sitevisit','enquiry','complaint'].includes(name)) return 'crm';
-  if(name==='duties') return 'operations';
+  if(name==='duties'||name==='taskDetail') return 'operations';
   if(name==='chat'||name==='chatThread') return 'chat';
   if(name==='home'||name==='mgr') return 'home';
   return 'more';
@@ -4641,10 +4694,11 @@ function viewDuties(){
   const all=DB.tasks||[];
   const mine=all.filter(t=>t.assignedTo===PROFILE.key);
   const byMe=all.filter(t=>t.assignedBy===PROFILE.key&&t.assignedTo!==PROFILE.key);
-  const teamSummary=computeDutiesSummary(all);
-  V.innerHTML=`<div class="pagehead"><div><h2>Operations Tracker</h2><p>Every task, who owns it, and how long it's been open</p></div></div>
+  const isMgr=PROFILE.role==='manager';
+  const teamSummary=computeDutiesSummary(isMgr?all:mine);
+  V.innerHTML=`<div class="pagehead"><div><h2>Operations Tracker</h2><p>${isMgr?'Every task, who owns it, and how long it’s been open':'Your tasks, and anything you’ve assigned or been escalated'}</p></div></div>
   <div class="kpis">${kpi('Open',teamSummary.openCount)}${kpi('Overdue',teamSummary.overdueCount)}${kpi('Completed',teamSummary.doneCount)}${kpi('Avg days to close',teamSummary.avgDaysToClose!=null?teamSummary.avgDaysToClose:'—')}</div>
-  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><button class="chip ${dutiesFilter==='mine'?'on':''}" data-dutiesfilter="mine">Mine (${mine.length})</button><button class="chip ${dutiesFilter==='byme'?'on':''}" data-dutiesfilter="byme">Assigned by me (${byMe.length})</button><button class="chip ${dutiesFilter==='all'?'on':''}" data-dutiesfilter="all">Team (${all.length})</button></div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><button class="chip ${dutiesFilter==='mine'?'on':''}" data-dutiesfilter="mine">Mine (${mine.length})</button><button class="chip ${dutiesFilter==='byme'?'on':''}" data-dutiesfilter="byme">Assigned by me (${byMe.length})</button>${isMgr?`<button class="chip ${dutiesFilter==='all'?'on':''}" data-dutiesfilter="all">Team (${all.length})</button>`:''}</div>
   <div class="searchbar" style="margin-bottom:10px"><input id="dutiesSearchInput" placeholder="Filter by name or title…" value="${esc(dutiesSearch)}"/>
   <select id="dutiesCatSelect"><option value="">All categories</option>${TASK_CATEGORIES.map(c=>`<option value="${esc(c)}" ${c===dutiesCatFilter?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">${TASK_STATUSES.map(s=>`<button class="chip ${dutiesStatusFilter===s?'on':''}" data-dutiesstatus="${esc(s)}">${esc(s)}</button>`).join('')}${dutiesStatusFilter?`<button class="chip" data-dutiesstatus="">✕ Clear status</button>`:''}</div>
@@ -4656,6 +4710,7 @@ function viewDuties(){
 }
 function paintDuties(){
   const all=DB.tasks||[];
+  if(dutiesFilter==='all'&&PROFILE.role!=='manager') dutiesFilter='mine';
   let list=dutiesFilter==='mine'?all.filter(t=>t.assignedTo===PROFILE.key):dutiesFilter==='byme'?all.filter(t=>t.assignedBy===PROFILE.key&&t.assignedTo!==PROFILE.key):all;
   const q=dutiesSearch.trim().toLowerCase();
   if(q) list=list.filter(t=>(t.assignedToName||t.assignedTo||'').toLowerCase().includes(q)||(t.title||'').toLowerCase().includes(q));
@@ -4665,18 +4720,13 @@ function paintDuties(){
   const rowOf=t=>{
     const overdue=t.dueDate&&t.dueDate<today()&&t.status!=='Done'&&t.status!=='Cancelled';
     const daysOpen=taskDaysOpen(t);
-    return `<div class="rowcard">
-    <div class="top"><div><div class="nm">${esc(t.title)}</div><div class="meta">${esc(t.category)} · ${esc(t.assignedToName||t.assignedTo)}${t.assignedBy!==t.assignedTo?(' · assigned by '+esc(t.assignedByName||t.assignedBy)):' · self-assigned'}</div></div>
+    return `<div class="rowcard" data-taskopen="${esc(t.id)}" style="cursor:pointer">
+    <div class="top"><div><div class="nm">${esc(t.title)}${t.assignedTo===PROFILE.key&&!t.openedAt?'<span class="tag ghost" style="margin-left:8px;font-size:9.5px">NEW</span>':''}</div><div class="meta">${esc(t.category)} · ${esc(t.assignedToName||t.assignedTo)}${t.assignedBy!==t.assignedTo?(' · assigned by '+esc(t.assignedByName||t.assignedBy)):' · self-assigned'}</div></div>
     <span class="tag ${statusMeta[t.status].cls}">${esc(t.status)}</span></div>
     ${t.description?`<div class="mini" style="margin-top:4px">${esc(t.description)}</div>`:''}
     <div class="foot"><span class="tag ${t.priority==='Critical'||t.priority==='High'?'warnt':'ghost'}">${esc(t.priority)} priority</span>${t.dueDate?`<span class="tag ${overdue?'dgr':'ghost'}">${overdue?'Overdue: ':'Due '}${esc(t.dueDate)}</span>`:''}<span class="tag ghost">Opened ${esc((t.createdAt||'').slice(0,10))}</span>${t.completedAt?`<span class="tag ok">Completed ${esc((t.completedAt||'').slice(0,10))}</span>`:`<span class="tag ghost">${daysOpen} day${daysOpen===1?'':'s'} open</span>`}</div>
     ${t.escalatedTo?`<div class="mini" style="margin-top:4px;padding-top:6px;border-top:1px solid var(--line);color:#B4472F;display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;display:inline-flex">${ic.alert}</span>Escalated to ${esc(t.escalatedToName||t.escalatedTo)} by ${esc(t.escalatedByName||t.escalatedBy)} · ${esc((t.escalatedAt||'').slice(0,10))}${t.escalationNote?(': '+esc(t.escalationNote)):''}</div>`:''}
-    ${t.status!=='Done'&&t.status!=='Cancelled'?`<div class="foot">
-      <button class="chip" data-taskstatus="${t.id}|In Progress">Mark in progress</button>
-      <button class="chip" data-taskstatus="${t.id}|Done">Mark done</button>
-      <button class="chip" data-taskescalate="${t.id}">⬆ Escalate</button>
-      ${t.assignedBy===PROFILE.key||PROFILE.role==='manager'?`<button class="trashbtn" data-taskdel="${t.id}">${ic.trash}</button>`:''}
-    </div>`:''}
+    <div class="foot"><span class="chip" style="pointer-events:none">Open →</span></div>
   </div>`;};
   document.getElementById('dutiesList').innerHTML=list.length?list.map(rowOf).join(''):emptyState(ic.grid,'Nothing here','Try adjusting your filters, or assign a task to get started.');
   bindDutiesRowCtrls();
@@ -4689,17 +4739,7 @@ function bindDutiesCtrls(){
   document.getElementById('newTaskBtn').onclick=openNewTaskModal;
 }
 function bindDutiesRowCtrls(){
-  document.querySelectorAll('[data-taskstatus]').forEach(b=>b.onclick=async()=>{
-    const [id,status]=b.dataset.taskstatus.split('|');
-    try{ await apiUpdateTaskStatus(id,status); const t=DB.tasks.find(x=>x.id===id); if(t){ t.status=status; if(status==='Done') t.completedAt=new Date().toISOString(); } toast('Task updated'); viewDuties(); }
-    catch(e){ toast('Failed: '+(e.message||e)); }
-  });
-  document.querySelectorAll('[data-taskdel]').forEach(b=>b.onclick=async()=>{
-    if(!confirm('Delete this task?')) return;
-    try{ await apiDeleteTask(b.dataset.taskdel); DB.tasks=DB.tasks.filter(x=>x.id!==b.dataset.taskdel); toast('Task deleted'); viewDuties(); }
-    catch(e){ toast('Failed: '+(e.message||e)); }
-  });
-  document.querySelectorAll('[data-taskescalate]').forEach(b=>b.onclick=()=>openEscalateTaskModal(b.dataset.taskescalate));
+  document.querySelectorAll('[data-taskopen]').forEach(b=>b.onclick=()=>route('taskDetail',b.dataset.taskopen));
 }
 function openEscalateTaskModal(id){
   const t=(DB.tasks||[]).find(x=>x.id===id); if(!t) return;
@@ -4721,11 +4761,185 @@ function openEscalateTaskModal(id){
     try{
       await apiEscalateTask(id,toKey,toStaff?toStaff.name:toKey,note);
       Object.assign(t,{assignedTo:toKey,assignedToName:toStaff?toStaff.name:toKey,escalatedTo:toKey,escalatedToName:toStaff?toStaff.name:toKey,
-        escalatedBy:PROFILE.key,escalatedByName:PROFILE.name,escalatedAt:new Date().toISOString(),escalationNote:note||null});
+        escalatedBy:PROFILE.key,escalatedByName:PROFILE.name,escalatedAt:new Date().toISOString(),escalationNote:note||null,openedAt:null,startedAt:null});
       try{ const rec=await apiSendMessage(toKey,`${PROFILE.name} escalated "${t.title}" to you${note?(': '+note):''}`); DB.messages.push(rec); }catch(e){}
-      toast('Escalated to '+(toStaff?toStaff.name:toKey)); ov.remove(); viewDuties();
+      toast('Escalated to '+(toStaff?toStaff.name:toKey)); ov.remove(); route('taskDetail',id);
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Escalate'; }
   };
+}
+function taskEventMeta(type){
+  const M={
+    assigned:{icon:ic.check2,label:'Assigned',cls:'blue'},
+    escalated:{icon:ic.alert,label:'Escalated',cls:'red'},
+    opened:{icon:ic.eye,label:'Opened',cls:'grey'},
+    started:{icon:ic.clock,label:'Started working',cls:'amber'},
+    progress:{icon:ic.edit,label:'Progress update',cls:'teal'},
+    edited:{icon:ic.edit,label:'Content edited',cls:'grey'},
+    done:{icon:kpiIc.check,label:'Marked done',cls:'green'},
+    cancelled:{icon:ic.close,label:'Cancelled',cls:'red'},
+    reopened:{icon:ic.clock,label:'Reopened',cls:'amber'}
+  };
+  return M[type]||{icon:ic.grid,label:type,cls:'grey'};
+}
+function buildTaskPaperTrailDoc(t,events){
+  if(typeof window.jspdf==='undefined') return null;
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(); const pageH=doc.internal.pageSize.getHeight();
+  let y=pdfHeader(doc,'TASK PAPER TRAIL'); y+=8;
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(11,30,61);
+  doc.text(t.title,12,y); y+=6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100,112,133);
+  doc.text(t.category+' · '+t.priority+' priority · '+t.status,12,y); y+=6;
+  doc.text('Assigned to '+(t.assignedToName||t.assignedTo)+' by '+(t.assignedByName||t.assignedBy)+' on '+(t.createdAt||'').slice(0,10),12,y); y+=10;
+
+  y=pdfSectionBar(doc,y,pageW,'CURRENT CONTENT');
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
+  const descLines=doc.splitTextToSize(t.description||'(no description)',pageW-24);
+  doc.text(descLines,12,y); y+=descLines.length*4.6+9;
+
+  if(y>pageH-30){ doc.addPage(); y=16; }
+  y=pdfSectionBar(doc,y,pageW,'FULL HISTORY ('+events.length+' events)');
+  events.forEach(ev=>{
+    if(y>pageH-24){ doc.addPage(); y=16; }
+    const meta=taskEventMeta(ev.type);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(11,30,61);
+    doc.text(meta.label.toUpperCase()+' — '+(ev.createdAt||'').slice(0,16).replace('T',' '),12,y); y+=4.6;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(60,70,85);
+    let line='By '+(ev.actorName||ev.actorKey||'—');
+    if(ev.type==='escalated') line='From '+(ev.fromName||ev.fromKey||'—')+' to '+(ev.toName||ev.toKey||'—');
+    if(ev.type==='assigned') line='To '+(ev.toName||ev.toKey||'—');
+    doc.text(line,12,y); y+=4.4;
+    if(ev.note){ const noteLines=doc.splitTextToSize('"'+ev.note+'"',pageW-24); doc.setTextColor(20,20,20); doc.text(noteLines,12,y); y+=noteLines.length*4.4; }
+    y+=4;
+  });
+  return doc;
+}
+function buildTaskPaperTrailPDF(t,events){
+  const doc=buildTaskPaperTrailDoc(t,events);
+  if(!doc){ toast('PDF library failed to load — check your connection.'); return; }
+  const fname='Task_'+t.title.replace(/\s+/g,'_').slice(0,40)+'_'+today()+'.pdf';
+  const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
+}
+async function deleteTaskWithPaperTrail(t){
+  const recipientKey=t.escalatedBy||t.assignedBy;
+  const recipientName=t.escalatedByName||t.assignedByName||recipientKey;
+  const willSend=recipientKey&&recipientKey!==PROFILE.key;
+  if(!confirm('Delete "'+t.title+'"?'+(willSend?(' A PDF of its full history will be sent to '+recipientName+' first.'):''))) return;
+  try{
+    const events=await apiLoadTaskEvents(t.id);
+    if(willSend){
+      const doc=buildTaskPaperTrailDoc(t,events);
+      if(doc){
+        const fname='Task_'+t.title.replace(/\s+/g,'_').slice(0,40)+'_deleted_'+today()+'.pdf';
+        const uri=doc.output('datauristring');
+        try{ const rec=await apiSendMessage(recipientKey,`${PROFILE.name} deleted the task "${t.title}" — here's the full paper trail.`,{data:uri,type:'application/pdf',name:fname}); DB.messages.push(rec); }catch(e){}
+      }
+    }
+    await apiDeleteTask(t.id);
+    DB.tasks=DB.tasks.filter(x=>x.id!==t.id);
+    toast('Task deleted'+(willSend?' — paper trail sent to '+recipientName:''));
+    route('duties');
+  }catch(e){ toast('Delete failed: '+(e.message||e)); }
+}
+async function changeTaskStatus(t,status){
+  const fromStatus=t.status;
+  try{
+    await apiUpdateTaskStatus(t.id,status,fromStatus);
+    t.status=status;
+    const now=new Date().toISOString();
+    if(status==='Done') t.completedAt=now;
+    if(status==='Cancelled') t.cancelledAt=now;
+    if(status==='In Progress'&&fromStatus==='Open') t.startedAt=now;
+    if((status==='Open'||status==='In Progress')&&(fromStatus==='Done'||fromStatus==='Cancelled')){ t.completedAt=null; t.cancelledAt=null; }
+    toast('Task updated'); route('taskDetail',t.id);
+  }catch(e){ toast('Failed: '+(e.message||e)); }
+}
+async function loadTaskTimeline(t){
+  const wrap=document.getElementById('taskTimeline'); if(!wrap) return;
+  const events=await apiLoadTaskEvents(t.id);
+  wrap.innerHTML=events.length?events.map(ev=>{
+    const meta=taskEventMeta(ev.type);
+    let detail='';
+    if(ev.type==='assigned') detail='Assigned to '+esc(ev.toName||ev.toKey||'');
+    else if(ev.type==='escalated') detail='From '+esc(ev.fromName||ev.fromKey||'')+' to '+esc(ev.toName||ev.toKey||'')+(ev.note?': '+esc(ev.note):'');
+    else if(ev.note) detail=esc(ev.note);
+    return `<div class="rowcard" style="display:flex;gap:12px;align-items:flex-start">
+      <span class="kpi-ic ${meta.cls}" style="margin-bottom:0;flex:0 0 auto">${meta.icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div class="nm">${esc(meta.label)}${ev.actorName?' · '+esc(ev.actorName):''}</div><div class="meta" style="white-space:nowrap">${esc((ev.createdAt||'').slice(0,16).replace('T',' '))}</div></div>
+        ${detail?`<div class="meta" style="margin-top:3px">${detail}</div>`:''}
+      </div></div>`;
+  }).join(''):emptyState(ic.grid,'No history yet','');
+}
+function viewTaskDetail(id){
+  const t=(DB.tasks||[]).find(x=>x.id===id);
+  if(!t){ V.innerHTML=back('duties')+emptyState(ic.grid,'Task not found','It may have been deleted or you no longer have access to it.'); renderBottomNavNow(); return; }
+  const canEdit=t.assignedTo===PROFILE.key||t.assignedBy===PROFILE.key||PROFILE.role==='manager';
+  const isAssignee=t.assignedTo===PROFILE.key;
+  const canDelete=t.assignedTo===PROFILE.key||t.assignedBy===PROFILE.key||PROFILE.role==='manager';
+  const statusMeta={Open:{cls:'ghost'},'In Progress':{cls:'warnt'},Done:{cls:'ok'},Cancelled:{cls:'dgr'}};
+  const overdue=t.dueDate&&t.dueDate<today()&&t.status!=='Done'&&t.status!=='Cancelled';
+  V.innerHTML=`${back('duties')}
+  <div class="pagehead"><div><div class="eyebrow">Operations Tracker</div><h2>${esc(t.title)}</h2><p>${esc(t.category)} · ${esc(t.priority)} priority</p></div>
+    <span class="tag ${statusMeta[t.status].cls}" style="flex:0 0 auto">${esc(t.status)}</span></div>
+  <div class="formwrap" style="margin-bottom:16px">
+    <div class="mini">Assigned to <b>${esc(t.assignedToName||t.assignedTo)}</b> by <b>${esc(t.assignedByName||t.assignedBy)}</b> on ${esc((t.createdAt||'').slice(0,10))}</div>
+    ${t.dueDate?`<div class="mini" style="margin-top:4px">${overdue?'⚠ Overdue — ':'Due '}${esc(t.dueDate)}</div>`:''}
+  </div>
+  ${t.escalatedTo?`<div class="rowcard" style="border-left:4px solid #B4472F;margin-bottom:16px">
+    <div style="font-weight:700;font-size:13px;color:#B4472F;display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;display:inline-flex">${ic.alert}</span>Escalated</div>
+    <div class="mini" style="margin-top:4px">From ${esc(t.escalatedByName||t.escalatedBy)} to ${esc(t.escalatedToName||t.escalatedTo)} on ${esc((t.escalatedAt||'').slice(0,10))}${t.escalationNote?': '+esc(t.escalationNote):''}</div>
+  </div>`:''}
+  <div class="sectitle" style="margin-top:0"><h3>Content</h3>${canEdit?`<button class="chip" id="taskEditBtn">Edit</button>`:''}</div>
+  <div class="formwrap" id="taskContentWrap"><div id="taskContentView">${t.description?esc(t.description).replace(/\n/g,'<br>'):'<span class="mini">No description added.</span>'}</div></div>
+  ${isAssignee||PROFILE.role==='manager'?`
+  <div class="sectitle"><h3>Add a progress update</h3></div>
+  <div class="formwrap"><textarea id="taskProgressInput" placeholder="What's the current stage? What have you done so far…"></textarea>
+    <div class="formactions"><button class="btn primary" id="taskProgressBtn">Post update</button></div>
+  </div>`:''}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+    ${t.status==='Open'?`<button class="chip" id="taskStartBtn">▶ Start working</button>`:''}
+    ${t.status!=='Done'&&t.status!=='Cancelled'?`<button class="chip" id="taskDoneBtn">✓ Mark done</button><button class="chip" id="taskCancelBtn">✕ Cancel</button><button class="chip" id="taskEscalateBtn">⬆ Escalate</button>`:''}
+    <button class="chip" id="taskPdfBtn">⬇ Download PDF paper trail</button>
+    ${canDelete?`<button class="trashbtn" id="taskDeleteBtn">${ic.trash}</button>`:''}
+  </div>
+  <div class="sectitle"><h3>Full history</h3><span class="cnt">the complete paper trail</span></div>
+  <div class="list" id="taskTimeline"><div class="mini" style="padding:10px 0">Loading…</div></div>`;
+  V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
+  bindTaskDetailCtrls(t);
+  loadTaskTimeline(t);
+  if(isAssignee&&!t.openedAt){ apiMarkTaskOpened(t.id).then(ts=>{ if(ts){ t.openedAt=ts; loadTaskTimeline(t); } }); }
+  renderBottomNavNow();
+}
+function bindTaskDetailCtrls(t){
+  const editBtn=document.getElementById('taskEditBtn');
+  if(editBtn) editBtn.onclick=()=>{
+    document.getElementById('taskContentWrap').innerHTML=`
+      ${fld('Title','<input id="te_title" value="'+esc(t.title)+'"/>')}
+      ${fld('Description','<textarea id="te_desc">'+esc(t.description||'')+'</textarea>')}
+      <div class="formactions"><button class="btn ghost" id="teCancel">Cancel</button><button class="btn primary" id="teSave">Save</button></div>`;
+    document.getElementById('teCancel').onclick=()=>viewTaskDetail(t.id);
+    document.getElementById('teSave').onclick=async()=>{
+      const newTitle=val('te_title').trim(), newDesc=val('te_desc').trim();
+      if(!newTitle){ toast('Title cannot be empty'); return; }
+      try{ await apiEditTaskContent(t.id,newTitle,newDesc); t.title=newTitle; t.description=newDesc; toast('Saved'); viewTaskDetail(t.id); }
+      catch(e){ toast('Failed: '+(e.message||e)); }
+    };
+  };
+  const progBtn=document.getElementById('taskProgressBtn');
+  if(progBtn) progBtn.onclick=async()=>{
+    const note=val('taskProgressInput').trim(); if(!note){ toast('Write an update first'); return; }
+    progBtn.disabled=true;
+    try{ await apiLogTaskEvent(t.id,'progress',{note}); toast('Update posted'); document.getElementById('taskProgressInput').value=''; loadTaskTimeline(t); }
+    catch(e){ toast('Failed: '+(e.message||e)); }
+    progBtn.disabled=false;
+  };
+  const startBtn=document.getElementById('taskStartBtn'); if(startBtn) startBtn.onclick=()=>changeTaskStatus(t,'In Progress');
+  const doneBtn=document.getElementById('taskDoneBtn'); if(doneBtn) doneBtn.onclick=()=>changeTaskStatus(t,'Done');
+  const cancelBtn=document.getElementById('taskCancelBtn'); if(cancelBtn) cancelBtn.onclick=()=>{ if(confirm('Cancel this task?')) changeTaskStatus(t,'Cancelled'); };
+  const escBtn=document.getElementById('taskEscalateBtn'); if(escBtn) escBtn.onclick=()=>openEscalateTaskModal(t.id);
+  const pdfBtn=document.getElementById('taskPdfBtn'); if(pdfBtn) pdfBtn.onclick=async()=>{ const events=await apiLoadTaskEvents(t.id); buildTaskPaperTrailPDF(t,events); };
+  const delBtn=document.getElementById('taskDeleteBtn'); if(delBtn) delBtn.onclick=()=>deleteTaskWithPaperTrail(t);
 }
 function openNewTaskModal(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
