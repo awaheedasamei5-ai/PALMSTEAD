@@ -275,7 +275,8 @@ a{color:var(--green2)}
 .convList{display:flex;flex-direction:column;gap:4px}
 .convRow{display:flex;align-items:center;gap:12px;padding:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;cursor:pointer;transition:.12s;text-align:left}
 .convRow:hover{transform:translateX(2px);box-shadow:var(--shadow)}
-.convAvatar{width:42px;height:42px;border-radius:100px;background:linear-gradient(150deg,var(--leaf),var(--green));color:#fff;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.convAvatar{width:42px;height:42px;border-radius:100px;background:linear-gradient(150deg,var(--leaf),var(--green));color:#fff;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;overflow:hidden}
+.convAvatar img{width:100%;height:100%;object-fit:cover}
 .convBadge{min-width:19px;height:19px;padding:0 5px;border-radius:100px;background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .chatwrap{display:flex;flex-direction:column;height:calc(100dvh - 240px);min-height:320px;background:#EAF2ED;border-radius:0 0 16px 16px;overflow:hidden;border:1px solid var(--line);border-top:none}
 .waHeader{display:flex;align-items:center;gap:10px;background:linear-gradient(120deg,#1E8E5A,#146C46);color:#fff;
@@ -717,7 +718,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_RBFcd9r2oPt7uC8SRax9Iw_R-q7yCeA";
 const BASE_STAFF = [
   {name:'Elizabeth Misiame', email:'executiveassistant@landbankghana.com', role:'agent', key:'elizabeth'},
   {name:'Elias Torgbuivi',   email:'opsofficer@landbankghana.com',        role:'agent', key:'elias'},
-  {name:'Adams',             email:'digitalopsofficer@landbankghana.com', role:'agent', key:'adams'},
+  {name:'Abdul Waheed',      email:'digitalopsofficer@landbankghana.com', role:'agent', key:'adams'},
   {name:'Emmanuel Anane',    email:'operations@landbankghana.com',        role:'agent', key:'emmanuel'},
   {name:'Management',        email:'fapeprah@landbankghana.com',          role:'manager', key:'manager'}
 ];
@@ -777,6 +778,69 @@ function contactLinks(contact){
   return `<span class="contactLinks"><a href="tel:${digits}" onclick="event.stopPropagation()" title="Call" class="contactIcoBtn">${ic.phone}</a><a href="https://wa.me/${waNum}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="WhatsApp" class="contactIcoBtn wa">${ic.chat}</a></span>`;
 }
 
+function openAvatarCropper(file){
+  return new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onerror=()=>resolve(null);
+    reader.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>resolve(null);
+      img.onload=()=>{
+        let ov=document.getElementById('avatarCropOverlay'); if(ov) ov.remove();
+        ov=document.createElement('div'); ov.id='avatarCropOverlay';
+        ov.style.cssText='position:fixed;inset:0;z-index:500;background:rgba(5,10,20,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:20px';
+        const VP=Math.min(280,window.innerWidth-60);
+        ov.innerHTML=`<div style="color:#fff;font-weight:700;font-size:15px">Adjust your photo</div>
+          <div id="cropViewport" style="width:${VP}px;height:${VP}px;border-radius:100px;overflow:hidden;position:relative;touch-action:none;background:#111;box-shadow:0 0 0 3px rgba(255,255,255,.25),0 20px 50px rgba(0,0,0,.5)">
+            <img id="cropImg" src="${img.src}" style="position:absolute;left:0;top:0;transform-origin:0 0;cursor:grab;user-select:none;-webkit-user-drag:none"/>
+          </div>
+          <div class="mini" style="color:#9DB2CC">Drag to reposition · use the slider to zoom</div>
+          <input id="cropZoom" type="range" min="1" max="3" step="0.01" value="1" style="width:${VP}px"/>
+          <div style="display:flex;gap:12px">
+            <button id="cropCancel" class="btn ghost" style="background:rgba(255,255,255,.12);color:#fff;border:none">Cancel</button>
+            <button id="cropUse" class="btn primary">Use photo</button>
+          </div>`;
+        document.body.appendChild(ov);
+        const vp=document.getElementById('cropViewport'), cImg=document.getElementById('cropImg'), zoomInp=document.getElementById('cropZoom');
+        const iw=img.naturalWidth, ih=img.naturalHeight;
+        const baseScale=Math.max(VP/iw,VP/ih);
+        let scale=baseScale;
+        let x=(VP-iw*scale)/2, y=(VP-ih*scale)/2;
+        function applyTransform(){ cImg.style.width=iw+'px'; cImg.style.height=ih+'px'; cImg.style.transform=`translate(${x}px,${y}px) scale(${scale})`; }
+        function clamp(){
+          const w=iw*scale, h=ih*scale;
+          if(w<=VP) x=(VP-w)/2; else{ if(x>0) x=0; if(x<VP-w) x=VP-w; }
+          if(h<=VP) y=(VP-h)/2; else{ if(y>0) y=0; if(y<VP-h) y=VP-h; }
+        }
+        clamp(); applyTransform();
+        let dragging=false,lastX=0,lastY=0;
+        vp.addEventListener('pointerdown',e=>{ dragging=true; lastX=e.clientX; lastY=e.clientY; vp.setPointerCapture(e.pointerId); cImg.style.cursor='grabbing'; });
+        vp.addEventListener('pointermove',e=>{ if(!dragging) return; x+=e.clientX-lastX; y+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clamp(); applyTransform(); });
+        vp.addEventListener('pointerup',()=>{ dragging=false; cImg.style.cursor='grab'; });
+        vp.addEventListener('pointerleave',()=>{ dragging=false; });
+        zoomInp.oninput=()=>{
+          const newZoom=+zoomInp.value;
+          const cx=VP/2, cy=VP/2, relX=(cx-x)/scale, relY=(cy-y)/scale;
+          scale=baseScale*newZoom;
+          x=cx-relX*scale; y=cy-relY*scale;
+          clamp(); applyTransform();
+        };
+        const finish=dataUrl=>{ ov.remove(); resolve(dataUrl); };
+        document.getElementById('cropCancel').onclick=()=>finish(null);
+        document.getElementById('cropUse').onclick=()=>{
+          const OUT=320;
+          const canvas=document.createElement('canvas'); canvas.width=OUT; canvas.height=OUT;
+          const ctx=canvas.getContext('2d');
+          const sx=(0-x)/scale, sy=(0-y)/scale, sw=VP/scale, sh=VP/scale;
+          ctx.drawImage(img,sx,sy,sw,sh,0,0,OUT,OUT);
+          finish(canvas.toDataURL('image/jpeg',0.88));
+        };
+      };
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 function resizeImageToB64(file,maxW,maxH,quality){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
@@ -4161,6 +4225,8 @@ function chatDayLabel(iso){
 }
 function chatTimeLabel(iso){ const d=new Date(iso); return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
 function otherStaffList(){ return STAFF_LIST.filter(s=>s.key!==PROFILE.key); }
+function avatarOf(key){ const p=(DB.profiles||[]).find(x=>x.agent_key===key); return p&&p.avatar?p.avatar:null; }
+function avatarHtml(key,name){ const av=avatarOf(key); return av?`<img src="${av}"/>`:esc((name||'?')[0]); }
 function messagesWith(otherKey){ return DB.messages.filter(m=>(m.senderKey===PROFILE.key&&m.recipientKey===otherKey)||(m.senderKey===otherKey&&m.recipientKey===PROFILE.key)).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)); }
 function unreadFrom(otherKey){ return DB.messages.filter(m=>m.senderKey===otherKey&&m.recipientKey===PROFILE.key&&!m.read).length; }
 function totalUnread(){ return DB.messages.filter(m=>m.recipientKey===PROFILE.key&&!m.read).length; }
@@ -4220,7 +4286,7 @@ function renderConversationList(){
     return {s,last,unread,sortTime:last?new Date(last.createdAt).getTime():0};
   }).sort((a,b)=>b.sortTime-a.sortTime);
   return rows.map(r=>`<button class="convRow" data-openchat="${esc(r.s.key)}">
-    <div class="convAvatar">${esc(r.s.name[0])}</div>
+    <div class="convAvatar">${avatarHtml(r.s.key,r.s.name)}</div>
     <div style="flex:1;min-width:0;text-align:left">
       <div style="display:flex;justify-content:space-between;gap:8px"><div style="font-weight:700;font-size:14px">${esc(r.s.name)}</div>${r.last?`<div class="mini" style="white-space:nowrap">${chatTimeLabel(r.last.createdAt)}</div>`:''}</div>
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div class="mini" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${r.last?esc((r.last.senderKey===PROFILE.key?'You: ':'')+lastMsgPreview(r.last)):'No messages yet'}</div>${r.unread?`<span class="convBadge">${r.unread}</span>`:''}</div>
@@ -4367,7 +4433,7 @@ function openForwardPicker(msgId){
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Forward to…</div><button id="closeFwd" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
-    <div class="convList">${others.map(s=>`<button class="convRow" data-fwdto="${esc(s.key)}"><div class="convAvatar">${esc(s.name[0])}</div><div style="text-align:left;font-weight:700">${esc(s.name)}</div></button>`).join('')}</div>
+    <div class="convList">${others.map(s=>`<button class="convRow" data-fwdto="${esc(s.key)}"><div class="convAvatar">${avatarHtml(s.key,s.name)}</div><div style="text-align:left;font-weight:700">${esc(s.name)}</div></button>`).join('')}</div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
@@ -5661,7 +5727,7 @@ function formComplaint(){
   <div class="grid2">${fld('Contact *','<input id="c_contact"/>')}${fld('Plot ID / reference','<input id="c_plot"/>')}</div>
   ${fld('Category',sel('c_cat',['Documentation','Payment / Refund','Land / Plot Issue','Service Quality','Communication','Delay','Other']))}
   ${fld('Complaint details *','<textarea id="c_details" placeholder="Describe the complaint"></textarea>')}
-  <div class="grid2">${fld('Assign to',sel('c_owner',['Elizabeth Misiame','Elias Torgbuivi','Adams','Emmanuel Anane','Sales Manager','Admin / Documentation','Legal','Management']))}${fld('Priority',sel('c_pri',['High','Medium','Low']))}</div>
+  <div class="grid2">${fld('Assign to',sel('c_owner',['Elizabeth Misiame','Elias Torgbuivi','Abdul Waheed','Emmanuel Anane','Sales Manager','Admin / Documentation','Legal','Management']))}${fld('Priority',sel('c_pri',['High','Medium','Low']))}</div>
   ${fld('Desired resolution','<textarea id="c_res" placeholder="What outcome does the client want?"></textarea>')}
   ${fld('Status',sel('c_status',['Open','In Progress','Escalated','Resolved']))}
   <div class="formactions"><button class="btn ghost" onclick="route('home')">Cancel</button><button class="btn primary" id="saveCmp">Save complaint</button></div></div>`;
@@ -5747,7 +5813,7 @@ function formAccount(){
   <div class="sectitle" style="margin-top:0"><h3>Profile picture</h3></div>
   <div class="formwrap" style="display:flex;align-items:center;gap:16px">
     <div id="avatarPreview" style="width:64px;height:64px;border-radius:100px;overflow:hidden;flex:0 0 auto;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted);font-size:22px">${PROFILE.avatar?`<img src="${PROFILE.avatar}" style="width:100%;height:100%;object-fit:cover"/>`:esc((PROFILE.name||'?')[0])}</div>
-    <div style="flex:1"><input type="file" id="avatarInput" accept="image/*"/><div class="mini" style="margin-top:6px">Square photos work best — resized automatically.</div></div>
+    <div style="flex:1"><input type="file" id="avatarInput" accept="image/*"/><div class="mini" style="margin-top:6px">You'll be able to crop and zoom before it's saved.</div></div>
   </div>
   <div class="sectitle"><h3>Display settings</h3><span class="cnt">this device only</span></div>
   <div class="formwrap">
@@ -5777,8 +5843,10 @@ function formAccount(){
     `}
   </div>`;
   const avInput=document.getElementById('avatarInput');
-  avInput.onchange=async(e)=>{ const file=e.target.files[0]; if(!file) return;
-    try{ const b64=await resizeImageToB64(file,300,300,0.85);
+  avInput.onchange=async(e)=>{ const file=e.target.files[0]; e.target.value=''; if(!file) return;
+    const b64=await openAvatarCropper(file);
+    if(!b64) return;
+    try{
       const {error}=await sb.from('profiles').update({avatar:b64}).eq('id',USER.id);
       if(error) throw error;
       PROFILE.avatar=b64; document.getElementById('avatarPreview').innerHTML=`<img src="${b64}" style="width:100%;height:100%;object-fit:cover"/>`;
