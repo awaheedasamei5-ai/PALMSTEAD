@@ -777,6 +777,35 @@ function contactLinks(contact){
   const waNum=digits.replace(/^\+?0/,'233').replace(/^\+/,'');
   return `<span class="contactLinks"><a href="tel:${digits}" onclick="event.stopPropagation()" title="Call" class="contactIcoBtn">${ic.phone}</a><a href="https://wa.me/${waNum}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="WhatsApp" class="contactIcoBtn wa">${ic.chat}</a></span>`;
 }
+function waNumberFromPhone(phone){
+  const digits=(phone||'').replace(/[^\d+]/g,'');
+  return digits.replace(/^\+?0/,'233').replace(/^\+/,'');
+}
+/* A richer "call this person/company" card -- one icon tile per channel, only the
+   channels that have a value show up, used for agent + company contact cards in the
+   client portal and staff dashboards. */
+function renderContactCard(opts){
+  const items=[];
+  if(opts.phone) items.push({icon:ic.phone,label:'Call',href:'tel:'+opts.phone.replace(/[^\d+]/g,'')});
+  const wa=opts.whatsapp||opts.phone;
+  if(wa) items.push({icon:ic.chat,label:'WhatsApp',href:'https://wa.me/'+waNumberFromPhone(wa),external:true});
+  if(opts.email) items.push({icon:ic.mail,label:'Email',href:'mailto:'+opts.email});
+  const social=opts.social||{};
+  if(social.instagram) items.push({icon:ic.image,label:'Instagram',href:'https://instagram.com/'+social.instagram.replace(/^@/,''),external:true});
+  if(social.facebook) items.push({icon:ic.grid,label:'Facebook',href:'https://facebook.com/'+social.facebook,external:true});
+  if(social.tiktok) items.push({icon:ic.spark,label:'TikTok',href:'https://tiktok.com/@'+social.tiktok.replace(/^@/,''),external:true});
+  if(!items.length) return '';
+  return `<div class="rowcard" style="padding:16px">
+    ${opts.title?`<div style="font-weight:700;font-size:13px;margin-bottom:10px">${esc(opts.title)}</div>`:''}
+    ${opts.name?`<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><div class="leaderAvatar" style="width:38px;height:38px;font-size:14px">${opts.avatar?`<img src="${opts.avatar}"/>`:esc((opts.name||'?')[0])}</div><div><div style="font-weight:700;font-size:13.5px">${esc(opts.name)}</div>${opts.role?`<div class="mini">${esc(opts.role)}</div>`:''}</div></div>`:''}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(62px,1fr));gap:10px">
+      ${items.map(it=>`<a href="${esc(it.href)}" ${it.external?'target="_blank" rel="noopener"':''} style="display:flex;flex-direction:column;align-items:center;gap:5px;text-decoration:none;color:var(--text)">
+        <span style="width:40px;height:40px;border-radius:12px;background:#EEF1F6;display:flex;align-items:center;justify-content:center;color:var(--leaf)">${it.icon}</span>
+        <span style="font-size:10px;font-weight:600;text-align:center">${esc(it.label)}</span>
+      </a>`).join('')}
+    </div>
+  </div>`;
+}
 
 function openAvatarCropper(file){
   return new Promise(resolve=>{
@@ -1608,7 +1637,9 @@ async function apiInsertComplaint(row){
     d.complaints.unshift(rec); await demoSave(); return rec; }
   const dbrow={agent_key:PROFILE.agent_key,agent_name:PROFILE.name,name:row.name,contact:row.contact,plot:row.plot,
     category:row.category,details:row.details,owner:row.owner,priority:row.priority,resolution:row.resolution,status:row.status};
-  const {data,error}=await sb.from('complaints').insert(dbrow).select().single(); if(error) throw error; return mapCmp(data);
+  const {data,error}=await sb.from('complaints').insert(dbrow).select().single(); if(error) throw error;
+  if(row.contact) apiSendSms(row.contact,`Hi ${row.name||''}, we've received your complaint and someone from our team will follow up with you soon. - PEP Landbank`,'complaint_submitted');
+  return mapCmp(data);
 }
 async function apiUpdateComplaintStatus(id,status){
   if(DEMO_MODE){ const d=await demoLoad(); const c=d.complaints.find(x=>x.id===id); if(c)c.status=status; await demoSave(); return; }
@@ -1622,7 +1653,9 @@ async function apiInsertSiteVisit(row){
     pickup:row.pickup,notes:row.notes,status:'Pending',place_of_work:row.placeOfWork,position:row.position,
     nationality:row.nationality,purpose:row.purpose,discussion_so_far:row.discussion,key_understanding:row.understanding,
     feedback_after:row.feedback,key_next_steps:row.nextSteps};
-  const {data,error}=await sb.from('site_visits').insert(dbrow).select().single(); if(error) throw error; return mapSV(data);
+  const {data,error}=await sb.from('site_visits').insert(dbrow).select().single(); if(error) throw error;
+  if(row.contact) apiSendSms(row.contact,`Hi ${row.name||''}, your site visit request to Royal Palm Enclave has been received. We'll confirm the date/time shortly. - PEP Landbank`,'site_visit_requested');
+  return mapSV(data);
 }
 async function apiUpdateVisitStatus(id,status){
   if(DEMO_MODE){ const d=await demoLoad(); const v=d.sitevisits.find(x=>x.id===id); if(v)v.status=status; await demoSave(); return; }
@@ -1666,6 +1699,37 @@ async function syncLeadAfterPaymentDelta(leadId,delta){
   await apiUpdateLead(lead.id,{amtPaid:newPaid,balance:bal});
   Object.assign(lead,{amtPaid:newPaid,balance:bal});
 }
+async function apiInsertQuotationRequest(row){
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),requestedBy:PROFILE.key,requestedByName:PROFILE.name,...row,createdAt:new Date().toISOString()};
+    d.quotations=d.quotations||[]; d.quotations.unshift(rec); await demoSave(); return rec; }
+  const dbrow={requested_by:PROFILE.key,requested_by_name:PROFILE.name,client_name:row.clientName,client_address:row.clientAddress||null,
+    client_contact:row.clientContact||null,plot_type:row.plotType,no_plots:row.noPlots,payment_period:row.paymentPeriod,
+    list_total:row.listTotal,discount_total:row.discountTotal,interest_total:row.interestTotal,grand_total:row.grandTotal};
+  try{ const {data,error}=await sb.from('quotation_requests').insert(dbrow).select().single(); if(error) throw error; return data; }
+  catch(e){ return null; }
+}
+
+/* ---- SMS (Supabase Edge Function proxy -- the Arkesel key never touches this file) ----
+   Deliberately swallows failures after logging them: an SMS that doesn't go out should
+   never block or roll back the real action (a task got assigned, a payment got logged)
+   that triggered it. */
+async function apiSendSms(to,message,trigger){
+  if(!to) return false;
+  let ok=false, errMsg=null;
+  if(DEMO_MODE){ ok=true; }
+  else{
+    try{
+      const {data,error}=await sb.functions.invoke('send-sms',{body:{to,message}});
+      if(error) throw error;
+      ok=!!(data&&data.ok);
+      if(!ok) errMsg=data&&data.data&&data.data.message?String(data.data.message):'SMS provider rejected the request';
+    }catch(e){ errMsg=e.message||String(e); }
+  }
+  try{
+    if(!DEMO_MODE) await sb.from('sms_log').insert({recipient:to,message,trigger:trigger||null,sent_by:PROFILE?PROFILE.key:null,status:ok?'sent':'failed',error:errMsg});
+  }catch(e){}
+  return ok;
+}
 
 /* ---- config (pricing + targets) ---- */
 async function apiLoadConfig(){
@@ -1679,7 +1743,8 @@ async function apiLoadConfig(){
       commissionHalfCap:data.commission_half_cap!=null?num(data.commission_half_cap):500,
       commissionPoolPerPlot:data.commission_pool_per_plot!=null?num(data.commission_pool_per_plot):500,
       lastCommissionMonth:data.last_commission_month||'',
-      targetPlotsPerMonth:data.target_plots_per_month!=null?num(data.target_plots_per_month):2, note:data.note||''}; }
+      targetPlotsPerMonth:data.target_plots_per_month!=null?num(data.target_plots_per_month):2, note:data.note||'',
+      companyPhone:data.company_phone||'',companyWhatsapp:data.company_whatsapp||'',companyEmail:data.company_email||''}; }
   }catch(e){}
   return CONFIG;
 }
@@ -1690,7 +1755,8 @@ async function apiSaveConfig(patch){
     half_discount:CONFIG.halfDiscount,int_3:CONFIG.int3,int_6:CONFIG.int6,int_9:CONFIG.int9,int_12:CONFIG.int12,
     targets:CONFIG.targets,commission_pct:CONFIG.commissionPct,target_plots_per_month:CONFIG.targetPlotsPerMonth,note:CONFIG.note||'',
     commission_full_cap:CONFIG.commissionFullCap,commission_half_cap:CONFIG.commissionHalfCap,
-    commission_pool_per_plot:CONFIG.commissionPoolPerPlot,last_commission_month:CONFIG.lastCommissionMonth||''};
+    commission_pool_per_plot:CONFIG.commissionPoolPerPlot,last_commission_month:CONFIG.lastCommissionMonth||'',
+    company_phone:CONFIG.companyPhone||'',company_whatsapp:CONFIG.companyWhatsapp||'',company_email:CONFIG.companyEmail||''};
   const {error}=await sb.from('app_config').upsert(row); if(error) throw error;
 }
 async function apiSaveBirthday(agentKey,birthday){
@@ -1800,6 +1866,7 @@ async function apiInsertTask(t){
   const {data,error}=await sb.from('tasks').insert(row).select().single(); if(error) throw error;
   const rec=mapTask(data);
   try{ await apiLogTaskEvent(rec.id,'assigned',{toKey:t.assignedTo,toName:t.assignedToName,note:t.description||null}); }catch(e){}
+  if(t.assignedTo!==PROFILE.key){ const phone=phoneForStaffKey(t.assignedTo); if(phone) apiSendSms(phone,`New task from ${PROFILE.name}: "${t.title}". Open Palmstead to view it.`,'task_assigned'); }
   return rec;
 }
 async function apiUpdateTaskStatus(id,status,fromStatus){
@@ -1834,6 +1901,7 @@ async function apiEscalateTask(id,toKey,toName,note){
     opened_at:null,started_at:null}).eq('id',id);
   if(error) throw error;
   try{ await apiLogTaskEvent(id,'escalated',{fromKey:cur?cur.assigned_to:null,fromName:cur?cur.assigned_to_name:null,toKey,toName,note:note||null}); }catch(e){}
+  if(toKey!==PROFILE.key){ const phone=phoneForStaffKey(toKey); if(phone) apiSendSms(phone,`${PROFILE.name} escalated a task to you on Palmstead${note?(': '+note):''}.`,'task_escalated'); }
 }
 async function apiEditTaskContent(id,newTitle,newDescription){
   if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id);
@@ -3643,6 +3711,7 @@ function agentHome(){ const k=kpisOf(DB.leads);
     <div style="margin-left:auto;font-size:22px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--text)">${ghs(myCommission)}</div></div>
   </div>
   <div class="kpis">${kpi('Active leads',k.leads,'','pipeline')}${kpi('Pipeline value',ghs(k.val),'gold','pipeline')}${kpi('Collected',ghs(k.coll),'','paid')}${kpi('Outstanding',ghs(k.out),'gold','owed')}${kpi('Site visits',k.sv,'','visits')}${kpi('Fully paid',wonAll.length,'','donepaying')}${kpi('Monthly collected',ghs(monthCollected),'gold','monthlyclosed')}</div>
+  <div style="margin-bottom:18px"><button class="chip" id="reqQuoteBtn" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.doc}</span>Request a quotation →</button></div>
   ${renderTargetCard(monthCollected,target)}
   ${renderMonthlyPlanCard(DB.leads)}
   ${renderPipelineHealthCard(DB.leads)}
@@ -3651,6 +3720,7 @@ function agentHome(){ const k=kpisOf(DB.leads);
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
   bindTasks(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow();
   document.querySelector('[data-gomycommission]').onclick=()=>route('myCommission');
+  document.getElementById('reqQuoteBtn').onclick=openQuotationRequest;
   document.getElementById('dashRefreshBtn').onclick=async(e)=>{
     const btn=e.currentTarget; btn.classList.add('spinning'); btn.disabled=true;
     try{ await apiLoadAll(); toast('Up to date'); agentHome(); }
@@ -4337,6 +4407,7 @@ function chatDayLabel(iso){
 function chatTimeLabel(iso){ const d=new Date(iso); return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
 function otherStaffList(){ return STAFF_LIST.filter(s=>s.key!==PROFILE.key); }
 function avatarOf(key){ const p=(DB.profiles||[]).find(x=>x.agent_key===key); return p&&p.avatar?p.avatar:null; }
+function phoneForStaffKey(key){ const p=(DB.profiles||[]).find(x=>x.agent_key===key); return p&&(p.phone||p.whatsapp)?(p.phone||p.whatsapp):null; }
 function avatarHtml(key,name){ const av=avatarOf(key); return av?`<img src="${av}"/>`:esc((name||'?')[0]); }
 function messagesWith(otherKey){ return DB.messages.filter(m=>(m.senderKey===PROFILE.key&&m.recipientKey===otherKey)||(m.senderKey===otherKey&&m.recipientKey===PROFILE.key)).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)); }
 function unreadFrom(otherKey){ return DB.messages.filter(m=>m.senderKey===otherKey&&m.recipientKey===PROFILE.key&&!m.read).length; }
@@ -6160,6 +6231,14 @@ function formAccount(){
     <div id="avatarPreview" style="width:64px;height:64px;border-radius:100px;overflow:hidden;flex:0 0 auto;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted);font-size:22px">${PROFILE.avatar?`<img src="${PROFILE.avatar}" style="width:100%;height:100%;object-fit:cover"/>`:esc((PROFILE.name||'?')[0])}</div>
     <div style="flex:1"><input type="file" id="avatarInput" accept="image/*"/><div class="mini" style="margin-top:6px">You'll be able to crop and zoom before it's saved.</div></div>
   </div>
+  <div class="sectitle"><h3>Contact info</h3><span class="cnt">shown to clients &amp; teammates</span></div>
+  <div class="formwrap">
+    <div class="grid2">${fld('Phone','<input id="ct_phone" placeholder="0244…" value="'+esc(PROFILE.phone||'')+'"/>')}${fld('WhatsApp','<input id="ct_whatsapp" placeholder="0244… (if different)" value="'+esc(PROFILE.whatsapp||'')+'"/>')}</div>
+    <div class="grid2">${fld('Instagram','<input id="ct_instagram" placeholder="@handle" value="'+esc((PROFILE.social_handles||{}).instagram||'')+'"/>')}${fld('Facebook','<input id="ct_facebook" placeholder="page or profile name" value="'+esc((PROFILE.social_handles||{}).facebook||'')+'"/>')}</div>
+    ${fld('TikTok','<input id="ct_tiktok" placeholder="@handle" value="'+esc((PROFILE.social_handles||{}).tiktok||'')+'"/>')}
+    <div class="mini" style="margin-top:2px">These show up on your contact card wherever clients or teammates need to reach you.</div>
+    <div class="formactions"><button class="btn primary" id="saveContactBtn">Save contact info</button></div>
+  </div>
   <div class="sectitle"><h3>Display settings</h3><span class="cnt">this device only</span></div>
   <div class="formwrap">
     ${fld('Font',`<select id="dispFontFamily">
@@ -6204,8 +6283,110 @@ function formAccount(){
     ffSel.onchange=()=>{ try{ localStorage.setItem('pep_font_family',ffSel.value); }catch(e){} applyDisplayPrefs(); };
   }
   document.getElementById('saveAcct').onclick=saveAccountPw;
+  document.getElementById('saveContactBtn').onclick=saveAccountContact;
   if(hasPin){ document.getElementById('removePinBtn').onclick=()=>{ if(!confirm('Remove PIN sign-in from this device?')) return; removePinLock(PROFILE.key); toast('PIN removed from this device'); formAccount(); }; }
   else{ document.getElementById('savePinBtn').onclick=saveAccountPin; }
+}
+async function saveAccountContact(){
+  const phone=val('ct_phone').trim(), whatsapp=val('ct_whatsapp').trim();
+  const social={instagram:val('ct_instagram').trim(),facebook:val('ct_facebook').trim(),tiktok:val('ct_tiktok').trim()};
+  const btn=document.getElementById('saveContactBtn'); btn.disabled=true; btn.textContent='Saving…';
+  try{
+    const {error}=await sb.from('profiles').update({phone:phone||null,whatsapp:whatsapp||null,social_handles:social}).eq('id',USER.id);
+    if(error) throw error;
+    Object.assign(PROFILE,{phone,whatsapp,social_handles:social});
+    const mine=(DB.profiles||[]).find(p=>p.id===USER.id); if(mine) Object.assign(mine,{phone,whatsapp,social_handles:social});
+    toast('Contact info saved');
+  }catch(e){ toast('Could not save: '+(e.message||e)); }
+  btn.disabled=false; btn.textContent='Save contact info';
+}
+/* ================= QUOTATION REQUEST (available on every dashboard) ================= */
+function computeQuotationTotals(plotType,noPlots,period){
+  const p=PRICING()[plotType]||PRICING()['Full Plot'];
+  const listTotal=p.list*noPlots;
+  const discountTotal=p.disc*noPlots;
+  const net=Math.max(listTotal-discountTotal,0);
+  const eq=p.eq*noPlots;
+  const interestTotal=(INTEREST()[period]||0)*eq;
+  return {listTotal,discountTotal,net,interestTotal,grand:net+interestTotal};
+}
+function openQuotationRequest(){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Request a quotation</div><button id="closeQuoteReq" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Client name *','<input id="q_name" placeholder="Full name"/>')}
+    <div class="grid2">${fld('Contact','<input id="q_contact" placeholder="0244…"/>')}${fld('Address','<input id="q_address" placeholder="City / area"/>')}</div>
+    <div class="grid2">${fld('Plot type',sel('q_plottype',['Full Plot','Half Plot']))}${fld('No. of plots','<input id="q_noplots" type="number" min="0.5" step="0.5" value="1"/>')}</div>
+    ${fld('Payment period',sel('q_period',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}
+    <div id="quotePreview" class="formwrap" style="margin-top:4px"></div>
+    <div class="formactions"><button class="btn primary" id="genQuoteBtn" style="width:100%">Generate quotation PDF</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeQuoteReq').onclick=()=>ov.remove();
+  const paintPreview=()=>{
+    const plotType=val('q_plottype'), noPlots=num(val('q_noplots'))||1, period=val('q_period');
+    const t=computeQuotationTotals(plotType,noPlots,period);
+    document.getElementById('quotePreview').innerHTML=`
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span class="mini">List price</span><span>${ghs(t.listTotal)}</span></div>
+      ${t.discountTotal?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span class="mini">Discount</span><span>-${ghs(t.discountTotal)}</span></div>`:''}
+      ${t.interestTotal?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span class="mini">Interest (${esc(period)})</span><span>${ghs(t.interestTotal)}</span></div>`:''}
+      <div style="display:flex;justify-content:space-between;font-weight:800;font-size:15px;padding-top:6px;margin-top:4px;border-top:1px solid var(--line)"><span>Total</span><span>${ghs(t.grand)}</span></div>`;
+  };
+  ['q_plottype','q_noplots','q_period'].forEach(id=>document.getElementById(id).addEventListener('input',paintPreview));
+  paintPreview();
+  document.getElementById('genQuoteBtn').onclick=async()=>{
+    const clientName=val('q_name').trim(); if(!clientName){ toast("Enter the client's name"); return; }
+    const plotType=val('q_plottype'), noPlots=num(val('q_noplots'))||1, period=val('q_period');
+    const contact=val('q_contact').trim(), address=val('q_address').trim();
+    const t=computeQuotationTotals(plotType,noPlots,period);
+    const btn=document.getElementById('genQuoteBtn'); btn.disabled=true; btn.textContent='Generating…';
+    try{
+      await apiInsertQuotationRequest({clientName,clientAddress:address,clientContact:contact,plotType,noPlots,paymentPeriod:period,
+        listTotal:t.listTotal,discountTotal:t.discountTotal,interestTotal:t.interestTotal,grandTotal:t.grand});
+      buildQuotationPDF({clientName,address,contact,plotType,noPlots,period,...t});
+      toast('Quotation generated'); ov.remove();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Generate quotation PDF'; }
+  };
+}
+function buildQuotationPDF(q){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  let y=pdfHeader(doc,'QUOTATION'); y+=8;
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(11,30,61);
+  doc.text('Prepared for '+q.clientName,12,y); y+=7;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(100,112,133);
+  doc.text(today(),12,y); y+=10;
+
+  y=pdfSectionBar(doc,y,pageW,'CLIENT DETAILS');
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
+  doc.text('Name: '+q.clientName,12,y); y+=5.5;
+  if(q.contact){ doc.text('Contact: '+q.contact,12,y); y+=5.5; }
+  if(q.address){ doc.text('Address: '+q.address,12,y); y+=5.5; }
+  y+=4;
+
+  y=pdfSectionBar(doc,y,pageW,'PLOT & PAYMENT DETAILS');
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
+  doc.text('Plot type: '+q.plotType,12,y); y+=5.5;
+  doc.text('Number of plots: '+q.noPlots,12,y); y+=5.5;
+  doc.text('Payment period: '+q.period,12,y); y+=9;
+
+  y=pdfSectionBar(doc,y,pageW,'PRICE BREAKDOWN');
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
+  doc.text('List price',12,y); doc.text(ghs(q.listTotal),pageW-12,y,{align:'right'}); y+=6;
+  if(q.discountTotal){ doc.text('Discount',12,y); doc.text('-'+ghs(q.discountTotal),pageW-12,y,{align:'right'}); y+=6; }
+  if(q.interestTotal){ doc.text('Interest ('+q.period+')',12,y); doc.text(ghs(q.interestTotal),pageW-12,y,{align:'right'}); y+=6; }
+  doc.setDrawColor(200,200,200); doc.line(12,y,pageW-12,y); y+=6;
+  doc.setFont('helvetica','bold'); doc.setFontSize(12);
+  doc.text('TOTAL',12,y); doc.text(ghs(q.grand),pageW-12,y,{align:'right'}); y+=12;
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(120,120,120);
+  doc.text('This quotation is valid for 14 days from the date above and is subject to plot availability at the time of payment.',12,y,{maxWidth:pageW-24});
+
+  const fname='Quotation_'+q.clientName.replace(/\s+/g,'_')+'_'+today()+'.pdf';
+  const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
 }
 async function saveAccountPin(){
   const p1=val('pin1'), p2=val('pin2');
@@ -6384,6 +6565,7 @@ function mgrOverview(){ let tot={leads:0,val:0,coll:0,out:0,sv:0,hi:0};
   ${renderExpectedRevenueCard()}
   ${renderPipelineHealthCard(allLeads)}
   <div class="kpis">${kpi('Total leads',tot.leads,'','pipeline')}${kpi('Pipeline value',ghs(tot.val),'gold','pipeline')}${kpi('Collected',ghs(tot.coll),'','paid')}${kpi('Outstanding',ghs(tot.out),'gold','owed')}${kpi('Fully paid',fullyPaid.length,'','donepaying')}${kpi('Open complaints',DB.complaints.filter(c=>c.status!=='Resolved').length)}${kpi('Escalated',escalated,escalated?'gold':'')}</div>
+  <div style="margin-bottom:18px"><button class="chip" id="reqQuoteBtnMgr" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.doc}</span>Request a quotation →</button></div>
 
   <div class="sectitle"><h3>By agent</h3><span class="cnt">tap an agent for their full client breakdown</span></div><div class="formwrap" style="padding:6px 15px">${rows||'<div class="empty">No agent profiles yet</div>'}</div>
 
@@ -6396,6 +6578,7 @@ function bindOverviewCtrls(){
   V.querySelectorAll('[data-agentkey]').forEach(b=>b.onclick=()=>route('agentDetail',b.dataset.agentkey));
   V.querySelectorAll('[data-stage]').forEach(b=>b.onclick=()=>route('stageList',b.dataset.stage));
   const insightsTeaser=document.getElementById('mgrInsightsTeaser'); if(insightsTeaser) insightsTeaser.onclick=()=>route('insights');
+  const quoteBtn=document.getElementById('reqQuoteBtnMgr'); if(quoteBtn) quoteBtn.onclick=openQuotationRequest;
 }
 function viewStageList(stage){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
@@ -7025,6 +7208,13 @@ function mgrSettings(){
   <div class="formwrap" style="padding:6px 15px">${teamRows||'<div class="empty">No agents yet</div>'}
   <p class="mini" style="margin-top:12px">Deactivating someone here blocks their sign-in but keeps their historical leads and stats intact everywhere, including the Sales League.</p></div>
 
+  <div class="sectitle"><h3>Company contact info</h3><span class="cnt">shown to clients company-wide</span></div>
+  <div class="formwrap">
+  <div class="grid2">${fld('Phone','<input id="cfg_companyPhone" placeholder="0244…" value="'+esc(CONFIG.companyPhone||'')+'"/>')}${fld('WhatsApp','<input id="cfg_companyWhatsapp" placeholder="0244… (if different)" value="'+esc(CONFIG.companyWhatsapp||'')+'"/>')}</div>
+  ${fld('Email','<input id="cfg_companyEmail" type="email" placeholder="info@landbankghana.com" value="'+esc(CONFIG.companyEmail||'')+'"/>')}
+  <div class="formactions"><button class="btn primary" id="saveCompanyContact">Save company contact info</button></div>
+  </div>
+
   <div class="sectitle"><h3>Plot pricing</h3><span class="cnt">applies to new leads immediately</span></div>
   <div class="formwrap">
   <div class="grid2">${fld('Full Plot price (GHS)','<input id="cfg_fullPrice" type="number" value="'+CONFIG.fullPrice+'"/>')}${fld('Full Plot standard discount (GHS)','<input id="cfg_fullDiscount" type="number" value="'+CONFIG.fullDiscount+'"/>')}</div>
@@ -7110,6 +7300,14 @@ function bindSettingsCtrls(){
       b.disabled=false;
     };
   });
+  document.getElementById('saveCompanyContact').onclick=async()=>{
+    const btn=document.getElementById('saveCompanyContact'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      await apiSaveConfig({companyPhone:val('cfg_companyPhone').trim(),companyWhatsapp:val('cfg_companyWhatsapp').trim(),companyEmail:val('cfg_companyEmail').trim()});
+      toast('Company contact info saved');
+    }catch(e){ toast('Failed: '+(e.message||e)); }
+    btn.disabled=false; btn.textContent='Save company contact info';
+  };
   document.getElementById('saveCfg').onclick=async()=>{
     const btn=document.getElementById('saveCfg'); btn.disabled=true; btn.textContent='Saving…';
     try{ await apiSaveConfig({fullPrice:num(val('cfg_fullPrice')),halfPrice:num(val('cfg_halfPrice')),
