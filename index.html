@@ -655,6 +655,10 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
     </div>
     <button class="signin" id="signBtn" disabled>Sign in</button>
     <div class="err" id="loginErr"></div>
+    <button class="linkbtn" id="clientPortalLink" style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:2px">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 11l8-7 8 7v8a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1v-8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      I'm a client — access my account
+    </button>
     <div class="demo-banner" id="demoBanner">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.7"/><path d="M12 8v5m0 3.5h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
       <span><b>Demo mode</b> — you're viewing this with sample data preloaded. Pick any name and tap Sign in (password not checked yet). Connect Supabase below to make it live for your real team.</span>
@@ -684,6 +688,10 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
     <button class="signin" id="joinSubmit">Create my account</button>
     <div class="err" id="joinErr"></div>
     <button class="linkbtn" id="joinBack">← Back to sign in</button>
+  </div>
+
+  <div class="cfg hidden" id="clientCard">
+    <div id="clientCardInner"></div>
   </div>
 </section>
 
@@ -1661,6 +1669,52 @@ async function apiUpdateVisitStatus(id,status){
   if(DEMO_MODE){ const d=await demoLoad(); const v=d.sitevisits.find(x=>x.id===id); if(v)v.status=status; await demoSave(); return; }
   const {error}=await sb.from('site_visits').update({status}).eq('id',id); if(error) throw error;
 }
+/* ================= CLIENT PORTAL: DATA ================= */
+const mapClientPay=r=>({id:r.id,leadId:r.lead_id,clientName:r.client_name,amount:r.amount,date:r.payment_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
+async function apiClientLoadAll(){
+  const [{data:leads,error:le},{data:payments,error:pe},{data:visits,error:ve},{data:enqs,error:ee},{data:cmps,error:ce}]=await Promise.all([
+    sb.from('leads').select('*').order('date_added',{ascending:false}),
+    sb.from('payments').select('*').order('payment_date',{ascending:false}),
+    sb.from('site_visits').select('*').order('created_at',{ascending:false}),
+    sb.from('enquiries').select('*').order('created_at',{ascending:false}),
+    sb.from('complaints').select('*').order('created_at',{ascending:false})
+  ]);
+  if(le||pe||ve||ee||ce) throw (le||pe||ve||ee||ce);
+  CLIENT_DB={leads:(leads||[]).map(mapLead),payments:(payments||[]).map(mapClientPay),
+    sitevisits:(visits||[]).map(mapSV),enquiries:(enqs||[]).map(mapEnq),complaints:(cmps||[]).map(mapCmp)};
+  return CLIENT_DB;
+}
+async function apiClientAgentContact(){
+  const agentKey=(CLIENT_DB.leads[0]||{}).agent;
+  if(!agentKey) return null;
+  const {data,error}=await sb.from('profiles').select('name,phone,whatsapp,social_handles,avatar').eq('agent_key',agentKey).maybeSingle();
+  if(error||!data) return null;
+  return data;
+}
+async function apiClientInsertSiteVisit(row){
+  const dbrow={name:CLIENT_PROFILE.name,contact:CLIENT_PROFILE.contact,plot:row.plot,site:row.site,visit_date:row.date,
+    visit_time:row.time,people:num(row.people),transport:row.transport,pickup:row.pickup,notes:row.notes,status:'Pending'};
+  const {data,error}=await sb.from('site_visits').insert(dbrow).select().single(); if(error) throw error;
+  return mapSV(data);
+}
+async function apiClientInsertEnquiry(row){
+  const dbrow={name:CLIENT_PROFILE.name,contact:CLIENT_PROFILE.contact,details:row.details,source:'Client portal'};
+  const {data,error}=await sb.from('enquiries').insert(dbrow).select().single(); if(error) throw error;
+  return mapEnq(data);
+}
+async function apiClientInsertComplaint(row){
+  const dbrow={name:CLIENT_PROFILE.name,contact:CLIENT_PROFILE.contact,category:row.category,details:row.details,status:'Open'};
+  const {data,error}=await sb.from('complaints').insert(dbrow).select().single(); if(error) throw error;
+  return mapCmp(data);
+}
+async function apiClientChangePin(newPin){
+  const {error}=await sb.rpc('client_portal_change_pin',{p_new_pin:newPin}); if(error) throw error;
+  CLIENT_PROFILE.isDefaultPin=false;
+}
+async function apiClientUpdateAvatar(dataUrl){
+  const {error}=await sb.rpc('client_portal_update_avatar',{p_avatar:dataUrl}); if(error) throw error;
+  CLIENT_PROFILE.avatar=dataUrl;
+}
 async function apiInsertActivity(row){
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),agentKey:PROFILE.key,agentName:PROFILE.name,...row,at:today()+' '+nowTime()};
     d.activity.unshift(rec); await demoSave(); return rec; }
@@ -2438,6 +2492,18 @@ async function enterApp(){
   await showGreetScreen(PROFILE.role==='manager'?'Management':PROFILE.name.split(' ')[0]);
   route(PROFILE.role==='manager'?'mgr':'home');
 }
+async function enterClientPortal(){
+  document.getElementById('view').innerHTML='<div style="padding:70px 0;text-align:center"><div class="skel" style="height:120px;border-radius:16px;margin-bottom:14px"></div><div class="skel" style="height:80px;border-radius:16px"></div></div>';
+  document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden');
+  document.getElementById('tbName').textContent=CLIENT_PROFILE.name.split(' ')[0];
+  document.getElementById('topbarSub').textContent='by PEP Landbank';
+  paintTopbarAvatar();
+  try{ await apiLoadConfig(); await apiClientLoadAll(); }catch(e){ toast('Could not load your data'); }
+  startInactivityTimer();
+  if(CLIENT_PROFILE.isDefaultPin){ setTimeout(()=>toast("You're using the default PIN — set your own in Settings for extra security."),1200); }
+  await showGreetScreen(CLIENT_PROFILE.name.split(' ')[0]);
+  route('clienthome');
+}
 /* ---- time-awareness: month rollover watchdog + device clock sanity check ---- */
 function showSystemBanner(id,html,tone){
   if(document.getElementById(id)) return;
@@ -2477,7 +2543,7 @@ let INACTIVITY_TIMER=null;
 const INACTIVITY_LIMIT_MS=20*60*1000; // 20 minutes — real client money on screen, so we don't leave a session open indefinitely
 function startInactivityTimer(){
   const reset=()=>{ clearTimeout(INACTIVITY_TIMER); INACTIVITY_TIMER=setTimeout(()=>{
-    if(!PROFILE) return;
+    if(!PROFILE && !IS_CLIENT) return;
     toast('Signed out after 20 minutes of inactivity');
     document.getElementById('logoutBtn').click();
   },INACTIVITY_LIMIT_MS); };
@@ -2486,7 +2552,8 @@ function startInactivityTimer(){
 }
 function paintTopbarAvatar(){
   const el=document.getElementById('tbAvatar'); if(!el) return;
-  if(PROFILE && PROFILE.avatar){ el.innerHTML=`<img src="${PROFILE.avatar}"/>`; el.classList.remove('hidden'); }
+  const p=IS_CLIENT?CLIENT_PROFILE:PROFILE;
+  if(p && p.avatar){ el.innerHTML=`<img src="${p.avatar}"/>`; el.classList.remove('hidden'); }
   else{ el.innerHTML=''; el.classList.add('hidden'); }
 }
 document.getElementById('logoutBtn').onclick=async()=>{
@@ -2494,8 +2561,10 @@ document.getElementById('logoutBtn').onclick=async()=>{
   if(CHAT_CHANNEL){ try{ sb.removeChannel(CHAT_CHANNEL); }catch(e){} CHAT_CHANNEL=null; }
   const bub=document.getElementById('announceBubble'); if(bub) bub.remove();
   const ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
-  USER=PROFILE=pickStaff=null; DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[]};
+  USER=PROFILE=pickStaff=null; IS_CLIENT=false; CLIENT_PROFILE=null; CLIENT_DB=null;
+  DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[]};
   document.getElementById('app').classList.add('hidden'); document.getElementById('login').classList.remove('hidden');
+  document.getElementById('clientCard').classList.add('hidden'); document.getElementById('authCard').classList.remove('hidden');
   syncDemoBannerVisibility();
   document.getElementById('ddLabel').textContent='Choose your name';
   document.querySelectorAll('#ddPanel .dd-item').forEach(el=>el.classList.remove('sel'));
@@ -2516,11 +2585,11 @@ document.getElementById('darkModeBtn').onclick=()=>{
   // dark/light mode, so a plain class toggle leaves those stuck until the next
   // navigation -- immediately repaint whatever's on screen so it takes full
   // effect on this one tap, not the next page visit.
-  if(typeof PROFILE!=='undefined' && PROFILE && history.state && history.state.routeName){
+  if(typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT) && history.state && history.state.routeName){
     try{ route(history.state.routeName,history.state.routeArg,true); }catch(e){}
   }
 };
-document.getElementById('accountBtn').onclick=()=>route('account');
+document.getElementById('accountBtn').onclick=()=>route(IS_CLIENT?'clientsettings':'account');
 
 /* config screen */
 document.getElementById('cfgLink').onclick=()=>{ document.getElementById('authCard').classList.add('hidden');
@@ -2611,6 +2680,109 @@ async function provisionProfile(user,fallbackName){
   return {ok:true, profile:inserted};
 }
 
+/* ================= CLIENT PORTAL: LOGIN ================= */
+let IS_CLIENT=false, CLIENT_PROFILE=null, CLIENT_DB=null;
+let clientStep='search', clientMatch=null, clientPhone='', clientSearchTimer=null;
+document.getElementById('clientPortalLink').onclick=()=>{
+  if(DEMO_MODE){ toast('Client portal needs a connected Supabase project — not available in demo mode.'); return; }
+  document.getElementById('authCard').classList.add('hidden');
+  clientStep='search'; clientMatch=null; clientPhone='';
+  document.getElementById('clientCard').classList.remove('hidden');
+  renderClientStep();
+};
+function closeClientCard(){
+  document.getElementById('clientCard').classList.add('hidden');
+  document.getElementById('authCard').classList.remove('hidden');
+}
+function renderClientStep(){
+  const el=document.getElementById('clientCardInner');
+  if(clientStep==='search'){
+    el.innerHTML=`<div class="lbl">Client portal</div>
+      <div class="note">Search for your name to view your purchase, payments, receipts and more.</div>
+      <input id="cp_name" placeholder="Start typing your full name…" autocomplete="off"/>
+      <div id="cp_results" style="margin:-4px 0 4px"></div>
+      <div class="err" id="clientErr"></div>
+      <button class="linkbtn" id="clientBackBtn">← Back to staff sign in</button>`;
+    document.getElementById('clientBackBtn').onclick=closeClientCard;
+    const nameInp=document.getElementById('cp_name');
+    nameInp.focus();
+    nameInp.addEventListener('input',()=>{
+      clearTimeout(clientSearchTimer);
+      const q=nameInp.value.trim();
+      const results=document.getElementById('cp_results');
+      if(q.length<2){ results.innerHTML=''; return; }
+      clientSearchTimer=setTimeout(async()=>{
+        try{
+          const {data,error}=await sb.rpc('client_portal_search_names',{p_query:q});
+          if(error||!data||!data.length){ results.innerHTML=`<div class="mini" style="padding:8px 2px;color:#9DB2CC">No matches yet — keep typing, or check with your agent.</div>`; return; }
+          results.innerHTML=data.map((r,i)=>`<div class="dd-item" data-i="${i}" style="cursor:pointer;border-radius:10px;margin-bottom:4px">
+            <span class="dd-text"><span class="dd-name">${esc(r.name)}</span><span class="mini" style="display:block;color:#9DB2CC">Phone ending ${esc(r.contact_masked)}</span></span>
+          </div>`).join('');
+          results.querySelectorAll('[data-i]').forEach(row=>{
+            row.onclick=()=>{ clientMatch={name:data[+row.dataset.i].name}; clientStep='phone'; renderClientStep(); };
+          });
+        }catch(e){ results.innerHTML=''; }
+      },320);
+    });
+  }
+  else if(clientStep==='phone'){
+    el.innerHTML=`<div class="lbl">Confirm your phone number</div>
+      <div class="note">For <b>${esc(clientMatch.name)}</b> — enter the phone number your agent has on file for you.</div>
+      <input id="cp_phone" type="tel" placeholder="0244…" autocomplete="tel"/>
+      <div class="err" id="clientErr"></div>
+      <button class="signin" id="clientPhoneNext">Continue</button>
+      <button class="linkbtn" id="clientBackBtn">← Back</button>`;
+    document.getElementById('clientBackBtn').onclick=()=>{ clientStep='search'; renderClientStep(); };
+    const phoneInp=document.getElementById('cp_phone'); phoneInp.focus();
+    const goNext=()=>{
+      const digits=phoneInp.value.replace(/[^0-9]/g,'');
+      if(digits.length<9){ document.getElementById('clientErr').textContent='Enter a valid phone number.'; return; }
+      clientPhone=phoneInp.value.trim(); clientStep='pin'; renderClientStep();
+    };
+    document.getElementById('clientPhoneNext').onclick=goNext;
+    phoneInp.addEventListener('keydown',e=>{ if(e.key==='Enter') goNext(); });
+  }
+  else if(clientStep==='pin'){
+    el.innerHTML=`<div class="lbl">Enter your PIN</div>
+      <div class="note">New here? Your default PIN is <b>1122</b> — you can set your own in Settings once you're signed in.</div>
+      <input id="cp_pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Enter your PIN" autocomplete="off"/>
+      <div class="err" id="clientErr"></div>
+      <button class="signin" id="clientSignInBtn">Sign in</button>
+      <button class="linkbtn" id="clientBackBtn">← Back</button>`;
+    document.getElementById('clientBackBtn').onclick=()=>{ clientStep='phone'; renderClientStep(); };
+    const pinInp=document.getElementById('cp_pin'); pinInp.focus();
+    pinInp.addEventListener('input',e=>{ e.target.value=e.target.value.replace(/\D/g,'').slice(0,6); });
+    pinInp.addEventListener('keydown',e=>{ if(e.key==='Enter') doClientLogin(); });
+    document.getElementById('clientSignInBtn').onclick=doClientLogin;
+  }
+}
+async function doClientLogin(){
+  const err=document.getElementById('clientErr'); err.textContent='';
+  const pin=val('cp_pin');
+  if(!/^\d{4,6}$/.test(pin)){ err.textContent='Enter your 4–6 digit PIN.'; return; }
+  const btn=document.getElementById('clientSignInBtn'); btn.disabled=true; btn.textContent='Signing in…';
+  try{
+    const {data,error}=await sb.rpc('client_portal_login',{p_name:clientMatch.name,p_contact:clientPhone,p_pin:pin});
+    if(error){ err.textContent='Connection problem — please try again.'; btn.disabled=false; btn.textContent='Sign in'; return; }
+    if(!data.ok){
+      if(data.reason==='locked'){
+        const mins=data.locked_until?Math.max(1,Math.ceil((new Date(data.locked_until)-new Date())/60000)):15;
+        err.textContent=`Too many attempts — try again in about ${mins} minute${mins===1?'':'s'}.`;
+      } else if(data.reason==='wrong_pin'){ err.textContent='Incorrect PIN.'; }
+      else { err.textContent="We couldn't find a match — check your name and phone number, or contact your agent."; }
+      btn.disabled=false; btn.textContent='Sign in'; return;
+    }
+    const {data:authData,error:authErr}=await sb.auth.signInAnonymously();
+    if(authErr||!authData||!authData.session){ err.textContent='Could not start your session — please try again.'; btn.disabled=false; btn.textContent='Sign in'; return; }
+    const {error:linkErr}=await sb.rpc('client_portal_link_auth',{p_access_id:data.access_id});
+    if(linkErr){ err.textContent='Could not finish signing in — please try again.'; btn.disabled=false; btn.textContent='Sign in'; return; }
+    CLIENT_PROFILE={id:data.access_id,name:data.name,contact:clientPhone,avatar:data.avatar,isDefaultPin:!!data.is_default_pin};
+    IS_CLIENT=true;
+    document.getElementById('clientCard').classList.add('hidden');
+    await enterClientPortal();
+  }catch(e){ err.textContent='Something went wrong. Please try again.'; btn.disabled=false; btn.textContent='Sign in'; }
+}
+
 /* ================= ROUTER ================= */
 const V=document.getElementById('view');
 let ROUTE_NAV_LOCK=false;
@@ -2620,8 +2792,9 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission}[name]||agentHome)(arg);
-  if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && PROFILE){
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission,
+    clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
+  if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
   updateBottomNav(name);
@@ -2633,6 +2806,12 @@ function goBack(fallbackTo){
 /* ---- persistent bottom tab bar ---- */
 let CURRENT_ROUTE_NAME='home';
 function tabForRoute(name){
+  if(IS_CLIENT){
+    if(name==='clientvisit') return 'clientvisit';
+    if(name==='clientfeedback') return 'clientfeedback';
+    if(name==='clientsettings') return 'clientsettings';
+    return 'clienthome';
+  }
   if(['salesdesk','addlead','update','updateOne','myDataCheck','plots','pipeline'].includes(name)) return 'salesdesk';
   if(['crm','sitevisit','enquiry','complaint'].includes(name)) return 'crm';
   if(name==='duties'||name==='taskDetail') return 'operations';
@@ -2642,8 +2821,19 @@ function tabForRoute(name){
 }
 function updateBottomNav(routeName){ CURRENT_ROUTE_NAME=routeName; renderBottomNavNow(); }
 function renderBottomNavNow(){
-  const nav=document.getElementById('bottomnav'); if(!nav||typeof PROFILE==='undefined'||!PROFILE) return;
+  const nav=document.getElementById('bottomnav'); if(!nav||typeof PROFILE==='undefined'||!(PROFILE||IS_CLIENT)) return;
   const activeTab=tabForRoute(CURRENT_ROUTE_NAME);
+  if(IS_CLIENT){
+    const tabDefs=[
+      {key:'clienthome',label:'Home',icon:ic.home,r:'clienthome'},
+      {key:'clientvisit',label:'Book Visit',icon:ic.visit,r:'clientvisit'},
+      {key:'clientfeedback',label:'Feedback',icon:ic.enquiry,r:'clientfeedback'},
+      {key:'clientsettings',label:'Settings',icon:ic.spark,r:'clientsettings'}
+    ];
+    nav.innerHTML=tabDefs.map(t=>`<button class="${t.key===activeTab?'on':''}" data-navtab="${t.r}">${t.icon}<span>${esc(t.label)}</span></button>`).join('');
+    nav.querySelectorAll('[data-navtab]').forEach(b=>b.onclick=()=>route(b.dataset.navtab));
+    return;
+  }
   const isMgr=PROFILE.role==='manager';
   const openTasks=computeDutiesSummary((DB.tasks||[]).filter(t=>isMgr||t.assignedTo===PROFILE.key)).openCount;
   const unread=totalUnread();
@@ -2662,11 +2852,11 @@ function renderBottomNavNow(){
   nav.querySelectorAll('[data-navtab]').forEach(b=>b.onclick=()=>route(b.dataset.navtab));
 }
 window.addEventListener('popstate',e=>{
-  if(!PROFILE) return; // still on login screen — nothing app-side to navigate
+  if(!PROFILE && !IS_CLIENT) return; // still on login screen — nothing app-side to navigate
   if(window.__activeFilePreviewClose){ const fn=window.__activeFilePreviewClose; window.__activeFilePreviewClose=null; fn(); return; }
   ROUTE_NAV_LOCK=true;
   if(e.state && e.state.routeName){ route(e.state.routeName,e.state.routeArg,true); }
-  else{ route(PROFILE.role==='manager'?'mgr':'home',null,true); }
+  else{ route(IS_CLIENT?'clienthome':(PROFILE.role==='manager'?'mgr':'home'),null,true); }
   ROUTE_NAV_LOCK=false;
 });
 document.addEventListener('click',e=>{
@@ -6409,6 +6599,147 @@ async function saveAccountPw(){
     if(error){ toast('Could not update: '+error.message); btn.disabled=false; btn.textContent='Update password'; return; }
     toast('Password updated'); route(PROFILE.role==='manager'?'mgr':'home');
   }catch(e){ toast('Could not update password'); btn.disabled=false; btn.textContent='Update password'; }
+}
+
+/* ================= CLIENT PORTAL: DASHBOARD & SETTINGS ================= */
+const CLIENT_STAGE_LABELS={'1':'Reservation','2A':'Deposit in progress','2B':'On installment plan','3':'Installments in progress','4':'Fully paid','Lost':'Inactive'};
+function clientStageLabel(s){ return CLIENT_STAGE_LABELS[s]||s||'—'; }
+async function clientHome(){
+  const leads=(CLIENT_DB&&CLIENT_DB.leads)||[];
+  const payments=(CLIENT_DB&&CLIENT_DB.payments)||[];
+  let agent=null; try{ agent=await apiClientAgentContact(); }catch(e){}
+  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Welcome back</div><h2>${esc(CLIENT_PROFILE.name.split(' ')[0])}</h2><p>Your purchases, payments and plot progress</p></div></div>
+    <div class="sectitle" style="margin-top:0"><h3>Your purchases</h3></div>
+    <div class="formwrap">
+      ${leads.length? leads.map(l=>{
+        const c=computeLead(l); const grand=l.grandTotal!=null?num(l.grandTotal):c.grand; const paid=num(l.amtPaid); const bal=Math.max(grand-paid,0);
+        const pct=grand>0?Math.min(100,Math.round(paid/grand*100)):0;
+        return `<div class="rowcard" style="padding:16px;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+            <div><div style="font-weight:700;font-size:14px">${esc(l.plotType||'Plot')} · ${l.noPlots||1} plot(s)</div><div class="mini" style="margin-top:2px">${esc(clientStageLabel(l.stage))}</div></div>
+            <div style="text-align:right"><div style="font-weight:800;font-size:15px">${ghs(paid)}</div><div class="mini">of ${ghs(grand)}</div></div>
+          </div>
+          <div style="height:6px;border-radius:6px;background:#EEF1F6;margin-top:10px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--leaf)"></div></div>
+          <div class="mini" style="margin-top:6px">${pct}% paid · balance ${ghs(bal)}</div>
+        </div>`;
+      }).join('') : emptyState(ic.lead,'No purchases on file yet','Once your agent records your purchase, it will show up here.')}
+    </div>
+    <div class="sectitle"><h3>Payment history</h3></div>
+    <div class="formwrap">
+      ${payments.length? payments.map(p=>`<div class="rowcard" style="padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+        <div><div style="font-weight:700">${ghs(p.amount)}</div><div class="mini">${esc(p.date||'')}</div></div>
+        <button class="btn ghost" data-receipt="${p.id}" style="padding:6px 12px;font-size:11.5px">Receipt</button>
+      </div>`).join('') : emptyState(ic.update,'No payments recorded yet','')}
+    </div>
+    <div class="sectitle"><h3>Your agent</h3></div>
+    ${agent? (renderContactCard({title:'Your agent',name:agent.name,avatar:agent.avatar,phone:agent.phone,whatsapp:agent.whatsapp,social:agent.social_handles})||`<div class="formwrap"><div class="mini">Your agent hasn't added contact details yet.</div></div>`) : `<div class="formwrap"><div class="mini">Agent contact not available yet.</div></div>`}
+    <div class="sectitle"><h3>PEP Landbank</h3></div>
+    ${renderContactCard({title:'Company',phone:CONFIG.companyPhone,whatsapp:CONFIG.companyWhatsapp,email:CONFIG.companyEmail})||`<div class="formwrap"><div class="mini">Company contact not set up yet.</div></div>`}`;
+  V.querySelectorAll('[data-receipt]').forEach(b=>b.onclick=()=>{
+    const pay=payments.find(p=>p.id===b.dataset.receipt);
+    const lead=leads.find(x=>x.id===(pay&&pay.leadId))||leads[0];
+    if(pay) buildClientReceiptPDF(pay,lead);
+  });
+}
+function buildClientReceiptPDF(payment,lead){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  let y=pdfHeader(doc,'PAYMENT RECEIPT'); y+=8;
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(11,30,61);
+  doc.text('Received from '+CLIENT_PROFILE.name,12,y); y+=7;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(100,112,133);
+  doc.text(payment.date||today(),12,y); y+=10;
+  y=pdfSectionBar(doc,y,pageW,'PAYMENT DETAILS');
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
+  doc.text('Client: '+CLIENT_PROFILE.name,12,y); y+=5.5;
+  if(lead){ doc.text('Plot: '+(lead.plotType||'')+' x '+(lead.noPlots||1),12,y); y+=5.5; }
+  doc.text('Date: '+(payment.date||''),12,y); y+=9;
+  y=pdfSectionBar(doc,y,pageW,'AMOUNT');
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(20,20,20);
+  doc.text('AMOUNT PAID',12,y); doc.text(ghs(payment.amount),pageW-12,y,{align:'right'}); y+=12;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(120,120,120);
+  doc.text('This receipt confirms the payment above was received by PEP Landbank. Keep it for your records.',12,y,{maxWidth:pageW-24});
+  const fname='Receipt_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
+  doc.save(fname);
+}
+function formClientSiteVisit(){
+  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Tsopoli site visit request</div><h2>Book a visit</h2><p>Goes to Management for confirmation.</p></div></div>
+  <div class="formwrap">
+    ${fld('Interested in',sel('cv_interest',['0.5 Plot (70x50)','1 Plot (70x100)','2 Plots (70x100)','3 Plots (70x100)']))}
+    <div class="grid2">${fld('Mode of transportation',sel('cv_trans',['Personal Vehicle','Company Vehicle']))}${fld('Purpose of visit',sel('cv_purpose',['Viewing','Allocation','Picking','Others']))}</div>
+    ${fld('Preferred day',sel('cv_day',['Tuesday 9:00am','Friday 9:00am','Sunday 12:00pm']))}
+    ${fld('Pick-up location','<input id="cv_pickup"/>','optional')}
+    ${fld('Number of people accompanying you','<input id="cv_ppl" type="number" min="0" value="0"/>')}
+    <div class="formactions"><button class="btn gold" id="saveCV">Submit request</button></div>
+  </div>`;
+  document.getElementById('saveCV').onclick=saveClientVisit;
+}
+async function saveClientVisit(){
+  const btn=document.getElementById('saveCV'); btn.disabled=true; btn.textContent='Sending…';
+  const row={plot:val('cv_interest'),site:'Royal Palm Enclave, Tsopoli',date:today(),time:val('cv_day'),
+    people:num(val('cv_ppl')),transport:val('cv_trans'),purpose:val('cv_purpose'),pickup:val('cv_pickup').trim(),notes:''};
+  try{
+    const rec=await apiClientInsertSiteVisit(row); CLIENT_DB.sitevisits.unshift(rec);
+    toast("Visit request sent — we'll confirm the date and time shortly.");
+    route('clienthome');
+  }catch(e){ toast('Could not send request: '+(e.message||e)); btn.disabled=false; btn.textContent='Submit request'; }
+}
+function formClientFeedback(){
+  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">We're listening</div><h2>Feedback &amp; enquiries</h2><p>Ask a question or tell us how we're doing.</p></div></div>
+  <div class="formwrap">
+    ${fld('This is a',sel('cf_type',['General enquiry','Complaint']))}
+    <div id="cf_catWrap" class="hidden">${fld('Category',sel('cf_cat',['Payment issue','Plot allocation','Communication','Other']))}</div>
+    ${fld('Message *','<textarea id="cf_msg" rows="5"></textarea>')}
+    <div class="formactions"><button class="btn gold" id="saveCF">Send</button></div>
+  </div>`;
+  const typeSel=document.getElementById('cf_type');
+  const toggleCat=()=>document.getElementById('cf_catWrap').classList.toggle('hidden',typeSel.value!=='Complaint');
+  typeSel.addEventListener('change',toggleCat); toggleCat();
+  document.getElementById('saveCF').onclick=saveClientFeedback;
+}
+async function saveClientFeedback(){
+  const msg=val('cf_msg').trim();
+  if(!msg){ toast('Please enter a message'); return; }
+  const btn=document.getElementById('saveCF'); btn.disabled=true; btn.textContent='Sending…';
+  try{
+    if(val('cf_type')==='Complaint'){
+      const rec=await apiClientInsertComplaint({category:val('cf_cat'),details:msg}); CLIENT_DB.complaints.unshift(rec);
+    } else {
+      const rec=await apiClientInsertEnquiry({details:msg}); CLIENT_DB.enquiries.unshift(rec);
+    }
+    toast("Thanks — we've received your message.");
+    route('clienthome');
+  }catch(e){ toast('Could not send: '+(e.message||e)); btn.disabled=false; btn.textContent='Send'; }
+}
+function formClientSettings(){
+  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Settings</div><h2>Your account</h2></div></div>
+  <div class="sectitle" style="margin-top:0"><h3>Profile picture</h3></div>
+  <div class="formwrap" style="display:flex;align-items:center;gap:16px">
+    <div id="clientAvatarPreview" style="width:64px;height:64px;border-radius:100px;overflow:hidden;flex:0 0 auto;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted);font-size:22px">${CLIENT_PROFILE.avatar?`<img src="${CLIENT_PROFILE.avatar}" style="width:100%;height:100%;object-fit:cover"/>`:esc((CLIENT_PROFILE.name||'?')[0])}</div>
+    <div style="flex:1"><input type="file" id="clientAvatarInput" accept="image/*"/><div class="mini" style="margin-top:6px">You'll be able to crop and zoom before it's saved.</div></div>
+  </div>
+  <div class="sectitle"><h3>Change your PIN</h3></div>
+  <div class="formwrap">
+    <div class="mini" style="margin-bottom:14px">${CLIENT_PROFILE.isDefaultPin?"You're currently using the default PIN (1122) — set your own below.":'Choose a new 4–6 digit PIN.'}</div>
+    ${fld('New PIN','<input id="cs_pin1" type="password" inputmode="numeric" maxlength="6" placeholder="4–6 digits"/>')}
+    ${fld('Confirm new PIN','<input id="cs_pin2" type="password" inputmode="numeric" maxlength="6" placeholder="Re-enter PIN"/>')}
+    <div class="formactions"><button class="btn primary" id="saveClientPin">Update PIN</button></div>
+  </div>`;
+  const avInput=document.getElementById('clientAvatarInput');
+  avInput.onchange=async(e)=>{ const file=e.target.files[0]; e.target.value=''; if(!file) return;
+    const b64=await openAvatarCropper(file); if(!b64) return;
+    try{ await apiClientUpdateAvatar(b64); document.getElementById('clientAvatarPreview').innerHTML=`<img src="${b64}" style="width:100%;height:100%;object-fit:cover"/>`; paintTopbarAvatar(); toast('Profile picture updated'); }
+    catch(err){ toast('Could not save photo: '+(err.message||err)); }
+  };
+  document.getElementById('saveClientPin').onclick=async()=>{
+    const p1=val('cs_pin1'),p2=val('cs_pin2');
+    if(!/^\d{4,6}$/.test(p1)){ toast('PIN must be 4–6 digits'); return; }
+    if(p1!==p2){ toast('PINs do not match'); return; }
+    const btn=document.getElementById('saveClientPin'); btn.disabled=true; btn.textContent='Saving…';
+    try{ await apiClientChangePin(p1); toast('PIN updated'); formClientSettings(); }
+    catch(e){ toast('Could not update PIN: '+(e.message||e)); btn.disabled=false; btn.textContent='Update PIN'; }
+  };
 }
 
 /* ================= MANAGER ================= */
