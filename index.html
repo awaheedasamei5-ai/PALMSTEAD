@@ -107,6 +107,7 @@ a{color:var(--green2)}
   border:1px solid rgba(255,255,255,.14);border-radius:22px;padding:22px;backdrop-filter:blur(10px);
   animation:fadeUp .55s .05s ease both;box-shadow:0 30px 70px rgba(0,0,0,.35)}
 .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:#9DB2CC;margin:2px 2px 10px;font-weight:600}
+#chooseStaffBtn:hover,#chooseClientBtn:hover{background:rgba(255,255,255,.12);border-color:var(--gold);box-shadow:0 0 0 3px rgba(132,204,22,.15)}
 
 /* custom dropdown */
 .dd{position:relative}
@@ -629,7 +630,24 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
     <div class="sub">Internal activity &amp; pipeline system · Royal Palm Enclave</div>
   </div>
 
-  <div class="card-auth" id="authCard">
+  <div class="card-auth" id="roleChoice">
+    <div class="lbl">Sign in as</div>
+    <div style="display:flex;gap:12px">
+      <button id="chooseStaffBtn" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 12px;border-radius:16px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;transition:.15s">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect x="3" y="8" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 8V6a2 2 0 012-2h4a2 2 0 012 2v2" stroke="currentColor" stroke-width="1.8"/></svg>
+        <span style="font-weight:700;font-size:13.5px">Staff</span>
+        <span style="font-size:10.5px;color:#9DB2CC">Agents &amp; Management</span>
+      </button>
+      <button id="chooseClientBtn" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 12px;border-radius:16px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;transition:.15s">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M4 11l8-7 8 7v8a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1v-8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        <span style="font-weight:700;font-size:13.5px">Client</span>
+        <span style="font-size:10.5px;color:#9DB2CC">View your purchase &amp; payments</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="card-auth hidden" id="authCard">
+    <button class="linkbtn" id="staffBackBtn" style="text-align:left;margin:0 0 12px;padding:0;width:auto">← Choose a different sign-in</button>
     <div class="lbl">Select your name</div>
     <div class="dd" id="nameDD">
       <button class="dd-trigger" id="ddTrigger" type="button">
@@ -655,10 +673,6 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
     </div>
     <button class="signin" id="signBtn" disabled>Sign in</button>
     <div class="err" id="loginErr"></div>
-    <button class="linkbtn" id="clientPortalLink" style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:2px">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 11l8-7 8 7v8a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1v-8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-      I'm a client — access my account
-    </button>
     <div class="demo-banner" id="demoBanner">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.7"/><path d="M12 8v5m0 3.5h.01" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
       <span><b>Demo mode</b> — you're viewing this with sample data preloaded. Pick any name and tap Sign in (password not checked yet). Connect Supabase below to make it live for your real team.</span>
@@ -921,7 +935,11 @@ function defaultConfig(){ return {
   targetPlotsPerMonth:2,
   commissionPct:3,
   commissionFullCap:1000, commissionHalfCap:500, commissionPoolPerPlot:500, lastCommissionMonth:'',
-  note:''
+  note:'',
+  quoteCompanyName:'Trulander JSF Limited', quoteSiteName:'Royal Palm Enclave, Tsopoli',
+  quoteIntroText:'Thank you for your interest in Royal Palm Enclave. Please find below your personalized quotation.',
+  quoteDisclaimerText:'This quotation is valid for 14 days from the date above. Prices and payment plans are subject to change without notice. A deposit is required to secure your plot(s) and lock in this payment plan.',
+  receiptThanksText:'Thank you for your payment. This receipt confirms the amount above was received by us and applied to your account.'
 };}
 let CONFIG=defaultConfig();
 function PRICING(){ return {'Full Plot':{list:num(CONFIG.fullPrice),disc:num(CONFIG.fullDiscount),eq:1},
@@ -1757,7 +1775,7 @@ async function apiInsertQuotationRequest(row){
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),requestedBy:PROFILE.key,requestedByName:PROFILE.name,...row,createdAt:new Date().toISOString()};
     d.quotations=d.quotations||[]; d.quotations.unshift(rec); await demoSave(); return rec; }
   const dbrow={requested_by:PROFILE.key,requested_by_name:PROFILE.name,client_name:row.clientName,client_address:row.clientAddress||null,
-    client_contact:row.clientContact||null,plot_type:row.plotType,no_plots:row.noPlots,payment_period:row.paymentPeriod,
+    client_contact:row.clientContact||null,client_email:row.clientEmail||null,plot_type:row.plotType,no_plots:row.noPlots,payment_period:row.paymentPeriod,
     list_total:row.listTotal,discount_total:row.discountTotal,interest_total:row.interestTotal,grand_total:row.grandTotal};
   try{ const {data,error}=await sb.from('quotation_requests').insert(dbrow).select().single(); if(error) throw error; return data; }
   catch(e){ return null; }
@@ -1798,7 +1816,12 @@ async function apiLoadConfig(){
       commissionPoolPerPlot:data.commission_pool_per_plot!=null?num(data.commission_pool_per_plot):500,
       lastCommissionMonth:data.last_commission_month||'',
       targetPlotsPerMonth:data.target_plots_per_month!=null?num(data.target_plots_per_month):2, note:data.note||'',
-      companyPhone:data.company_phone||'',companyWhatsapp:data.company_whatsapp||'',companyEmail:data.company_email||''}; }
+      companyPhone:data.company_phone||'',companyWhatsapp:data.company_whatsapp||'',companyEmail:data.company_email||'',
+      quoteCompanyName:data.quote_company_name||defaultConfig().quoteCompanyName,
+      quoteSiteName:data.quote_site_name||defaultConfig().quoteSiteName,
+      quoteIntroText:data.quote_intro_text||defaultConfig().quoteIntroText,
+      quoteDisclaimerText:data.quote_disclaimer_text||defaultConfig().quoteDisclaimerText,
+      receiptThanksText:data.receipt_thanks_text||defaultConfig().receiptThanksText}; }
   }catch(e){}
   return CONFIG;
 }
@@ -1810,7 +1833,10 @@ async function apiSaveConfig(patch){
     targets:CONFIG.targets,commission_pct:CONFIG.commissionPct,target_plots_per_month:CONFIG.targetPlotsPerMonth,note:CONFIG.note||'',
     commission_full_cap:CONFIG.commissionFullCap,commission_half_cap:CONFIG.commissionHalfCap,
     commission_pool_per_plot:CONFIG.commissionPoolPerPlot,last_commission_month:CONFIG.lastCommissionMonth||'',
-    company_phone:CONFIG.companyPhone||'',company_whatsapp:CONFIG.companyWhatsapp||'',company_email:CONFIG.companyEmail||''};
+    company_phone:CONFIG.companyPhone||'',company_whatsapp:CONFIG.companyWhatsapp||'',company_email:CONFIG.companyEmail||'',
+    quote_company_name:CONFIG.quoteCompanyName||'',quote_site_name:CONFIG.quoteSiteName||'',
+    quote_intro_text:CONFIG.quoteIntroText||'',quote_disclaimer_text:CONFIG.quoteDisclaimerText||'',
+    receipt_thanks_text:CONFIG.receiptThanksText||''};
   const {error}=await sb.from('app_config').upsert(row); if(error) throw error;
 }
 async function apiSaveBirthday(agentKey,birthday){
@@ -2564,7 +2590,8 @@ document.getElementById('logoutBtn').onclick=async()=>{
   USER=PROFILE=pickStaff=null; IS_CLIENT=false; CLIENT_PROFILE=null; CLIENT_DB=null;
   DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[]};
   document.getElementById('app').classList.add('hidden'); document.getElementById('login').classList.remove('hidden');
-  document.getElementById('clientCard').classList.add('hidden'); document.getElementById('authCard').classList.remove('hidden');
+  document.getElementById('clientCard').classList.add('hidden'); document.getElementById('authCard').classList.add('hidden');
+  document.getElementById('roleChoice').classList.remove('hidden');
   syncDemoBannerVisibility();
   document.getElementById('ddLabel').textContent='Choose your name';
   document.querySelectorAll('#ddPanel .dd-item').forEach(el=>el.classList.remove('sel'));
@@ -2683,16 +2710,24 @@ async function provisionProfile(user,fallbackName){
 /* ================= CLIENT PORTAL: LOGIN ================= */
 let IS_CLIENT=false, CLIENT_PROFILE=null, CLIENT_DB=null;
 let clientStep='search', clientMatch=null, clientPhone='', clientSearchTimer=null;
-document.getElementById('clientPortalLink').onclick=()=>{
-  if(DEMO_MODE){ toast('Client portal needs a connected Supabase project — not available in demo mode.'); return; }
+document.getElementById('chooseStaffBtn').onclick=()=>{
+  document.getElementById('roleChoice').classList.add('hidden');
+  document.getElementById('authCard').classList.remove('hidden');
+};
+document.getElementById('staffBackBtn').onclick=()=>{
   document.getElementById('authCard').classList.add('hidden');
+  document.getElementById('roleChoice').classList.remove('hidden');
+};
+document.getElementById('chooseClientBtn').onclick=()=>{
+  if(DEMO_MODE){ toast('Client portal needs a connected Supabase project — not available in demo mode.'); return; }
+  document.getElementById('roleChoice').classList.add('hidden');
   clientStep='search'; clientMatch=null; clientPhone='';
   document.getElementById('clientCard').classList.remove('hidden');
   renderClientStep();
 };
 function closeClientCard(){
   document.getElementById('clientCard').classList.add('hidden');
-  document.getElementById('authCard').classList.remove('hidden');
+  document.getElementById('roleChoice').classList.remove('hidden');
 }
 function renderClientStep(){
   const el=document.getElementById('clientCardInner');
@@ -2702,7 +2737,7 @@ function renderClientStep(){
       <input id="cp_name" placeholder="Start typing your full name…" autocomplete="off"/>
       <div id="cp_results" style="margin:-4px 0 4px"></div>
       <div class="err" id="clientErr"></div>
-      <button class="linkbtn" id="clientBackBtn">← Back to staff sign in</button>`;
+      <button class="linkbtn" id="clientBackBtn">← Back to sign-in options</button>`;
     document.getElementById('clientBackBtn').onclick=closeClientCard;
     const nameInp=document.getElementById('cp_name');
     nameInp.focus();
@@ -6095,6 +6130,63 @@ function pdfHeader(doc,title){
   doc.setTextColor(20,20,20);
   return 34;
 }
+/* Premium branded header used by client-facing documents (quotation, receipt) --
+   circular logo, bold title + subtitle, right-aligned ref/date lines. */
+function pdfBrandedHeader(doc,title,subtitle,rightLines){
+  const pageW=doc.internal.pageSize.getWidth();
+  doc.setFillColor(11,30,61); doc.rect(0,0,pageW,32,'F');
+  try{ doc.addImage(LOGO_SRC,'PNG',14,7,20,20); }catch(e){}
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(17);
+  doc.text(title,42,16);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(200,214,235);
+  doc.text(subtitle,42,23);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(200,214,235);
+  (rightLines||[]).forEach((line,i)=>{ doc.text(line,pageW-14,13+i*6,{align:'right'}); });
+  doc.setTextColor(20,20,20);
+  return 42;
+}
+function pdfStatCard(doc,x,y,w,label,value){
+  doc.setFillColor(244,246,248); doc.rect(x,y,w,17,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(6.8); doc.setTextColor(100,112,133);
+  doc.text(label.toUpperCase(),x+4,y+6.5);
+  doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(20,20,20);
+  doc.text(String(value),x+4,y+13.5);
+}
+function pdfDarkStatBar(doc,y,pageW,items){
+  const barH=22; doc.setFillColor(11,30,61); doc.rect(12,y,pageW-24,barH,'F');
+  const w=(pageW-24)/items.length;
+  items.forEach((it,i)=>{
+    const x=12+w*i+6;
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.8); doc.setTextColor(180,196,222);
+    doc.text(it.label.toUpperCase(),x,y+9);
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(255,255,255);
+    doc.text(String(it.value),x,y+17);
+  });
+  doc.setTextColor(20,20,20);
+  return y+barH+9;
+}
+function pdfScheduleTable(doc,y,pageW,rows){
+  const usableW=pageW-24;
+  const colX=[12,12+usableW*0.16,12+usableW*0.44,12+usableW*0.72];
+  const rowH=7;
+  doc.setFillColor(11,30,61); doc.rect(12,y,usableW,rowH,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(255,255,255);
+  doc.text('MONTH',colX[0]+3,y+4.8); doc.text('OPENING BALANCE',colX[1],y+4.8);
+  doc.text('MONTHLY PAYMENT',colX[2],y+4.8); doc.text('CLOSING BALANCE',colX[3],y+4.8);
+  y+=rowH;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+  rows.forEach((r,i)=>{
+    if(y>272){ doc.addPage(); y=16; }
+    if(i%2===1){ doc.setFillColor(244,246,248); doc.rect(12,y,usableW,rowH,'F'); }
+    doc.setTextColor(20,20,20);
+    doc.text(String(r.month),colX[0]+3,y+4.8);
+    doc.text(ghs(r.opening),colX[1],y+4.8);
+    doc.text(ghs(r.payment),colX[2],y+4.8);
+    doc.text(ghs(r.closing),colX[3],y+4.8);
+    y+=rowH;
+  });
+  return y+7;
+}
 function pdfFields(doc,y,fields){
   const pageW=doc.internal.pageSize.getWidth();
   fields.forEach(([label,value])=>{
@@ -6491,6 +6583,7 @@ async function saveAccountContact(){
   btn.disabled=false; btn.textContent='Save contact info';
 }
 /* ================= QUOTATION REQUEST (available on every dashboard) ================= */
+const QUOTE_DEPOSIT_PCT=0.3;
 function computeQuotationTotals(plotType,noPlots,period){
   const p=PRICING()[plotType]||PRICING()['Full Plot'];
   const listTotal=p.list*noPlots;
@@ -6498,7 +6591,22 @@ function computeQuotationTotals(plotType,noPlots,period){
   const net=Math.max(listTotal-discountTotal,0);
   const eq=p.eq*noPlots;
   const interestTotal=(INTEREST()[period]||0)*eq;
-  return {listTotal,discountTotal,net,interestTotal,grand:net+interestTotal};
+  const grand=net+interestTotal;
+  const planMonths=PLAN_MONTHS[period]||0;
+  let deposit=0,balance=grand,monthlyDue=0,schedule=[];
+  if(planMonths && grand>0){
+    deposit=Math.round(grand*QUOTE_DEPOSIT_PCT);
+    balance=grand-deposit;
+    monthlyDue=Math.round(balance/planMonths);
+    let opening=balance;
+    for(let m=1;m<=planMonths;m++){
+      const payment=(m===planMonths)?opening:monthlyDue;
+      const closing=Math.max(0,Math.round((opening-payment)*100)/100);
+      schedule.push({month:m,opening,payment,closing});
+      opening=closing;
+    }
+  }
+  return {listTotal,discountTotal,net,interestTotal,grand,planMonths,deposit,balance,monthlyDue,schedule};
 }
 function openQuotationRequest(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
@@ -6506,7 +6614,8 @@ function openQuotationRequest(){
   ov.innerHTML=`<div id="announceModal">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Request a quotation</div><button id="closeQuoteReq" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     ${fld('Client name *','<input id="q_name" placeholder="Full name"/>')}
-    <div class="grid2">${fld('Contact','<input id="q_contact" placeholder="0244…"/>')}${fld('Address','<input id="q_address" placeholder="City / area"/>')}</div>
+    <div class="grid2">${fld('Contact','<input id="q_contact" placeholder="0244…"/>')}${fld('Email','<input id="q_email" type="email" placeholder="optional"/>')}</div>
+    ${fld('Address','<input id="q_address" placeholder="City / area"/>')}
     <div class="grid2">${fld('Plot type',sel('q_plottype',['Full Plot','Half Plot']))}${fld('No. of plots','<input id="q_noplots" type="number" min="0.5" step="0.5" value="1"/>')}</div>
     ${fld('Payment period',sel('q_period',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}
     <div id="quotePreview" class="formwrap" style="margin-top:4px"></div>
@@ -6522,20 +6631,22 @@ function openQuotationRequest(){
       <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span class="mini">List price</span><span>${ghs(t.listTotal)}</span></div>
       ${t.discountTotal?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span class="mini">Discount</span><span>-${ghs(t.discountTotal)}</span></div>`:''}
       ${t.interestTotal?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span class="mini">Interest (${esc(period)})</span><span>${ghs(t.interestTotal)}</span></div>`:''}
-      <div style="display:flex;justify-content:space-between;font-weight:800;font-size:15px;padding-top:6px;margin-top:4px;border-top:1px solid var(--line)"><span>Total</span><span>${ghs(t.grand)}</span></div>`;
+      <div style="display:flex;justify-content:space-between;font-weight:800;font-size:15px;padding-top:6px;margin-top:4px;border-top:1px solid var(--line)"><span>Total</span><span>${ghs(t.grand)}</span></div>
+      ${t.planMonths?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;margin-top:4px"><span class="mini">Deposit (${Math.round(QUOTE_DEPOSIT_PCT*100)}%)</span><span>${ghs(t.deposit)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span class="mini">Monthly due × ${t.planMonths}</span><span>${ghs(t.monthlyDue)}</span></div>`:''}`;
   };
   ['q_plottype','q_noplots','q_period'].forEach(id=>document.getElementById(id).addEventListener('input',paintPreview));
   paintPreview();
   document.getElementById('genQuoteBtn').onclick=async()=>{
     const clientName=val('q_name').trim(); if(!clientName){ toast("Enter the client's name"); return; }
     const plotType=val('q_plottype'), noPlots=num(val('q_noplots'))||1, period=val('q_period');
-    const contact=val('q_contact').trim(), address=val('q_address').trim();
+    const contact=val('q_contact').trim(), address=val('q_address').trim(), email=val('q_email').trim();
     const t=computeQuotationTotals(plotType,noPlots,period);
     const btn=document.getElementById('genQuoteBtn'); btn.disabled=true; btn.textContent='Generating…';
     try{
-      await apiInsertQuotationRequest({clientName,clientAddress:address,clientContact:contact,plotType,noPlots,paymentPeriod:period,
+      await apiInsertQuotationRequest({clientName,clientAddress:address,clientContact:contact,clientEmail:email,plotType,noPlots,paymentPeriod:period,
         listTotal:t.listTotal,discountTotal:t.discountTotal,interestTotal:t.interestTotal,grandTotal:t.grand});
-      buildQuotationPDF({clientName,address,contact,plotType,noPlots,period,...t});
+      buildQuotationPDF({clientName,address,contact,email,plotType,noPlots,period,...t});
       toast('Quotation generated'); ov.remove();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Generate quotation PDF'; }
   };
@@ -6544,36 +6655,62 @@ function buildQuotationPDF(q){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
   const pageW=doc.internal.pageSize.getWidth();
-  let y=pdfHeader(doc,'QUOTATION'); y+=8;
-  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(11,30,61);
-  doc.text('Prepared for '+q.clientName,12,y); y+=7;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(100,112,133);
-  doc.text(today(),12,y); y+=10;
+  const ref=Math.random().toString(16).slice(2,10).toUpperCase();
+  const dateStr=new Date().toLocaleDateString('en-GB');
+  const siteName=CONFIG.quoteSiteName||'Royal Palm Enclave, Tsopoli';
+  const companyName=CONFIG.quoteCompanyName||'Trulander JSF Limited';
+  let y=pdfBrandedHeader(doc,'QUOTATION',siteName,['Ref: '+ref,'Date: '+dateStr]);
+  y+=8;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(60,68,82);
+  const introLines=doc.splitTextToSize(CONFIG.quoteIntroText||`Thank you for your interest in ${siteName}. Please find below your personalized quotation.`,pageW-24);
+  doc.text(introLines,12,y); y+=introLines.length*5+6;
 
-  y=pdfSectionBar(doc,y,pageW,'CLIENT DETAILS');
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
-  doc.text('Name: '+q.clientName,12,y); y+=5.5;
-  if(q.contact){ doc.text('Contact: '+q.contact,12,y); y+=5.5; }
-  if(q.address){ doc.text('Address: '+q.address,12,y); y+=5.5; }
-  y+=4;
+  doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(100,112,133);
+  doc.text('QUOTED TO',12,y); y+=6;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.setTextColor(20,20,20);
+  doc.text(q.clientName,12,y); y+=6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(60,68,82);
+  if(q.address){ doc.text(q.address,12,y); y+=5.5; }
+  const contactLine=[q.contact,q.email].filter(Boolean).join('   ·   ');
+  if(contactLine){ doc.text(contactLine,12,y); y+=5.5; }
+  y+=6;
 
-  y=pdfSectionBar(doc,y,pageW,'PLOT & PAYMENT DETAILS');
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
-  doc.text('Plot type: '+q.plotType,12,y); y+=5.5;
-  doc.text('Number of plots: '+q.noPlots,12,y); y+=5.5;
-  doc.text('Payment period: '+q.period,12,y); y+=9;
+  const gap=4, cardW=(pageW-24-gap*2)/3;
+  pdfStatCard(doc,12,y,cardW,'No of plots',String(q.noPlots));
+  pdfStatCard(doc,12+cardW+gap,y,cardW,'Original plot price',ghs(q.listTotal/q.noPlots));
+  pdfStatCard(doc,12+(cardW+gap)*2,y,cardW,'Discount',ghs((q.discountTotal||0)/q.noPlots));
+  y+=17+5;
+  pdfStatCard(doc,12,y,cardW,'Interest',ghs((q.interestTotal||0)/q.noPlots));
+  pdfStatCard(doc,12+cardW+gap,y,cardW,'Cost with interest',ghs((q.net+q.interestTotal)/q.noPlots));
+  pdfStatCard(doc,12+(cardW+gap)*2,y,cardW,'Payment plan',q.planMonths?(Math.round(QUOTE_DEPOSIT_PCT*100)+'% / '+q.period):'Outright');
+  y+=17+10;
 
-  y=pdfSectionBar(doc,y,pageW,'PRICE BREAKDOWN');
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
-  doc.text('List price',12,y); doc.text(ghs(q.listTotal),pageW-12,y,{align:'right'}); y+=6;
-  if(q.discountTotal){ doc.text('Discount',12,y); doc.text('-'+ghs(q.discountTotal),pageW-12,y,{align:'right'}); y+=6; }
-  if(q.interestTotal){ doc.text('Interest ('+q.period+')',12,y); doc.text(ghs(q.interestTotal),pageW-12,y,{align:'right'}); y+=6; }
-  doc.setDrawColor(200,200,200); doc.line(12,y,pageW-12,y); y+=6;
-  doc.setFont('helvetica','bold'); doc.setFontSize(12);
-  doc.text('TOTAL',12,y); doc.text(ghs(q.grand),pageW-12,y,{align:'right'}); y+=12;
+  if(q.planMonths){
+    y=pdfDarkStatBar(doc,y,pageW,[
+      {label:'Total value',value:ghs(q.grand)},
+      {label:'Deposit',value:ghs(q.deposit)},
+      {label:'Balance',value:ghs(q.balance)},
+      {label:'Monthly due',value:ghs(q.monthlyDue)}
+    ]);
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(20,20,20);
+    doc.text('Payment Schedule',12,y); y+=6;
+    y=pdfScheduleTable(doc,y,pageW,q.schedule);
+  } else {
+    y=pdfDarkStatBar(doc,y,pageW,[{label:'Total due (outright)',value:ghs(q.grand)}]);
+  }
 
-  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(120,120,120);
-  doc.text('This quotation is valid for 14 days from the date above and is subject to plot availability at the time of payment.',12,y,{maxWidth:pageW-24});
+  y+=6;
+  if(y>250){ doc.addPage(); y=20; }
+  doc.setFont('helvetica','italic'); doc.setFontSize(8.5); doc.setTextColor(120,120,120);
+  const discLines=doc.splitTextToSize(CONFIG.quoteDisclaimerText||'This quotation is valid for 14 days from the date above. Prices and payment plans are subject to change without notice. A deposit is required to secure your plot(s) and lock in this payment plan.',pageW-24);
+  doc.text(discLines,12,y); y+=discLines.length*4.5+14;
+  doc.setDrawColor(220,220,220); doc.line(12,y,90,y); y+=5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(60,68,82);
+  doc.text('Authorized Signature',12,y);
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(140,140,140);
+  doc.text(companyName+' — '+siteName,12,290);
+  doc.text('Generated '+dateStr,pageW-12,290,{align:'right'});
 
   const fname='Quotation_'+q.clientName.replace(/\s+/g,'_')+'_'+today()+'.pdf';
   const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
@@ -6645,21 +6782,48 @@ function buildClientReceiptPDF(payment,lead){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
   const pageW=doc.internal.pageSize.getWidth();
-  let y=pdfHeader(doc,'PAYMENT RECEIPT'); y+=8;
-  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(11,30,61);
-  doc.text('Received from '+CLIENT_PROFILE.name,12,y); y+=7;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(100,112,133);
-  doc.text(payment.date||today(),12,y); y+=10;
-  y=pdfSectionBar(doc,y,pageW,'PAYMENT DETAILS');
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
-  doc.text('Client: '+CLIENT_PROFILE.name,12,y); y+=5.5;
-  if(lead){ doc.text('Plot: '+(lead.plotType||'')+' x '+(lead.noPlots||1),12,y); y+=5.5; }
-  doc.text('Date: '+(payment.date||''),12,y); y+=9;
-  y=pdfSectionBar(doc,y,pageW,'AMOUNT');
-  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(20,20,20);
-  doc.text('AMOUNT PAID',12,y); doc.text(ghs(payment.amount),pageW-12,y,{align:'right'}); y+=12;
-  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(120,120,120);
-  doc.text('This receipt confirms the payment above was received by PEP Landbank. Keep it for your records.',12,y,{maxWidth:pageW-24});
+  const ref=Math.random().toString(16).slice(2,10).toUpperCase();
+  const dateStr=payment.date?new Date(payment.date+'T00:00:00').toLocaleDateString('en-GB'):new Date().toLocaleDateString('en-GB');
+  const siteName=CONFIG.quoteSiteName||'Royal Palm Enclave, Tsopoli';
+  const companyName=CONFIG.quoteCompanyName||'Trulander JSF Limited';
+  let y=pdfBrandedHeader(doc,'RECEIPT',siteName,['No: '+ref,'Date: '+dateStr]);
+  y+=8;
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(100,112,133);
+  doc.text('RECEIVED FROM',12,y); y+=6;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.setTextColor(20,20,20);
+  doc.text(CLIENT_PROFILE.name,12,y); y+=6;
+  if(lead){
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(60,68,82);
+    doc.text('For: '+(lead.plotType||'Plot')+' × '+(lead.noPlots||1),12,y); y+=5.5;
+  }
+  y+=8;
+
+  y=pdfDarkStatBar(doc,y,pageW,[{label:'Amount paid',value:ghs(payment.amount)}]);
+  y+=2;
+
+  if(lead){
+    const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand;
+    const paid=num(lead.amtPaid); const bal=Math.max(grand-paid,0);
+    const gap=4, cardW=(pageW-24-gap*2)/3;
+    pdfStatCard(doc,12,y,cardW,'Total price',ghs(grand));
+    pdfStatCard(doc,12+cardW+gap,y,cardW,'Paid to date',ghs(paid));
+    pdfStatCard(doc,12+(cardW+gap)*2,y,cardW,'Balance remaining',ghs(bal));
+    y+=17+12;
+  } else y+=6;
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(60,68,82);
+  const thanksLines=doc.splitTextToSize(CONFIG.receiptThanksText||'Thank you for your payment. This receipt confirms the amount above was received by us and applied to your account.',pageW-24);
+  doc.text(thanksLines,12,y); y+=thanksLines.length*5+14;
+
+  doc.setDrawColor(220,220,220); doc.line(12,y,90,y); y+=5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(60,68,82);
+  doc.text('Authorized Signature',12,y);
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(140,140,140);
+  doc.text(companyName+' — '+siteName,12,290);
+  doc.text('Generated '+new Date().toLocaleDateString('en-GB'),pageW-12,290,{align:'right'});
+
   const fname='Receipt_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
   doc.save(fname);
 }
@@ -7546,6 +7710,16 @@ function mgrSettings(){
   <div class="formactions"><button class="btn primary" id="saveCompanyContact">Save company contact info</button></div>
   </div>
 
+  <div class="sectitle"><h3>Quotation &amp; receipt text</h3><span class="cnt">everything printed on client-facing PDFs</span></div>
+  <div class="formwrap">
+  <p class="mini" style="margin:-2px 0 14px">Rewrite any of this to match how you want quotations and receipts to actually read — nothing here is fixed except the numbers, which always come from the pricing below.</p>
+  <div class="grid2">${fld('Company legal name','<input id="cfg_quoteCompanyName" value="'+esc(CONFIG.quoteCompanyName||'')+'"/>','shown in the footer of every quotation &amp; receipt')}${fld('Site / project name','<input id="cfg_quoteSiteName" value="'+esc(CONFIG.quoteSiteName||'')+'"/>','shown under the logo in the header')}</div>
+  ${fld('Quotation intro line','<textarea id="cfg_quoteIntroText" rows="2">'+esc(CONFIG.quoteIntroText||'')+'</textarea>','appears just above "Quoted to"')}
+  ${fld('Quotation disclaimer','<textarea id="cfg_quoteDisclaimerText" rows="3">'+esc(CONFIG.quoteDisclaimerText||'')+'</textarea>','small print near the signature line')}
+  ${fld('Receipt thank-you text','<textarea id="cfg_receiptThanksText" rows="2">'+esc(CONFIG.receiptThanksText||'')+'</textarea>','appears on every payment receipt')}
+  <div class="formactions"><button class="btn primary" id="saveQuoteText">Save text</button></div>
+  </div>
+
   <div class="sectitle"><h3>Plot pricing</h3><span class="cnt">applies to new leads immediately</span></div>
   <div class="formwrap">
   <div class="grid2">${fld('Full Plot price (GHS)','<input id="cfg_fullPrice" type="number" value="'+CONFIG.fullPrice+'"/>')}${fld('Full Plot standard discount (GHS)','<input id="cfg_fullDiscount" type="number" value="'+CONFIG.fullDiscount+'"/>')}</div>
@@ -7638,6 +7812,16 @@ function bindSettingsCtrls(){
       toast('Company contact info saved');
     }catch(e){ toast('Failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save company contact info';
+  };
+  document.getElementById('saveQuoteText').onclick=async()=>{
+    const btn=document.getElementById('saveQuoteText'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      await apiSaveConfig({quoteCompanyName:val('cfg_quoteCompanyName').trim(),quoteSiteName:val('cfg_quoteSiteName').trim(),
+        quoteIntroText:val('cfg_quoteIntroText').trim(),quoteDisclaimerText:val('cfg_quoteDisclaimerText').trim(),
+        receiptThanksText:val('cfg_receiptThanksText').trim()});
+      toast('Text saved');
+    }catch(e){ toast('Failed: '+(e.message||e)); }
+    btn.disabled=false; btn.textContent='Save text';
   };
   document.getElementById('saveCfg').onclick=async()=>{
     const btn=document.getElementById('saveCfg'); btn.disabled=true; btn.textContent='Saving…';
