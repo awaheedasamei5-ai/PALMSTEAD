@@ -1,0 +1,25 @@
+{
+  "appId": "com.peplandbank.palmstead",
+  "appName": "Palmstead",
+  "webDir": "www",
+  "backgroundColor": "#0B1E3D",
+  "server": {
+    "url": "https://awaheedasamei5-ai.github.io/pep-landbank-portal/",
+    "cleartext": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "backgroundColor": "#0B1E3D",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  },
+  "android": {
+    "backgroundColor": "#0B1E3D"
+  }
+}

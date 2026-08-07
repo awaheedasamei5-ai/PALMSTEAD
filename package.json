@@ -1,0 +1,33 @@
+{
+  "name": "palmstead",
+  "version": "1.0.0",
+  "description": "Palmstead (PEP Landbank) sales portal -- single-page web app, wrapped for Android/iOS with Capacitor.",
+  "main": "index.html",
+  "scripts": {
+    "sync:web": "node scripts/sync-web.js",
+    "cap:sync": "npm run sync:web && npx cap sync",
+    "android:open": "npm run cap:sync && npx cap open android"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/awaheedasamei5-ai/pep-landbank-portal.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/awaheedasamei5-ai/pep-landbank-portal/issues"
+  },
+  "homepage": "https://github.com/awaheedasamei5-ai/pep-landbank-portal#readme",
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/push-notifications": "^8.1.2",
+    "@capacitor/splash-screen": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.0"
+  }
+}
