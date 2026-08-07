@@ -1879,6 +1879,34 @@ async function checkBirthdaysToday(){
     }
   }catch(e){}
 }
+/* Runs from a Management session only, same reasoning as checkBirthdaysToday --
+   avoids two different sessions both texting the same client the same day.
+   payment_reminders_log dedupes per lead per month so this is safe to run on
+   every sign-in rather than needing a real cron job. */
+async function checkPaymentDueReminders(){
+  if(PROFILE.role!=='manager' || DEMO_MODE) return;
+  try{
+    const monthKey=today().slice(0,7);
+    const {data:already,error}=await sb.from('payment_reminders_log').select('lead_id').eq('month_key',monthKey);
+    if(error) return;
+    const sentSet=new Set((already||[]).map(r=>r.lead_id));
+    const nudges=[];
+    for(const l of (DB.leads||[])){
+      if(sentSet.has(l.id) || !PLAN_MONTHS[l.paymentPlan] || isFullyPaid(l)) continue;
+      const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id);
+      const sched=computeMonthlySchedule(l,myPayments);
+      if(!sched || sched.nextDueDate!==today()) continue;
+      if(l.contact) apiSendSms(l.contact,`Hi ${l.name}, a friendly reminder that your monthly payment of ${ghs(sched.monthlyInstallment)} for your plot at Royal Palm Enclave is due today. - PEP Landbank`,'payment_due_reminder');
+      nudges.push(l.name+(l.agent?(' ('+l.agent+')'):''));
+      try{ await sb.from('payment_reminders_log').insert({lead_id:l.id,month_key:monthKey}); }catch(e){}
+    }
+    if(nudges.length){
+      toast(nudges.length+' client'+(nudges.length===1?'':'s')+' had a payment due today — reminder SMS sent');
+      try{ const msgRec=await apiSendMessage('elias','Payment due today (reminder SMS already sent to the client) — please follow up:\n'+nudges.join('\n'));
+        if(msgRec) DB.messages.push(msgRec); }catch(e){}
+    }
+  }catch(e){}
+}
 
 /* ---- deletes ---- */
 async function apiDeleteLead(id,agentKey){
@@ -2576,6 +2604,7 @@ async function enterApp(){
   checkClockSanity();
   checkBirthdaysToday();
   checkMonthlyCommissionReport();
+  checkPaymentDueReminders();
   await showGreetScreen(PROFILE.role==='manager'?'Management':PROFILE.name.split(' ')[0]);
   route(PROFILE.role==='manager'?'mgr':'home');
 }
@@ -6007,12 +6036,17 @@ async function saveUpdate(id,resolvedDepositTarget){ const l=DB.leads.find(x=>x.
     if(depositTarget!=null) patch.depositTarget=depositTarget;
     await apiUpdateLead(id,patch);
     Object.assign(l,patch);
-    if(pay>0){ const prec=await apiInsertPayment(id,name,pay); if(prec) DB.payments.unshift(prec); }
+    let loggedPayment=null;
+    if(pay>0){ const prec=await apiInsertPayment(id,name,pay); if(prec){ DB.payments.unshift(prec); loggedPayment=prec; } }
     await checkAllocationTrigger(l);
     await checkTargetExceeded();
     const parts=[]; if(pay>0)parts.push('Payment '+ghs(pay)); parts.push('Stage: '+stage); if(discount!==oldDiscount)parts.push('Discount now '+ghs(discount));
     await addActivity(name,'Pipeline update',parts.join(' · '),val('u_disc').trim(),val('u_method'),val('u_follow'));
     toast(pay>0?('Payment recorded · '+ghs(pay)):'Pipeline updated'); route('pipeline');
+    if(loggedPayment && canManagePayments()){
+      if(contact) apiSendSms(contact,`Hi ${name}, thank you for your payment of ${ghs(pay)} towards your plot at Royal Palm Enclave. - PEP Landbank`,'payment_thanks');
+      offerSendReceipt({...l,name,contact},loggedPayment);
+    }
   }catch(e){ toast('Update failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save update'; }
 }
 
@@ -6167,6 +6201,10 @@ function openLogMonthPayment(lead,slotKey,expected){
       await addActivity(lead.name,'Payment logged',ghs(amount)+' for '+monthLabel(slotKey),'','',null);
       toast('Payment logged · '+ghs(amount)); ov.remove();
       route('paymentSchedule',lead.id);
+      if(prec && canManagePayments()){
+        if(lead.contact) apiSendSms(lead.contact,`Hi ${lead.name}, thank you for your payment of ${ghs(amount)} towards your plot at Royal Palm Enclave. - PEP Landbank`,'payment_thanks');
+        offerSendReceipt(lead,prec);
+      }
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save payment'; }
   };
 }
@@ -6921,8 +6959,10 @@ async function clientHome(){
     if(pay) buildClientReceiptPDF(pay,lead);
   });
 }
-function buildClientReceiptPDF(payment,lead){
-  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+/* Shared by the client portal's own receipt download and the staff "Send receipt"
+   flow after logging a payment (Phase 3c) -- same document either way. */
+function buildReceiptPDF(clientName,payment,lead){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return null; }
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
   const pageW=doc.internal.pageSize.getWidth();
   const ref=Math.random().toString(16).slice(2,10).toUpperCase();
@@ -6935,7 +6975,7 @@ function buildClientReceiptPDF(payment,lead){
   doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(100,112,133);
   doc.text('RECEIVED FROM',12,y); y+=6;
   doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.setTextColor(20,20,20);
-  doc.text(CLIENT_PROFILE.name,12,y); y+=6;
+  doc.text(clientName,12,y); y+=6;
   if(lead){
     doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(60,68,82);
     doc.text('For: '+(lead.plotType||'Plot')+' × '+(lead.noPlots||1),12,y); y+=5.5;
@@ -6967,8 +7007,44 @@ function buildClientReceiptPDF(payment,lead){
   doc.text(companyName+' — '+siteName,12,290);
   doc.text('Generated '+new Date().toLocaleDateString('en-GB'),pageW-12,290,{align:'right'});
 
+  return doc;
+}
+function buildClientReceiptPDF(payment,lead){
+  const doc=buildReceiptPDF(CLIENT_PROFILE.name,payment,lead); if(!doc) return;
   const fname='Receipt_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
   doc.save(fname);
+}
+/* Staff-side "Send receipt" offer, shown right after Elias/Management logs a payment.
+   Downloads the same branded receipt and offers WhatsApp/email deep-links prefilled
+   with a thank-you message -- the file itself still has to be attached by hand in
+   WhatsApp/the mail client, since there's no way to push a file through a wa.me or
+   mailto link, but this removes everything else about sending it manually. */
+function offerSendReceipt(lead,payment){
+  if(!lead||!lead.contact) return;
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Send receipt?</div><button id="closeSendReceipt" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:16px">${esc(lead.name)} · ${ghs(payment.amount)} logged just now. Download the receipt, then send it via WhatsApp or email.</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn primary" id="srDownload" style="width:100%">⬇ Download receipt PDF</button>
+      <a class="btn ghost" id="srWhatsapp" target="_blank" rel="noopener" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Open WhatsApp to ${esc(lead.name)}</a>
+      ${lead.email?`<a class="btn ghost" id="srEmail" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Open email to ${esc(lead.name)}</a>`:''}
+    </div>
+    <button class="btn ghost" id="closeSendReceipt2" style="width:100%;margin-top:14px">Not now</button>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeSendReceipt').onclick=()=>ov.remove();
+  document.getElementById('closeSendReceipt2').onclick=()=>ov.remove();
+  const msg=`Hi ${lead.name}, thank you for your payment of ${ghs(payment.amount)} towards your plot at Royal Palm Enclave. Your receipt is attached.`;
+  document.getElementById('srWhatsapp').href='https://wa.me/'+waNumberFromPhone(lead.contact)+'?text='+encodeURIComponent(msg);
+  const emailEl=document.getElementById('srEmail'); if(emailEl) emailEl.href='mailto:'+lead.email+'?subject='+encodeURIComponent('Your payment receipt')+'&body='+encodeURIComponent(msg);
+  document.getElementById('srDownload').onclick=()=>{
+    const doc=buildReceiptPDF(lead.name,payment,lead); if(!doc) return;
+    const fname='Receipt_'+lead.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
+    doc.save(fname);
+  };
 }
 function formClientSiteVisit(){
   V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Tsopoli site visit request</div><h2>Book a visit</h2><p>Goes to Management for confirmation.</p></div></div>
