@@ -3,7 +3,7 @@
    Your data (leads, enquiries, etc.) always comes live from Supabase when online —
    this only caches the app shell so the portal still opens with no signal. */
 
-const CACHE_NAME = 'pep-portal-v2';
+const CACHE_NAME = 'pep-portal-v3';
 const APP_SHELL = [
   './index.html',
   './manifest.webmanifest',
@@ -37,10 +37,14 @@ self.addEventListener('fetch', (event) => {
   if (req.url.includes('supabase.co')) return;
 
   // App shell: network-first so staff always get the newest build when online,
-  // falling back to the cached copy the moment the connection drops.
+  // falling back to the cached copy the moment the connection drops. cache:
+  // 'no-store' matters here -- without it, the browser's own HTTP cache (not
+  // just this service worker's cache) can silently satisfy this fetch with a
+  // stale response, which defeats "network-first" entirely and is exactly
+  // what let a stale build linger during testing.
   if (req.mode === 'navigate' || APP_SHELL.some((p) => req.url.endsWith(p.replace('./', '')))) {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-store' })
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
