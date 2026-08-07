@@ -2987,8 +2987,13 @@ async function doClientLogin(){
   if(!/^\d{4,6}$/.test(pin)){ err.textContent='Enter your 4–6 digit PIN.'; return; }
   const btn=document.getElementById('clientSignInBtn'); btn.disabled=true; btn.textContent='Signing in…';
   try{
-    const {data,error}=await sb.rpc('client_portal_login',{p_name:clientMatch.name,p_contact:clientPhone,p_pin:pin});
-    if(error){ err.textContent='Connection problem — please try again.'; btn.disabled=false; btn.textContent='Sign in'; return; }
+    // Everything -- PIN check, session issuance -- happens server-side in one
+    // call now. No more separate signInAnonymously() step: that depended on a
+    // project-level toggle that proved unreliable, so each client instead gets
+    // a real, permanent, server-provisioned account the first time they sign
+    // in (see the client-login Edge Function).
+    const {data,error}=await sb.functions.invoke('client-login',{body:{name:clientMatch.name,contact:clientPhone,pin}});
+    if(error||!data){ err.textContent='Connection problem — please try again.'; btn.disabled=false; btn.textContent='Sign in'; return; }
     if(!data.ok){
       if(data.reason==='locked'){
         const mins=data.locked_until?Math.max(1,Math.ceil((new Date(data.locked_until)-new Date())/60000)):15;
@@ -2997,8 +3002,8 @@ async function doClientLogin(){
       else { err.textContent="We couldn't find a match — check your name and phone number, or contact your agent."; }
       btn.disabled=false; btn.textContent='Sign in'; return;
     }
-    const {data:authData,error:authErr}=await sb.auth.signInAnonymously();
-    if(authErr||!authData||!authData.session){ err.textContent='Could not start your session — please try again.'; btn.disabled=false; btn.textContent='Sign in'; return; }
+    const {error:sessErr}=await sb.auth.setSession({access_token:data.access_token,refresh_token:data.refresh_token});
+    if(sessErr){ err.textContent='Could not start your session — please try again.'; btn.disabled=false; btn.textContent='Sign in'; return; }
     const {error:linkErr}=await sb.rpc('client_portal_link_auth',{p_access_id:data.access_id});
     if(linkErr){ err.textContent='Could not finish signing in — please try again.'; btn.disabled=false; btn.textContent='Sign in'; return; }
     CLIENT_PROFILE={id:data.access_id,name:data.name,contact:clientPhone,avatar:data.avatar,isDefaultPin:!!data.is_default_pin};
