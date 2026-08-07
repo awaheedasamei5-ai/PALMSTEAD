@@ -1631,11 +1631,11 @@ async function apiLoadAll(){
   DB.feedback=results[14];
   DB.downloads=results[15];
 }
-async function apiInsertLead(l,c){
-  if(DEMO_MODE){ const d=await demoLoad(); const row={id:uid(),agent:PROFILE.key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal,
+async function apiInsertLead(l,c,agentKeyOverride){
+  if(DEMO_MODE){ const key=agentKeyOverride||PROFILE.key; const d=await demoLoad(); const row={id:uid(),agent:key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal,
       depositTarget:l.depositTarget!=null&&l.depositTarget!==''?num(l.depositTarget):Math.round(c.grand*0.3)};
-    d.leads[PROFILE.key]=d.leads[PROFILE.key]||[]; d.leads[PROFILE.key].unshift(row); await demoSave(); return row; }
-  const row={agent_key:PROFILE.agent_key,name:l.name,contact:l.contact,date_added:l.date||today(),stage:l.stage,
+    d.leads[key]=d.leads[key]||[]; d.leads[key].unshift(row); await demoSave(); return row; }
+  const row={agent_key:agentKeyOverride||PROFILE.agent_key,name:l.name,contact:l.contact,date_added:l.date||today(),stage:l.stage,
     plot_type:l.plotType,no_plots:num(l.noPlots),unit_price:l.unitPrice?num(l.unitPrice):PRICING()[l.plotType].list,
     discount:l.discount==null?PRICING()[l.plotType].disc*num(l.noPlots):num(l.discount),net_total:c.net,
     payment_plan:l.paymentPlan,grand_total:c.grand,site_visit:l.siteVisit,priority:l.priority,
@@ -2203,14 +2203,51 @@ function clientDatabaseListHtml(){
 function bindClientDatabaseCtrls(container){
   const inp=container.querySelector('#cdbq');
   if(inp) inp.oninput=e=>{ CLIENTDB_QUERY=e.target.value; container.querySelector('#cdbList').innerHTML=clientDatabaseListHtml(); bindClientDbRows(container); };
+  const addBtn=container.querySelector('#cdbAddBtn');
+  if(addBtn) addBtn.onclick=openAddClientDbLead;
   bindClientDbRows(container);
 }
 function bindClientDbRows(container){
   container.querySelectorAll('[data-cdbopen]').forEach(b=>b.onclick=()=>route('updateOne',b.dataset.cdbopen));
 }
 function clientDatabaseBodyHtml(){
-  return `<div class="searchbar"><input id="cdbq" placeholder="Search name or contact…" value="${esc(CLIENTDB_QUERY)}"/></div>
+  return `<div style="margin-bottom:14px"><button class="btn primary" id="cdbAddBtn" style="width:100%">+ Add new client</button></div>
+  <div class="searchbar"><input id="cdbq" placeholder="Search name or contact…" value="${esc(CLIENTDB_QUERY)}"/></div>
   <div class="list" id="cdbList">${clientDatabaseListHtml()}</div>`;
+}
+function openAddClientDbLead(){
+  const agents=(DB.profiles||[]).filter(p=>p.role==='agent');
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Add new client</div><button id="closeAddCdb" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Client name *','<input id="cdb_name" placeholder="Full name"/>')}
+    ${fld('Contact *','<input id="cdb_contact" placeholder="0244…"/>')}
+    ${fld('Assign to agent *',`<select id="cdb_agent">${agents.map(a=>`<option value="${esc(a.agent_key)}" ${a.agent_key===PROFILE.key?'selected':''}>${esc(a.name)}</option>`).join('')}</select>`)}
+    <div class="grid2">${fld('Plot type',sel('cdb_plot',['Full Plot','Half Plot']))}${fld('No. of plots','<input id="cdb_noplots" type="number" min="0.5" step="0.5" value="1"/>')}</div>
+    ${fld('Payment plan',sel('cdb_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}
+    ${fld('Amount already paid (GHS)','<input id="cdb_paid" type="number" placeholder="0"/>','optional — the deposit or partial deposit, if any')}
+    <div class="formactions"><button class="btn primary" id="saveCdbLead" style="width:100%">Save client</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeAddCdb').onclick=()=>ov.remove();
+  document.getElementById('saveCdbLead').onclick=async()=>{
+    const name=val('cdb_name').trim(), contact=val('cdb_contact').trim(), agentKey=val('cdb_agent');
+    if(!name||!contact){ toast('Name and contact are required'); return; }
+    if(!agentKey){ toast('Choose which agent this client belongs to'); return; }
+    const l={name,contact,date:today(),stage:'1',priority:'Low',plotType:val('cdb_plot'),noPlots:val('cdb_noplots'),
+      unitPrice:null,discount:null,paymentPlan:val('cdb_plan'),siteVisit:'No',depositTarget:null,
+      amtPaid:val('cdb_paid')||0,nextAction:'',notes:''};
+    const c=computeLead(l);
+    const btn=document.getElementById('saveCdbLead'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const row=await apiInsertLead(l,c,agentKey);
+      DB.leads.push(row); CLIENTDB_LIST.push(row);
+      toast('Client added'); ov.remove();
+      const body=document.getElementById('cdbBody'); if(body){ body.innerHTML=clientDatabaseBodyHtml(); bindClientDatabaseCtrls(body); }
+    }catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save client'; }
+  };
 }
 async function viewClientDatabase(){
   V.innerHTML=`${back('more')}<div class="pagehead"><div><div class="eyebrow">Company-wide</div><h2>Client Database</h2><p>Every client across every agent.</p></div></div>
