@@ -13,3 +13,16 @@ npm-debug.log*
 # Environment / secrets (none used here, but just in case)
 .env
 .env.*
+
+# Capacitor mobile wrapper (Phase 4) -- node_modules and native build output
+# are regenerated from package.json + www/, never hand-edited, so they don't
+# belong in version control.
+node_modules/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/app/src/main/assets/public/
+android/app/src/main/res/xml/config.xml
+ios/App/App/public/
+ios/App/Pods/
+www/

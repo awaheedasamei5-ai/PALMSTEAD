@@ -644,6 +644,10 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
         <span style="font-size:10.5px;color:#9DB2CC">View your purchase &amp; payments</span>
       </button>
     </div>
+    <a href="https://github.com/awaheedasamei5-ai/pep-landbank-portal/releases/download/android-latest/Palmstead.apk" class="linkbtn" style="display:flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;margin-top:14px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Download the Android app
+    </a>
   </div>
 
   <div class="card-auth hidden" id="authCard">
@@ -2139,6 +2143,34 @@ async function apiLoadAllocations(){
       flagReason:r.flag_reason,flaggedBy:r.flagged_by,flaggedAt:r.flagged_at?(r.flagged_at||'').slice(0,16).replace('T',' '):null}));
   }catch(e){ return []; }
 }
+/* ================= PUSH NOTIFICATIONS (native app only, no-op on the web) =================
+   Wired for both staff and portal clients -- whichever is signed in when the
+   device registers gets the token attached to their own record. Sending a
+   push (task assigned, payment due, etc.) is a server-side concern for a
+   later round; this just gets tokens registered and reliably refreshed. */
+async function apiSavePushToken(token,platform){
+  if(DEMO_MODE || !sb) return;
+  try{
+    const owner = IS_CLIENT ? {kind:'client',id:CLIENT_PROFILE&&CLIENT_PROFILE.id} : {kind:'staff',id:PROFILE&&PROFILE.key};
+    if(!owner.id) return;
+    await sb.from('push_tokens').upsert({owner_kind:owner.kind,owner_id:owner.id,token,platform:platform||'android',updated_at:new Date().toISOString()},{onConflict:'token'});
+  }catch(e){}
+}
+async function setupPushNotifications(){
+  try{
+    if(!window.Capacitor || typeof window.Capacitor.isNativePlatform!=='function' || !window.Capacitor.isNativePlatform()) return;
+    const PushNotifications = window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+    if(!PushNotifications) return;
+    let perm = await PushNotifications.checkPermissions();
+    if(perm.receive==='prompt') perm = await PushNotifications.requestPermissions();
+    if(perm.receive!=='granted') return;
+    await PushNotifications.register();
+    PushNotifications.addListener('registration', token=>{ if(token&&token.value) apiSavePushToken(token.value,window.Capacitor.getPlatform()); });
+    PushNotifications.addListener('registrationError', ()=>{});
+    PushNotifications.addListener('pushNotificationReceived', n=>{ toast(n.title?(n.title+': '+(n.body||'')):(n.body||'New notification')); });
+    PushNotifications.addListener('pushNotificationActionPerformed', ()=>{});
+  }catch(e){}
+}
 /* ================= CLIENT DATABASE (Elias + Management only) =================
    Company-wide client search, independent of the "my own pipeline" scoping the
    rest of the app uses. Rather than duplicate formUpdate/viewPaymentSchedule for
@@ -2605,6 +2637,7 @@ async function enterApp(){
   checkBirthdaysToday();
   checkMonthlyCommissionReport();
   checkPaymentDueReminders();
+  setupPushNotifications();
   await showGreetScreen(PROFILE.role==='manager'?'Management':PROFILE.name.split(' ')[0]);
   route(PROFILE.role==='manager'?'mgr':'home');
 }
@@ -2617,6 +2650,7 @@ async function enterClientPortal(){
   try{ await apiLoadConfig(); await apiClientLoadAll(); }catch(e){ toast('Could not load your data'); }
   startInactivityTimer();
   if(CLIENT_PROFILE.isDefaultPin){ setTimeout(()=>toast("You're using the default PIN — set your own in Settings for extra security."),1200); }
+  setupPushNotifications();
   await showGreetScreen(CLIENT_PROFILE.name.split(' ')[0]);
   route('clienthome');
 }
