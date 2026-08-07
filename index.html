@@ -2111,6 +2111,55 @@ async function apiLoadAllocations(){
       flagReason:r.flag_reason,flaggedBy:r.flagged_by,flaggedAt:r.flagged_at?(r.flagged_at||'').slice(0,16).replace('T',' '):null}));
   }catch(e){ return []; }
 }
+/* ================= CLIENT DATABASE (Elias + Management only) =================
+   Company-wide client search, independent of the "my own pipeline" scoping the
+   rest of the app uses. Rather than duplicate formUpdate/viewPaymentSchedule for
+   other agents' clients, this merges the fetched rows straight into DB.leads/
+   DB.payments (RLS already allows Elias/managers to read them) so every existing
+   screen just works unchanged when opened from here. */
+let CLIENTDB_LOADED=false, CLIENTDB_LIST=[], CLIENTDB_QUERY='';
+async function apiLoadClientDatabase(){
+  if(DEMO_MODE){ CLIENTDB_LIST=DB.leads.slice(); CLIENTDB_LOADED=true; return CLIENTDB_LIST; }
+  const {data:leadsData,error:le}=await sb.from('leads').select('*').order('name'); if(le) throw le;
+  const {data:paymentsData,error:pe}=await sb.from('payments').select('*').order('payment_date',{ascending:false}); if(pe) throw pe;
+  const mapped=(leadsData||[]).map(mapLead);
+  const existingIds=new Set(DB.leads.map(l=>l.id));
+  mapped.forEach(l=>{ if(existingIds.has(l.id)) Object.assign(DB.leads.find(x=>x.id===l.id),l); else DB.leads.push(l); });
+  const mappedPay=(paymentsData||[]).map(r=>({id:r.id,leadId:r.lead_id,agentKey:r.agent_key,clientName:r.client_name,amount:r.amount,date:r.payment_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
+  const existingPayIds=new Set(DB.payments.map(p=>p.id));
+  mappedPay.forEach(p=>{ if(!existingPayIds.has(p.id)) DB.payments.push(p); });
+  CLIENTDB_LIST=mapped; CLIENTDB_LOADED=true;
+  return CLIENTDB_LIST;
+}
+function clientDatabaseListHtml(){
+  const q=CLIENTDB_QUERY.toLowerCase();
+  const filtered=CLIENTDB_LIST.filter(l=>!q||(l.name||'').toLowerCase().includes(q)||String(l.contact||'').includes(q));
+  if(!filtered.length) return emptyState(ic.lead,'No clients found','Try a different name or phone number.');
+  return filtered.map(l=>{
+    const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0);
+    return `<button class="rowcard" style="text-align:left;width:100%" data-cdbopen="${esc(l.id)}"><div class="top"><div><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'')} · agent ${esc(l.agent||'—')} · stage ${esc(l.stage||'')}</div></div><div style="text-align:right"><div class="amt">${bal>0?ghs(bal):'Paid'}</div><div class="meta">${bal>0?'balance':'in full'}</div></div></div></button>`;
+  }).join('');
+}
+function bindClientDatabaseCtrls(container){
+  const inp=container.querySelector('#cdbq');
+  if(inp) inp.oninput=e=>{ CLIENTDB_QUERY=e.target.value; container.querySelector('#cdbList').innerHTML=clientDatabaseListHtml(); bindClientDbRows(container); };
+  bindClientDbRows(container);
+}
+function bindClientDbRows(container){
+  container.querySelectorAll('[data-cdbopen]').forEach(b=>b.onclick=()=>route('updateOne',b.dataset.cdbopen));
+}
+function clientDatabaseBodyHtml(){
+  return `<div class="searchbar"><input id="cdbq" placeholder="Search name or contact…" value="${esc(CLIENTDB_QUERY)}"/></div>
+  <div class="list" id="cdbList">${clientDatabaseListHtml()}</div>`;
+}
+async function viewClientDatabase(){
+  V.innerHTML=`${back('more')}<div class="pagehead"><div><div class="eyebrow">Company-wide</div><h2>Client Database</h2><p>Every client across every agent.</p></div></div>
+  <div id="cdbBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load client database: '+(e.message||e)); } }
+  const body=document.getElementById('cdbBody');
+  body.innerHTML=clientDatabaseBodyHtml();
+  bindClientDatabaseCtrls(body);
+}
 async function apiFlagAllocation(id,reason){
   if(DEMO_MODE){ const d=await demoLoad(); const a=(d.allocations||[]).find(x=>x.id===id);
     if(a){ a.flagReason=reason; a.flaggedBy=PROFILE.name; a.flaggedAt=new Date().toISOString(); } await demoSave(); return; }
@@ -2840,7 +2889,8 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission,
-    clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
+    clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
+    clientdb:viewClientDatabase}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -3117,6 +3167,7 @@ function viewMore(){
       {key:'downloads',fic:'document',label:'Download Directory'},
       {key:'feedback',fic:'chat',label:'Feedback'},
       ...(canManagePlots()?[{key:'allocations',fic:'allocation',label:'Allocations'}]:[]),
+      ...(canManagePayments()?[{key:'clientdb',fic:'savings',label:'Client Database'}]:[]),
       {key:'account',fic:'settings',label:'Settings'}
     ];
     grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
@@ -4290,6 +4341,7 @@ function renderPlotDetail(p,isManager){
 let openBlocks=new Set();
 function plotBlockOf(plotNumber){ const m=String(plotNumber||'').match(/^([A-Za-z]+)/); return m?m[1].toUpperCase():'Other'; }
 function canManagePlots(){ return PROFILE.role==='manager' || PROFILE.key==='elias' || PROFILE.key==='emmanuel'; }
+function canManagePayments(){ return PROFILE.role==='manager' || PROFILE.key==='elias'; }
 function renderPlotsGrid(){
   const isManager=canManagePlots();
   const q=plotFilter.q.trim().toLowerCase();
@@ -5698,7 +5750,7 @@ function formCustomer(arg){
 
 /* ================= ADD LEAD ================= */
 function formAddLead(){
-  const canEnterPayments=PROFILE.key==='elias'||PROFILE.role==='manager';
+  const canEnterPayments=canManagePayments();
   V.innerHTML=`${back('home')}<div class="pagehead"><div><div class="eyebrow">New lead</div><h2>Add to pipeline</h2><p>Saved straight into your Royal Palm pipeline.</p></div></div>
   <div class="formwrap">${fld('Lead name *','<input id="f_name" placeholder="e.g. Kwame Mensah"/>')}
   <div class="grid2">${fld('Contact *','<input id="f_contact" placeholder="0244…"/>')}${fld('Date added','<input id="f_date" type="date" value="'+today()+'"/>')}</div>
@@ -5744,7 +5796,7 @@ function pickForUpdate(){
   document.getElementById('uq').oninput=paint; paint();
 }
 function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('home'); return; }
-  const canEnterPayments=PROFILE.key==='elias'||PROFILE.role==='manager';
+  const canEnterPayments=canManagePayments();
   const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0);
   const P=PRICING(); const expectedUnit=(P[l.plotType]||P['Full Plot']).list;
   const priceMismatch=Math.abs(num(l.unitPrice)-expectedUnit)>1 && num(l.unitPrice)>0;
@@ -5975,7 +6027,7 @@ const SCHED_STATUS_META={
 };
 function entriesRowsHtml(entries){
   if(!entries.length) return '';
-  const canEnterPayments=PROFILE.key==='elias'||PROFILE.role==='manager';
+  const canEnterPayments=canManagePayments();
   return `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px">
     ${entries.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div class="mini">${esc(p.date||'')} · ${ghs(num(p.amount))}</div>
@@ -5996,7 +6048,7 @@ function bindPaymentEntryCtrls(l,allEntries){
 }
 function viewPaymentSchedule(id){
   const l=DB.leads.find(x=>x.id===id); if(!l){ route('home'); return; }
-  const canEnterPayments=PROFILE.key==='elias'||PROFILE.role==='manager';
+  const canEnterPayments=canManagePayments();
   const logBtnHtml=(slotKey,expected)=>canEnterPayments?`<div class="foot"><button class="chip" data-logmonth="${slotKey}" data-expected="${expected}">Log payment for this month →</button></div>`:'';
   const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const sched=buildInstallmentSchedule(l,myPayments);
@@ -7005,6 +7057,7 @@ const MGR_APPS=[
   {key:'Reports',fic:'analytics',label:'Reports'},
   {key:'Plots',fic:'map',label:'Plot Inventory'},
   {key:'Allocations',fic:'allocation',label:'Allocations'},
+  {key:'Client Database',fic:'savings',label:'Client Database'},
   {key:'Enquiries',fic:'enquiry',label:'Enquiries'},
   {key:'Complaints',fic:'alert',label:'Complaints'},
   {key:'Site visits',fic:'location',label:'Site Visits'},
@@ -7048,6 +7101,11 @@ async function managerView(){
       ${renderAllocMonthFilterChips(res)}
       <div class="list">${filterAllocByMonth(res).length?filterAllocByMonth(res).map(rowOf).join(''):emptyState(ic.grid,'No allocations in this period','')}</div>`;
     bindAllocationCtrls();
+  }
+  else if(mgrTab==='Client Database'){
+    if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load client database: '+(e.message||e)); } }
+    body.innerHTML=clientDatabaseBodyHtml();
+    bindClientDatabaseCtrls(body);
   }
   else if(mgrTab==='Enquiries'){ body.innerHTML=mgrEnquiries(); bindEnquiryCtrls(); }
   else if(mgrTab==='Complaints'){ body.innerHTML=mgrComplaints(); bindComplaintCtrls(); }
