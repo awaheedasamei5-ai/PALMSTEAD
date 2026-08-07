@@ -1879,6 +1879,34 @@ async function checkBirthdaysToday(){
     }
   }catch(e){}
 }
+/* Runs from a Management session only, same reasoning as checkBirthdaysToday --
+   avoids two different sessions both texting the same client the same day.
+   payment_reminders_log dedupes per lead per month so this is safe to run on
+   every sign-in rather than needing a real cron job. */
+async function checkPaymentDueReminders(){
+  if(PROFILE.role!=='manager' || DEMO_MODE) return;
+  try{
+    const monthKey=today().slice(0,7);
+    const {data:already,error}=await sb.from('payment_reminders_log').select('lead_id').eq('month_key',monthKey);
+    if(error) return;
+    const sentSet=new Set((already||[]).map(r=>r.lead_id));
+    const nudges=[];
+    for(const l of (DB.leads||[])){
+      if(sentSet.has(l.id) || !PLAN_MONTHS[l.paymentPlan] || isFullyPaid(l)) continue;
+      const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id);
+      const sched=computeMonthlySchedule(l,myPayments);
+      if(!sched || sched.nextDueDate!==today()) continue;
+      if(l.contact) apiSendSms(l.contact,`Hi ${l.name}, a friendly reminder that your monthly payment of ${ghs(sched.monthlyInstallment)} for your plot at Royal Palm Enclave is due today. - PEP Landbank`,'payment_due_reminder');
+      nudges.push(l.name+(l.agent?(' ('+l.agent+')'):''));
+      try{ await sb.from('payment_reminders_log').insert({lead_id:l.id,month_key:monthKey}); }catch(e){}
+    }
+    if(nudges.length){
+      toast(nudges.length+' client'+(nudges.length===1?'':'s')+' had a payment due today — reminder SMS sent');
+      try{ const msgRec=await apiSendMessage('elias','Payment due today (reminder SMS already sent to the client) — please follow up:\n'+nudges.join('\n'));
+        if(msgRec) DB.messages.push(msgRec); }catch(e){}
+    }
+  }catch(e){}
+}
 
 /* ---- deletes ---- */
 async function apiDeleteLead(id,agentKey){
@@ -2576,6 +2604,7 @@ async function enterApp(){
   checkClockSanity();
   checkBirthdaysToday();
   checkMonthlyCommissionReport();
+  checkPaymentDueReminders();
   await showGreetScreen(PROFILE.role==='manager'?'Management':PROFILE.name.split(' ')[0]);
   route(PROFILE.role==='manager'?'mgr':'home');
 }
