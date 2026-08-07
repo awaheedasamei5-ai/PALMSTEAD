@@ -2191,6 +2191,32 @@ async function apiLoadClientDatabase(){
   CLIENTDB_LIST=mapped; CLIENTDB_LOADED=true;
   return CLIENTDB_LIST;
 }
+/* Live, not "reload to see it" -- when any agent adds or updates a lead
+   anywhere in the company, Elias/Management see it here immediately without
+   reopening the screen, and it's already in DB.leads for anything else that
+   reads from there too. This is the actual connective tissue between an
+   agent's own pipeline and the company-wide client database: they were
+   always the same table, this just keeps the client-side view of it live. */
+let CLIENTDB_CHANNEL=null;
+function ensureClientDbSubscribed(){
+  if(DEMO_MODE || !sb || CLIENTDB_CHANNEL || !canManagePayments()) return;
+  try{
+    const upsertLocal=(l)=>{
+      const i1=CLIENTDB_LIST.findIndex(x=>x.id===l.id); if(i1>=0) CLIENTDB_LIST[i1]=l; else CLIENTDB_LIST.push(l);
+      const i2=DB.leads.findIndex(x=>x.id===l.id); if(i2>=0) Object.assign(DB.leads[i2],l); else DB.leads.push(l);
+      const list=document.getElementById('cdbList');
+      if(list){ list.innerHTML=clientDatabaseListHtml(); bindClientDbRows(document.getElementById('cdbBody')||document); }
+    };
+    CLIENTDB_CHANNEL=sb.channel('clientdb-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'leads'},payload=>upsertLocal(mapLead(payload.new)))
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'leads'},payload=>upsertLocal(mapLead(payload.new)))
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'payments'},payload=>{
+        const p={id:payload.new.id,leadId:payload.new.lead_id,agentKey:payload.new.agent_key,clientName:payload.new.client_name,amount:payload.new.amount,date:payload.new.payment_date};
+        if(!DB.payments.some(x=>x.id===p.id)) DB.payments.push(p);
+      })
+      .subscribe();
+  }catch(e){}
+}
 function clientDatabaseListHtml(){
   const q=CLIENTDB_QUERY.toLowerCase();
   const filtered=CLIENTDB_LIST.filter(l=>!q||(l.name||'').toLowerCase().includes(q)||String(l.contact||'').includes(q));
@@ -2668,6 +2694,7 @@ async function enterApp(){
   refreshAnnounceBubble();
   refreshChatNavBadge();
   ensureChatSubscribed();
+  ensureClientDbSubscribed();
   startInactivityTimer();
   startMonthRolloverWatchdog();
   checkClockSanity();
@@ -2746,6 +2773,8 @@ function paintTopbarAvatar(){
 document.getElementById('logoutBtn').onclick=async()=>{
   if(!DEMO_MODE){ try{await sb.auth.signOut();}catch(e){} }
   if(CHAT_CHANNEL){ try{ sb.removeChannel(CHAT_CHANNEL); }catch(e){} CHAT_CHANNEL=null; }
+  if(CLIENTDB_CHANNEL){ try{ sb.removeChannel(CLIENTDB_CHANNEL); }catch(e){} CLIENTDB_CHANNEL=null; }
+  CLIENTDB_LOADED=false; CLIENTDB_LIST=[];
   const bub=document.getElementById('announceBubble'); if(bub) bub.remove();
   const ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   USER=PROFILE=pickStaff=null; IS_CLIENT=false; CLIENT_PROFILE=null; CLIENT_DB=null;
