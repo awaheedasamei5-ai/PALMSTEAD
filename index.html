@@ -1748,7 +1748,13 @@ async function apiInsertPayment(leadId,clientName,amount,paymentDate){
   if(DEMO_MODE){ const d=await demoLoad(); d.payments=d.payments||[];
     const rec={id:uid(),leadId,agentKey:PROFILE.key,clientName,amount,date:pdate,createdAt:today()+' '+nowTime()};
     d.payments.unshift(rec); await demoSave(); return rec; }
-  const dbrow={lead_id:leadId,agent_key:PROFILE.agent_key,client_name:clientName,amount,payment_date:pdate};
+  // Payments are always attributed to the lead's own assigned agent, never to whoever is
+  // physically logging them (payment entry is Elias/Management-only, but visibility for the
+  // client's own agent must be preserved) -- looked up fresh rather than trusted from a
+  // possibly-stale in-memory lead, and enforced again at the database level either way.
+  let leadAgentKey=PROFILE.agent_key;
+  try{ const {data:leadRow}=await sb.from('leads').select('agent_key').eq('id',leadId).maybeSingle(); if(leadRow) leadAgentKey=leadRow.agent_key; }catch(e){}
+  const dbrow={lead_id:leadId,agent_key:leadAgentKey,client_name:clientName,amount,payment_date:pdate};
   try{ const {data,error}=await sb.from('payments').insert(dbrow).select().single(); if(error) throw error;
     return {id:data.id,leadId:data.lead_id,agentKey:data.agent_key,clientName:data.client_name,amount:data.amount,date:data.payment_date,createdAt:(data.created_at||'').slice(0,16).replace('T',' ')};
   }catch(e){ return null; } // payments table not set up yet — pipeline still saves fine, just no ledger entry
@@ -5692,6 +5698,7 @@ function formCustomer(arg){
 
 /* ================= ADD LEAD ================= */
 function formAddLead(){
+  const canEnterPayments=PROFILE.key==='elias'||PROFILE.role==='manager';
   V.innerHTML=`${back('home')}<div class="pagehead"><div><div class="eyebrow">New lead</div><h2>Add to pipeline</h2><p>Saved straight into your Royal Palm pipeline.</p></div></div>
   <div class="formwrap">${fld('Lead name *','<input id="f_name" placeholder="e.g. Kwame Mensah"/>')}
   <div class="grid2">${fld('Contact *','<input id="f_contact" placeholder="0244…"/>')}${fld('Date added','<input id="f_date" type="date" value="'+today()+'"/>')}</div>
@@ -5700,12 +5707,12 @@ function formAddLead(){
   <div class="grid2">${fld('Unit price (GHS)','<input id="f_unit" type="number" placeholder="auto"/>','Full '+CONFIG.fullPrice+' · Half '+CONFIG.halfPrice)}${fld('Discount (GHS)','<input id="f_disc" type="number" placeholder="auto"/>')}</div>
   <div class="grid2">${fld('Payment plan',sel('f_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}${fld('Site visit done?',sel('f_sv',['No','Yes']))}</div>
   ${fld('Deposit target (GHS)','<input id="f_deptarget" type="number" placeholder="auto = 30%"/>','only matters on an installment plan — the monthly schedule begins once this is fully paid')}
-  ${fld('Amount already paid (GHS)','<input id="f_paid" type="number" placeholder="0"/>','the deposit or partial deposit, if they’ve already paid something')}
+  ${canEnterPayments?fld('Amount already paid (GHS)','<input id="f_paid" type="number" placeholder="0"/>','the deposit or partial deposit, if they’ve already paid something'):''}
   <div class="calcbox" id="calc"></div>
   ${fld('Next action','<input id="f_next" placeholder="e.g. Follow up Monday"/>')}
   ${fld('Notes','<textarea id="f_notes" placeholder="Context, preferences, history…"></textarea>')}
   <div class="formactions"><button class="btn ghost" onclick="route('home')">Cancel</button><button class="btn primary" id="saveLead">Save lead</button></div></div>`;
-  ['f_plot','f_plots','f_unit','f_disc','f_plan','f_paid','f_deptarget'].forEach(i=>document.getElementById(i).addEventListener('input',paintCalc));
+  ['f_plot','f_plots','f_unit','f_disc','f_plan','f_paid','f_deptarget'].forEach(i=>{ const el=document.getElementById(i); if(el) el.addEventListener('input',paintCalc); });
   paintCalc(); document.getElementById('saveLead').onclick=saveNewLead;
 }
 function readLeadForm(){return {name:val('f_name').trim(),contact:val('f_contact').trim(),date:val('f_date'),stage:val('f_stage'),
@@ -5737,6 +5744,7 @@ function pickForUpdate(){
   document.getElementById('uq').oninput=paint; paint();
 }
 function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('home'); return; }
+  const canEnterPayments=PROFILE.key==='elias'||PROFILE.role==='manager';
   const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0);
   const P=PRICING(); const expectedUnit=(P[l.plotType]||P['Full Plot']).list;
   const priceMismatch=Math.abs(num(l.unitPrice)-expectedUnit)>1 && num(l.unitPrice)>0;
@@ -5776,8 +5784,8 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
     ${mySched.arrears>0?`<div class="mini" style="margin-top:9px;padding-top:9px;border-top:1px solid var(--line);color:#B8791E;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:13px;height:13px;display:inline-flex">${ic.alert}</span>${ghs(mySched.arrears)} still overdue from earlier months</div>`:''}
     <button class="chip" id="viewSchedBtn" style="margin-top:10px;width:100%">View full month-by-month schedule →</button>
   </div>`:''}
-  ${fld('Total paid to date (GHS)','<input id="u_paidtotal" type="number" value="'+num(l.amtPaid)+'"/>','only for a lump sum not yet itemized below — to correct or remove a specific logged payment, use Payment schedule instead')}
-  ${fld(mySched?"This month's payment (GHS)":(myDep&&!myDep.complete?'Deposit payment (GHS)':'...or add a new payment now (GHS)'),'<input id="u_pay" type="number" placeholder="0"/>'+(mySched?'<div id="u_payCompare" class="mini" style="margin-top:7px;font-weight:700"></div>':''),mySched?('expected '+ghs(mySched.monthlyInstallment)+' this month — enter what they actually paid'):(myDep&&!myDep.complete?(ghs(myDep.remaining)+' left on the deposit'):'adds on top of the total above'))}
+  ${fld('Total paid to date (GHS)','<input id="u_paidtotal" type="number" value="'+num(l.amtPaid)+'"'+(canEnterPayments?'':' disabled')+'/>',canEnterPayments?'only for a lump sum not yet itemized below — to correct or remove a specific logged payment, use Payment schedule instead':'only Elias or Management can record payments — ask them to log it')}
+  ${fld(mySched?"This month's payment (GHS)":(myDep&&!myDep.complete?'Deposit payment (GHS)':'...or add a new payment now (GHS)'),'<input id="u_pay" type="number" placeholder="0"'+(canEnterPayments?'':' disabled')+'/>'+(mySched?'<div id="u_payCompare" class="mini" style="margin-top:7px;font-weight:700"></div>':''),canEnterPayments?(mySched?('expected '+ghs(mySched.monthlyInstallment)+' this month — enter what they actually paid'):(myDep&&!myDep.complete?(ghs(myDep.remaining)+' left on the deposit'):'adds on top of the total above')):'only Elias or Management can record payments — ask them to log it')}
   <div class="sectitle"><h3>Stage &amp; follow-up</h3></div>
   <div class="grid2">${fld('Move stage to',stageSel('u_stage',l.stage))}${fld('Contact method',sel('u_method',['Phone Call','WhatsApp','Email','In-person']))}</div>
   ${fld('What was discussed / outcome','<textarea id="u_disc" placeholder="Summary of the interaction"></textarea>')}
@@ -5967,13 +5975,14 @@ const SCHED_STATUS_META={
 };
 function entriesRowsHtml(entries){
   if(!entries.length) return '';
+  const canEnterPayments=PROFILE.key==='elias'||PROFILE.role==='manager';
   return `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px">
     ${entries.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div class="mini">${esc(p.date||'')} · ${ghs(num(p.amount))}</div>
-      <div style="display:flex;gap:6px;flex:0 0 auto">
+      ${canEnterPayments?`<div style="display:flex;gap:6px;flex:0 0 auto">
         <button class="chip" style="padding:4px 9px;font-size:11px" data-editpayment="${esc(p.id)}">Edit</button>
         <button class="chip" style="padding:4px 9px;font-size:11px;color:#B4472F" data-delpayment="${esc(p.id)}">Delete</button>
-      </div>
+      </div>`:''}
     </div>`).join('')}
   </div>`;
 }
@@ -5987,6 +5996,8 @@ function bindPaymentEntryCtrls(l,allEntries){
 }
 function viewPaymentSchedule(id){
   const l=DB.leads.find(x=>x.id===id); if(!l){ route('home'); return; }
+  const canEnterPayments=PROFILE.key==='elias'||PROFILE.role==='manager';
+  const logBtnHtml=(slotKey,expected)=>canEnterPayments?`<div class="foot"><button class="chip" data-logmonth="${slotKey}" data-expected="${expected}">Log payment for this month →</button></div>`:'';
   const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const sched=buildInstallmentSchedule(l,myPayments);
   if(sched){
@@ -5998,10 +6009,11 @@ function viewPaymentSchedule(id){
         <div class="meta">Expected ${ghs(s.expected)}${s.paid>0?(' · logged '+ghs(s.paid)):''}</div></div>
         <span class="tag ${meta.cls}">${meta.label}</span></div>
         ${entriesRowsHtml(entries)}
-        <div class="foot"><button class="chip" data-logmonth="${s.slotKey}" data-expected="${s.expected}">Log payment for this month →</button></div>
+        ${logBtnHtml(s.slotKey,s.expected)}
       </div>`;
     }).join('');
     V.innerHTML=`${back('updateOne')}<div class="pagehead"><div><div class="eyebrow">Payment schedule</div><h2>${esc(l.name)}</h2><p>${l.paymentPlan} · anchored from ${sched.anchor} (their first payment)</p></div></div>
+    ${!canEnterPayments?`<div class="rowcard" style="margin-bottom:16px;padding:12px 16px"><div class="mini">Read-only — only Elias or Management can log, edit, or delete payments.</div></div>`:''}
     ${sched.unassigned>0?`<div class="rowcard" style="margin-bottom:16px;padding:14px 16px;border-left:4px solid #B8791E">
       <div style="font-weight:700;font-size:13.5px;color:#B8791E;display:flex;align-items:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.alert}</span>${ghs(sched.unassigned)} paid but not assigned to a month</div>
       <div class="mini" style="margin-top:3px">This client's total-paid figure is higher than what's itemized by month below (common for older records entered as a lump sum). Log it against the month(s) it actually covers so the schedule below is accurate.</div>
@@ -6019,9 +6031,10 @@ function viewPaymentSchedule(id){
     <div class="meta">${s.paid>0?('Logged '+ghs(s.paid)):'Nothing logged this month'}</div></div>
     ${s.paid>0?'<span class="tag ok">Logged</span>':''}</div>
     ${entriesRowsHtml(entries)}
-    <div class="foot"><button class="chip" data-logmonth="${s.slotKey}" data-expected="0">Log payment for this month →</button></div>
+    ${logBtnHtml(s.slotKey,0)}
   </div>`;}).join('');
   V.innerHTML=`${back('updateOne')}<div class="pagehead"><div><div class="eyebrow">Payment history</div><h2>${esc(l.name)}</h2><p>By month, anchored from ${ledger.anchor} — pick any month to log or backfill a payment</p></div></div>
+  ${!canEnterPayments?`<div class="rowcard" style="margin-bottom:16px;padding:12px 16px"><div class="mini">Read-only — only Elias or Management can log, edit, or delete payments.</div></div>`:''}
   <div id="schedRows">${rows2||emptyState(ic.grid,'No months yet','')}</div>`;
   document.querySelectorAll('[data-logmonth]').forEach(b=>b.onclick=()=>openLogMonthPayment(l,b.dataset.logmonth,num(b.dataset.expected)));
   bindPaymentEntryCtrls(l,myPayments);
