@@ -1294,13 +1294,31 @@ const mapCmp=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,name:r.nam
   createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
 const mapSV=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,name:r.name,contact:r.contact,plot:r.plot,site:r.site,
   date:r.visit_date,time:r.visit_time,people:r.people,transport:r.transport,pickup:r.pickup,notes:r.notes,status:r.status,
-  placeOfWork:r.place_of_work,position:r.position,nationality:r.nationality,purpose:r.purpose,source:r.source,
+  placeOfWork:r.place_of_work,position:r.position,nationality:r.nationality,purpose:r.purpose,source:r.source,accompanied:r.accompanied,
   discussion:r.discussion_so_far,understanding:r.key_understanding,feedback:r.feedback_after,nextSteps:r.key_next_steps,
   createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
 const mapAct=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,client:r.client,action:r.action,detail:r.detail,
   note:r.note,method:r.method,follow:r.follow,at:(r.created_at||'').slice(0,16).replace('T',' ')});
 const mapPlot=r=>({id:r.id,site:r.site,plotNumber:r.plot_number,plotType:r.plot_type,status:r.status,price:r.price,
   clientName:r.client_name,clientContact:r.client_contact,agentKey:r.agent_key,notes:r.notes,updatedAt:r.updated_at});
+
+/* ---- Weekly Site Visit Authorization Form: Mon-Fri week helpers ---- */
+function mondayOfDate(dt){ const d=new Date(dt); d.setHours(0,0,0,0); const day=d.getDay(); const diff=day===0?-6:1-day; d.setDate(d.getDate()+diff); return d; }
+function isoDateOnly(dt){ return dt.toISOString().slice(0,10); }
+function currentWeekStartIso(){ return isoDateOnly(mondayOfDate(new Date())); }
+// The form locks the instant Friday begins (00:00), i.e. weekStart (Monday) + 4 days.
+function weekLockInstant(weekStartIso){ const d=new Date(weekStartIso+'T00:00:00'); d.setDate(d.getDate()+4); return d; }
+function isWeekLocked(weekStartIso){ return new Date()>=weekLockInstant(weekStartIso); }
+function weekFridayIso(weekStartIso){ return isoDateOnly(weekLockInstant(weekStartIso)); }
+function weekRangeLabel(weekStartIso){
+  const s=new Date(weekStartIso+'T00:00:00'); const e=new Date(s); e.setDate(e.getDate()+4);
+  const fmt=d=>d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+  return fmt(s)+' – '+fmt(e)+', '+e.getFullYear();
+}
+const mapWeeklyVisitForm=r=>({id:r.id,weekStart:r.week_start,
+  vehicleRentalEst:r.vehicle_rental_est,driversTipEst:r.drivers_tip_est,fuelEst:r.fuel_est,refreshmentEst:r.refreshment_est,tntEst:r.tnt_est,
+  vehicleRentalAct:r.vehicle_rental_act,driversTipAct:r.drivers_tip_act,fuelAct:r.fuel_act,refreshmentAct:r.refreshment_act,tntAct:r.tnt_act,
+  status:r.status,approvedBy:r.approved_by,approvedByName:r.approved_by_name,approvedSignature:r.approved_signature,finalizedAt:(r.finalized_at||'').slice(0,16).replace('T',' ')});
 
 /* ================= DEMO DATA LAYER (in-memory + optional window.storage) ================= */
 const hasWinStore = typeof window!=='undefined' && window.storage && typeof window.storage.get==='function';
@@ -1867,7 +1885,7 @@ async function apiInsertSiteVisit(row){
   const dbrow={agent_key:PROFILE.agent_key,agent_name:PROFILE.name,name:row.name,contact:row.contact,plot:row.plot,
     site:row.site,visit_date:row.date,visit_time:row.time,people:num(row.people),transport:row.transport,
     pickup:row.pickup,notes:row.notes,status:'Pending',place_of_work:row.placeOfWork,position:row.position,
-    nationality:row.nationality,purpose:row.purpose,discussion_so_far:row.discussion,key_understanding:row.understanding,
+    nationality:row.nationality,purpose:row.purpose,accompanied:row.accompanied,discussion_so_far:row.discussion,key_understanding:row.understanding,
     feedback_after:row.feedback,key_next_steps:row.nextSteps};
   const {data,error}=await sb.from('site_visits').insert(dbrow).select().single(); if(error) throw error;
   if(row.contact) apiSendSms(row.contact,`Hi ${row.name||''}, your site visit request to Royal Palm Enclave has been received. We'll confirm the date/time shortly. - PEP Landbank`,'site_visit_requested');
@@ -1959,11 +1977,53 @@ async function apiRejectPlotRequest(id){
   const {error}=await sb.from('plot_requests').update({status:'Rejected',resolved_at:new Date().toISOString(),resolved_by:PROFILE.name}).eq('id',id);
   if(error) throw error;
 }
+/* Loads the weekly site-visit authorization form for a given Monday, creating an
+   Open one on demand -- this is what makes the form "reset weekly" with zero manual
+   setup: the moment anyone opens a week that doesn't have a row yet, one is created. */
+async function apiLoadOrCreateWeeklyVisitForm(weekStart){
+  let {data,error}=await sb.from('weekly_visit_forms').select('*').eq('week_start',weekStart).maybeSingle();
+  if(error) throw error;
+  if(!data){
+    const ins=await sb.from('weekly_visit_forms').insert({week_start:weekStart}).select().single();
+    if(ins.error){
+      const retry=await sb.from('weekly_visit_forms').select('*').eq('week_start',weekStart).maybeSingle();
+      if(retry.error) throw retry.error;
+      data=retry.data;
+    } else data=ins.data;
+  }
+  return mapWeeklyVisitForm(data);
+}
+async function apiListWeeklyVisitForms(){
+  const {data,error}=await sb.from('weekly_visit_forms').select('*').order('week_start',{ascending:false}).limit(26);
+  if(error) throw error;
+  return (data||[]).map(mapWeeklyVisitForm);
+}
+async function apiSaveWeeklyVisitCosts(id,patch){
+  const map={vehicleRentalEst:'vehicle_rental_est',driversTipEst:'drivers_tip_est',fuelEst:'fuel_est',refreshmentEst:'refreshment_est',tntEst:'tnt_est',
+    vehicleRentalAct:'vehicle_rental_act',driversTipAct:'drivers_tip_act',fuelAct:'fuel_act',refreshmentAct:'refreshment_act',tntAct:'tnt_act'};
+  const dbPatch={updated_at:new Date().toISOString()};
+  Object.keys(patch).forEach(k=>{ if(map[k]) dbPatch[map[k]]=patch[k]; });
+  const {error}=await sb.from('weekly_visit_forms').update(dbPatch).eq('id',id);
+  if(error) throw error;
+}
+async function apiFinalizeWeeklyVisitForm(id){
+  const sig=getStaffSignature(PROFILE.key);
+  const {data,error}=await sb.from('weekly_visit_forms').update({status:'Finalized',approved_by:PROFILE.key,
+    approved_by_name:PROFILE.name,approved_signature:sig,finalized_at:new Date().toISOString()}).eq('id',id).select().single();
+  if(error) throw error;
+  return mapWeeklyVisitForm(data);
+}
+async function apiLoadSiteVisitsForWeek(weekStart){
+  const friday=weekFridayIso(weekStart);
+  const {data,error}=await sb.from('site_visits').select('*').gte('visit_date',weekStart).lte('visit_date',friday).order('created_at');
+  if(error) throw error;
+  return (data||[]).map(mapSV);
+}
 async function apiClientInsertSiteVisit(row){
   const {key:agentKey,name:agentName}=await apiClientAgentKeyName();
   const dbrow={name:CLIENT_PROFILE.name,contact:CLIENT_PROFILE.contact,plot:row.plot,site:row.site,visit_date:row.date,
     visit_time:row.time,people:num(row.people),transport:row.transport,pickup:row.pickup,notes:row.notes,status:'Pending',
-    agent_key:agentKey,agent_name:agentName,source:'Client portal'};
+    accompanied:row.accompanied,agent_key:agentKey,agent_name:agentName,source:'Client portal'};
   const {data,error}=await sb.from('site_visits').insert(dbrow).select().single(); if(error) throw error;
   return mapSV(data);
 }
@@ -6296,10 +6356,15 @@ function openEditAllocatedPlotModal(a){
 
 /* ================= CUSTOMER PROFILE (timeline across leads/enquiries/complaints/visits) ================= */
 function normContact(c){ return String(c||'').replace(/\D/g,''); }
+// Two different real clients have been found sharing the same phone number in
+// production data (data-entry duplicates) -- matching on contact alone silently
+// merged their leads/payments/history into one "customer" view. Name must also
+// match, not just contact.
 function custMatches(recordName,recordContact,name,contact){
   const cn=normContact(contact), rc=normContact(recordContact);
-  if(cn && rc) return cn===rc;
-  return (recordName||'').trim().toLowerCase() === (name||'').trim().toLowerCase() && !!(recordName||'').trim();
+  const nameMatch=!!(recordName||'').trim() && (recordName||'').trim().toLowerCase()===(name||'').trim().toLowerCase();
+  if(cn && rc) return cn===rc && nameMatch;
+  return nameMatch;
 }
 function trackRecentlyViewed(name,contact){
   if(!name) return;
@@ -7812,7 +7877,7 @@ function downloadReceiptForMonth(monthKey){
   const leads=(CLIENT_DB&&CLIENT_DB.leads)||[]; const payments=((CLIENT_DB&&CLIENT_DB.payments)||[]).filter(p=>(p.date||'').slice(0,7)===monthKey);
   if(!payments.length){ toast('No payments recorded for '+monthLabel(monthKey)); return; }
   const sorted=payments.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,leads);
+  const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,leads,CLIENT_PROFILE.name);
   let doc=null;
   sorted.forEach(p=>{ const lead=leads.find(l=>l.id===p.leadId)||leads[0]; doc=buildReceiptPDF(CLIENT_PROFILE.name,p,lead,doc,portfolioTotal); });
   if(!doc) return;
@@ -7824,13 +7889,17 @@ function downloadReceiptForMonth(monthKey){
    optional existingDoc so downloadAllReceipts() can stack every receipt as its own
    page inside one merged PDF instead of one file per payment. */
 // Sums grand-total across every lead belonging to the same client (matched by
-// contact digits, same convention used everywhere else) -- the receipt's "Total
-// across all your purchases" figure, since a client can hold more than one plot.
-function computeClientPortfolioTotal(contact,leadsList){
+// BOTH contact digits AND name) -- the receipt's "Total across all your purchases"
+// figure, since a client can hold more than one plot. Name is required alongside
+// contact because two different real clients have been found sharing a phone
+// number (data-entry duplicates) -- contact-only matching would silently merge
+// a stranger's plot/debt into this client's total.
+function computeClientPortfolioTotal(contact,leadsList,name){
   const digits=normalizeGhPhone(contact)||String(contact||'').replace(/\D/g,'');
+  const nm=(name||'').trim().toLowerCase();
   const own=(leadsList||[]).filter(l=>{
     const ld=normalizeGhPhone(l.contact)||String(l.contact||'').replace(/\D/g,'');
-    return ld && digits && ld.slice(-9)===digits.slice(-9);
+    return ld && digits && ld.slice(-9)===digits.slice(-9) && (l.name||'').trim().toLowerCase()===nm;
   });
   if(own.length<2) return null;
   return own.reduce((s,l)=>{ const c=computeLead(l); return s+(l.grandTotal!=null?num(l.grandTotal):c.grand); },0);
@@ -7892,7 +7961,7 @@ function buildReceiptPDF(clientName,payment,lead,existingDoc,portfolioTotal){
   return doc;
 }
 function buildClientReceiptPDF(payment,lead){
-  const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,(CLIENT_DB&&CLIENT_DB.leads)||[]);
+  const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,(CLIENT_DB&&CLIENT_DB.leads)||[],CLIENT_PROFILE.name);
   const doc=buildReceiptPDF(CLIENT_PROFILE.name,payment,lead,undefined,portfolioTotal); if(!doc) return;
   const fname='Receipt_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
   const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
@@ -7905,7 +7974,7 @@ function downloadAllReceipts(){
   const leads=(CLIENT_DB&&CLIENT_DB.leads)||[]; const payments=(CLIENT_DB&&CLIENT_DB.payments)||[];
   if(!payments.length){ toast('No payments recorded yet'); return; }
   const sorted=payments.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,leads);
+  const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,leads,CLIENT_PROFILE.name);
   let doc=null;
   sorted.forEach(p=>{
     const lead=leads.find(l=>l.id===p.leadId)||leads[0];
@@ -8020,7 +8089,7 @@ async function offerSendReceipt(lead,payment){
   document.getElementById('srWhatsapp').href='https://wa.me/'+waNumberFromPhone(waTarget)+'?text='+encodeURIComponent(msg);
   const emailEl=document.getElementById('srEmail'); if(emailEl) emailEl.href='mailto:'+channels.email+'?subject='+encodeURIComponent('Your payment receipt')+'&body='+encodeURIComponent(msg);
   document.getElementById('srDownload').onclick=()=>{
-    const portfolioTotal=computeClientPortfolioTotal(lead.contact,DB.leads||[]);
+    const portfolioTotal=computeClientPortfolioTotal(lead.contact,DB.leads||[],lead.name);
     const doc=buildReceiptPDF(lead.name,payment,lead,undefined,portfolioTotal); if(!doc) return;
     const fname='Receipt_'+lead.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
     doc.save(fname);
@@ -8034,6 +8103,7 @@ function formClientSiteVisit(){
     ${fld('Preferred day',sel('cv_day',['Tuesday 9:00am','Friday 9:00am','Sunday 12:00pm']))}
     ${fld('Pick-up location','<input id="cv_pickup"/>','optional')}
     ${fld('Number of people accompanying you','<input id="cv_ppl" type="number" min="0" value="0"/>')}
+    ${fld('Who is accompanying you?','<input id="cv_accompanied" placeholder="e.g. Spouse, Relative — leave blank if none"/>','optional')}
     <div class="formactions"><button class="btn gold" id="saveCV">Submit request</button></div>
   </div>`;
   document.getElementById('saveCV').onclick=saveClientVisit;
@@ -8041,7 +8111,8 @@ function formClientSiteVisit(){
 async function saveClientVisit(){
   const btn=document.getElementById('saveCV'); btn.disabled=true; btn.textContent='Sending…';
   const row={plot:val('cv_interest'),site:'Royal Palm Enclave, Tsopoli',date:today(),time:val('cv_day'),
-    people:num(val('cv_ppl')),transport:val('cv_trans'),purpose:val('cv_purpose'),pickup:val('cv_pickup').trim(),notes:''};
+    people:num(val('cv_ppl')),transport:val('cv_trans'),purpose:val('cv_purpose'),pickup:val('cv_pickup').trim(),
+    accompanied:val('cv_accompanied').trim(),notes:''};
   try{
     const rec=await apiClientInsertSiteVisit(row); CLIENT_DB.sitevisits.unshift(rec);
     toast("Visit request sent — we'll confirm the date and time shortly.");
@@ -8234,6 +8305,26 @@ function runDataIntegrityCheck(scopeToLeads){
     }
     if(l.plotType==='Half Plot' && num(l.noPlots)>0 && num(l.noPlots)<1){
       issues.push({lead:l,type:'Quantity error',cls:'dgr',detail:`No. of plots is ${l.noPlots} on a Half Plot — that's half of an already-half unit. This almost always means it should be 1 (one Half Plot), not ${l.noPlots}.`});
+    }
+  });
+  // Two different clients sharing a phone number is a data-entry error, not a
+  // real household -- the client portal / Customer 360 view now keep them apart
+  // by also requiring the name to match, but the underlying wrong number should
+  // still be fixed so the client's own SMS/portal login isn't sent to the wrong
+  // phone or blocked by the other lead already holding that number.
+  const contactGroups={};
+  allLeads.forEach(l=>{
+    const digits=String(l.contact||'').replace(/\D/g,'').slice(-9);
+    if(digits.length<9) return;
+    (contactGroups[digits]=contactGroups[digits]||[]).push(l);
+  });
+  Object.values(contactGroups).forEach(group=>{
+    const distinctNames=[...new Set(group.map(l=>(l.name||'').trim().toLowerCase()).filter(Boolean))];
+    if(distinctNames.length>1){
+      group.forEach(l=>{
+        const others=group.filter(x=>x!==l).map(x=>x.name).join(', ');
+        issues.push({lead:l,type:'Shared phone number',cls:'dgr',detail:`This phone number is also on ${others}'s lead — almost always means one of the two numbers was mistyped. The system keeps their data separate either way, but the wrong number should be corrected so SMS/portal login reach the right person.`});
+      });
     }
   });
   const dismissed=dismissedIssues();
