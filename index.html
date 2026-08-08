@@ -832,6 +832,16 @@ const favicon = document.querySelector('link[rel="icon"]'); if(favicon) favicon.
 // to read synchronously even though LOGO_SRC/TRULANDER_LOGO_SRC are now external files.
 const LOGO_IMG = new Image(); LOGO_IMG.src = LOGO_SRC;
 const TRULANDER_LOGO_IMG = new Image(); TRULANDER_LOGO_IMG.src = TRULANDER_LOGO_SRC;
+// jsPDF's addImage() only reliably survives a second buildDocument() pass (i.e. doc.save()
+// after doc.output()) when given a base64 data URI -- an <img> element makes the SECOND
+// pass throw deep inside jsPDF's internal PubSub/putCatalog step and silently abort the
+// save. So every PDF-generating function keeps using LOGO_IMG/TRULANDER_LOGO_IMG as a
+// fallback, but prefers these pre-fetched data URIs the instant they're ready (a same-origin
+// fetch of a <60KB file, done well before anyone reaches a "Download PDF" button).
+let LOGO_DATA_URI=null, TRULANDER_LOGO_DATA_URI=null;
+function urlToDataUri(url){ return fetch(url).then(r=>r.blob()).then(b=>new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(b); })); }
+urlToDataUri(LOGO_SRC).then(u=>LOGO_DATA_URI=u).catch(()=>{});
+urlToDataUri(TRULANDER_LOGO_SRC).then(u=>TRULANDER_LOGO_DATA_URI=u).catch(()=>{});
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
@@ -3681,7 +3691,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -3970,6 +3980,7 @@ function mgrAppRoute(key){
   else if(key==='Plot Requests') route('plotrequests');
   else if(key==='Company Leads') route('companyleads');
   else if(key==='Log Payment') route('logpayment');
+  else if(key==='Site Visit Auth') route('sitevisitauth');
   else route('mgrTabView',key);
 }
 function mgrAppGridHtml(items){
@@ -4009,7 +4020,7 @@ function viewMore(){
       {key:'plotrequests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
       ...(canManagePlots()?[{key:'allocations',fic:'allocation',label:'Allocations'}]:[]),
       ...(canManagePayments()?[{key:'logpayment',fic:'savings',label:'Log Payment'}]:[]),
-      ...(canViewClientDatabase()?[{key:'clientdb',fic:'savings',label:'Client Database'},{key:'companyleads',fic:'briefcase',label:'Company Leads'}]:[]),
+      ...(canViewClientDatabase()?[{key:'clientdb',fic:'savings',label:'Client Database'},{key:'companyleads',fic:'briefcase',label:'Company Leads'},{key:'sitevisitauth',fic:'clipboard',label:'Site Visit Auth'}]:[]),
       {key:'account',fic:'settings',label:'Settings'}
     ];
     grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
@@ -7262,6 +7273,223 @@ function openLogPayEditModal(p,lead){
   };
 }
 
+/* ================= WEEKLY SITE VISIT AUTHORIZATION FORM =================
+   Reproduces your real "AUTHORIZATION FORM-TSOPOLI SITE VISIT" paper form
+   exactly (8-column client/visit table, then side-by-side Estimated/Actual
+   cost blocks, then the two signature lines) -- one row per Mon-Fri week
+   (auto-created on first open). Costs lock the instant Friday begins
+   (weekLockInstant, defined with the other week helpers up top); Management
+   can still finalize a locked-but-unapproved week afterwards, they just can't
+   change the numbers anymore. Finalizing stamps the approver's saved
+   e-signature via apiFinalizeWeeklyVisitForm -> getStaffSignature.
+   NOTE: the estimated side literally says "Vehicle Rentals" while the actual
+   side says "Van Hiring" for the same row in your original form -- kept as-is
+   on purpose, not a typo. */
+let SVA_WEEK_START=null, SVA_FORM=null, SVA_VISITS=[];
+const SVA_COST_ROWS=[
+  {estKey:'vehicleRentalEst',actKey:'vehicleRentalAct',estLabel:'Vehicle Rentals',actLabel:'Van Hiring'},
+  {estKey:'driversTipEst',actKey:'driversTipAct',estLabel:"Driver's Tip",actLabel:"Driver's Tip"},
+  {estKey:'fuelEst',actKey:'fuelAct',estLabel:'Cost of fuel',actLabel:'Cost of fuel'},
+  {estKey:'refreshmentEst',actKey:'refreshmentAct',estLabel:'Cost of refreshment',actLabel:'Cost of refreshment'},
+  {estKey:'tntEst',actKey:'tntAct',estLabel:'TNT for staff',actLabel:'TNT for staff'}
+];
+const SVA_VISIT_COLS=[['Client Name','name'],['Contact','contact'],['Accompanied','accompanied'],['Purpose of visit','purpose'],
+  ['Pick-up Location','pickup'],['Transport Medium','transport'],['Feedback/Remarks','feedback'],['Staff','agentName']];
+function svaCostTotal(form,suffix){ return SVA_COST_ROWS.reduce((n,r)=>n+num(form[suffix==='Est'?r.estKey:r.actKey]),0); }
+function svaMoney(n){ n=num(n); return n?n.toFixed(2):'-'; }
+async function viewSiteVisitAuth(weekStartArg){
+  if(!canViewClientDatabase()){ V.innerHTML=back('more')+emptyState(ic.doc,'Restricted','Site Visit Authorization is limited to Management, Elias, Emmanuel and Elizabeth.'); return; }
+  SVA_WEEK_START=weekStartArg||currentWeekStartIso();
+  V.innerHTML=`${back('more')}<div class="pagehead"><div><div class="eyebrow">Weekly logistics</div><h2>Site Visit Authorization</h2><p>Estimate and reconcile this week's site-visit costs, then get Management's approval.</p></div></div>
+  <div id="svaBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  await paintSiteVisitAuthBody();
+}
+async function paintSiteVisitAuthBody(){
+  const body=document.getElementById('svaBody'); if(!body) return;
+  try{
+    const [form,visits]=await Promise.all([apiLoadOrCreateWeeklyVisitForm(SVA_WEEK_START),apiLoadSiteVisitsForWeek(SVA_WEEK_START)]);
+    SVA_FORM=form; SVA_VISITS=visits;
+  }catch(e){ body.innerHTML=`<div class="empty">Could not load this week's form: ${esc(e.message||e)}</div>`; return; }
+  body.innerHTML=siteVisitAuthBodyHtml(SVA_FORM,SVA_VISITS);
+  bindSiteVisitAuthCtrls();
+}
+function siteVisitAuthBodyHtml(form,visits){
+  const locked=isWeekLocked(form.weekStart);
+  const costsEditable=form.status==='Open'&&!locked;
+  const totalEst=svaCostTotal(form,'Est'), totalAct=svaCostTotal(form,'Act');
+  return `
+  <div class="rowcard" style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="iconbtn" id="svaPrevWeek" title="Previous week" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)">‹</button>
+        <div><div style="font-weight:800;font-size:15px">${esc(weekRangeLabel(form.weekStart))}</div><div class="mini">Week of ${esc(form.weekStart)}</div></div>
+        <button class="iconbtn" id="svaNextWeek" title="Next week" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)">›</button>
+      </div>
+      <span class="tag ${form.status==='Finalized'?'ok':'warnt'}">${esc(form.status)}${locked&&form.status==='Open'?' · costs locked':''}</span>
+    </div>
+  </div>
+
+  <div class="sectitle" style="margin-top:0"><h3>AUTHORIZATION FORM-TSOPOLI SITE VISIT</h3><span class="cnt">${visits.length} visit${visits.length===1?'':'s'} this week</span></div>
+  <div style="overflow-x:auto;margin-bottom:18px;border:1px solid var(--line);border-radius:12px">
+    <table class="league-table" style="min-width:900px">
+      <thead><tr>${SVA_VISIT_COLS.map(([label])=>`<th>${esc(label)}</th>`).join('')}</tr></thead>
+      <tbody>${!visits.length?`<tr><td colspan="${SVA_VISIT_COLS.length}" style="text-align:center;color:var(--muted)">No site visits logged for this week yet.</td></tr>`:
+        visits.map(v=>`<tr>${SVA_VISIT_COLS.map(([,key])=>`<td>${esc(v[key]||'—')}</td>`).join('')}</tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sectitle"><h3>Cost breakdown</h3><span class="cnt">Estimated vs. actual, exactly as on the paper form</span></div>
+  <div class="rowcard" style="margin-bottom:18px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <div style="font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:8px">Estimated Cost</div>
+        ${SVA_COST_ROWS.map(r=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0">
+          <span style="flex:1.3;min-width:0;font-size:12.5px">${esc(r.estLabel)}</span>
+          <input id="sva_${r.estKey}" type="number" min="0" step="0.01" value="${num(form[r.estKey])}" ${costsEditable?'':'disabled'} style="flex:1;min-width:0;box-sizing:border-box;text-align:right;padding:8px 9px;border:1.5px solid var(--line);border-radius:10px;font-size:13px"/>
+        </div>`).join('')}
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 0 0;margin-top:4px;border-top:1.5px solid var(--line);font-weight:800">
+          <span style="flex:1.3;font-size:12.5px">TOTAL COST GHS</span><span style="flex:1;text-align:right">${svaMoney(totalEst)}</span>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:8px">Actual Expenses</div>
+        ${SVA_COST_ROWS.map(r=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0">
+          <span style="flex:1.3;min-width:0;font-size:12.5px">${esc(r.actLabel)}</span>
+          <input id="sva_${r.actKey}" type="number" min="0" step="0.01" value="${num(form[r.actKey])}" ${costsEditable?'':'disabled'} style="flex:1;min-width:0;box-sizing:border-box;text-align:right;padding:8px 9px;border:1.5px solid var(--line);border-radius:10px;font-size:13px"/>
+        </div>`).join('')}
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 0 0;margin-top:4px;border-top:1.5px solid var(--line);font-weight:800">
+          <span style="flex:1.3;font-size:12.5px">TOTAL COST GHS</span><span style="flex:1;text-align:right">${svaMoney(totalAct)}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  ${form.status==='Finalized'?`
+  <div class="rowcard" style="margin-bottom:18px">
+    <div class="sectitle" style="margin-top:0"><h3>Approved</h3></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px">
+      <div><div class="mini">Approved by</div><div style="font-weight:700">${esc(form.approvedByName||'')}</div><div class="mini">${esc(form.finalizedAt||'')}</div></div>
+      ${form.approvedSignature?`<img src="${form.approvedSignature}" style="max-width:140px;max-height:60px;object-fit:contain"/>`:''}
+    </div>
+  </div>`:''}
+
+  <div class="formactions" style="display:flex;flex-direction:column;gap:10px">
+    ${costsEditable?`<button class="btn primary" id="svaSave" style="width:100%">Save cost estimate</button>`:''}
+    ${form.status==='Open'&&PROFILE.role==='manager'?`<button class="btn" id="svaFinalize" style="width:100%;background:#0B1E3D;color:#fff">Finalize &amp; approve</button>`:''}
+    <button class="btn ghost" id="svaDownload" style="width:100%">⬇ Download PDF</button>
+  </div>`;
+}
+function bindSiteVisitAuthCtrls(){
+  const prev=document.getElementById('svaPrevWeek'); if(prev) prev.onclick=()=>{ const d=new Date(SVA_WEEK_START+'T00:00:00'); d.setDate(d.getDate()-7); viewSiteVisitAuth(isoDateOnly(d)); };
+  const next=document.getElementById('svaNextWeek'); if(next) next.onclick=()=>{ const d=new Date(SVA_WEEK_START+'T00:00:00'); d.setDate(d.getDate()+7); viewSiteVisitAuth(isoDateOnly(d)); };
+  const saveBtn=document.getElementById('svaSave');
+  if(saveBtn) saveBtn.onclick=async()=>{
+    const patch={}; SVA_COST_ROWS.forEach(([,estKey,actKey])=>{ [estKey,actKey].forEach(k=>{ const el=document.getElementById('sva_'+k); if(el) patch[k]=num(el.value); }); });
+    saveBtn.disabled=true; saveBtn.textContent='Saving…';
+    try{
+      await apiSaveWeeklyVisitCosts(SVA_FORM.id,patch);
+      Object.assign(SVA_FORM,patch);
+      toast('Cost estimate saved');
+      await paintSiteVisitAuthBody();
+    }catch(e){ toast('Could not save: '+(e.message||e)); saveBtn.disabled=false; saveBtn.textContent='Save cost estimate'; }
+  };
+  const finBtn=document.getElementById('svaFinalize');
+  if(finBtn) finBtn.onclick=async()=>{
+    if(!confirm("Finalize and approve this week's site visit costs? This locks the form and stamps your signature.")) return;
+    finBtn.disabled=true; finBtn.textContent='Approving…';
+    try{
+      SVA_FORM=await apiFinalizeWeeklyVisitForm(SVA_FORM.id);
+      toast('Finalized and approved');
+      await paintSiteVisitAuthBody();
+    }catch(e){ toast('Could not finalize: '+(e.message||e)); finBtn.disabled=false; finBtn.textContent='Finalize & approve'; }
+  };
+  const dlBtn=document.getElementById('svaDownload');
+  if(dlBtn) dlBtn.onclick=()=>buildWeeklyVisitAuthPDF(SVA_FORM,SVA_VISITS);
+}
+/* Draws one bordered grid row at (x0,y), honoring per-cell colspan against
+   colWidths, and returns the row height used. Mirrors an Excel/Word table
+   grid cell-by-cell -- this is what lets the PDF be a literal reproduction
+   of the real paper form instead of our own take on the layout. */
+function svaGridRow(doc,x0,y,colWidths,cells,h){
+  h=h||6.2;
+  doc.setDrawColor(20,20,20); doc.setLineWidth(0.2);
+  let x=x0, col=0;
+  cells.forEach(cell=>{
+    const span=cell.span||1;
+    let w=0; for(let i=0;i<span;i++) w+=colWidths[col+i]||0;
+    doc.rect(x,y,w,h);
+    if(cell.text!=null && cell.text!==''){
+      doc.setFont('helvetica',cell.bold?'bold':'normal'); doc.setFontSize(cell.size||7); doc.setTextColor(20,20,20);
+      const align=cell.align||'left'; const pad=1.6; const maxW=w-pad*2;
+      const tx=align==='right'?x+w-pad:align==='center'?x+w/2:x+pad;
+      let txt=String(cell.text);
+      if(doc.getTextWidth(txt)>maxW){
+        while(txt.length>1 && doc.getTextWidth(txt+'...')>maxW) txt=txt.slice(0,-1);
+        txt+='...';
+      }
+      doc.text(txt,tx,y+h/2+1.1,{align});
+    }
+    x+=w; col+=span;
+  });
+  return h;
+}
+function buildWeeklyVisitAuthPDF(form,visits){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  let y=pdfHeader(doc,'SITE VISIT AUTHORIZATION');
+  y+=6;
+
+  const x0=12, colW=[30,20,18,24,30,24,22,18]; // Client Name, Contact, Accompanied, Purpose, Pick-up, Transport, Feedback, Staff
+  const tableW=colW.reduce((a,b)=>a+b,0);
+  const tableTop=y;
+
+  y+=svaGridRow(doc,x0,y,colW,[{text:'AUTHORIZATION FORM-TSOPOLI SITE VISIT',span:8,bold:true,align:'center',size:10.5}],8.5);
+  y+=svaGridRow(doc,x0,y,colW,[
+    {text:'Date of visit'},{text:weekRangeLabel(form.weekStart).replace(/–/g,'-'),span:3},{text:''},
+    {text:'Approved By:'},{text:form.status==='Finalized'?(form.approvedByName||''):'',span:2}
+  ]);
+  y+=svaGridRow(doc,x0,y,colW,SVA_VISIT_COLS.map(([label])=>({text:label,bold:true})));
+  visits.forEach(v=>{
+    if(y>272){ doc.addPage(); y=16; }
+    y+=svaGridRow(doc,x0,y,colW,SVA_VISIT_COLS.map(([,key])=>({text:v[key]||''})));
+  });
+  const blankRows=Math.max(3,8-visits.length);
+  for(let i=0;i<blankRows;i++){
+    if(y>272){ doc.addPage(); y=16; }
+    y+=svaGridRow(doc,x0,y,colW,SVA_VISIT_COLS.map(()=>({text:''})));
+  }
+  if(y>250){ doc.addPage(); y=16; }
+  y+=svaGridRow(doc,x0,y,colW,[{text:''},{text:'ESTIMATED COST',bold:true},{text:'',span:3},{text:'ACTUAL EXPENSES',bold:true},{text:'',span:2}]);
+  SVA_COST_ROWS.forEach(r=>{
+    if(y>272){ doc.addPage(); y=16; }
+    y+=svaGridRow(doc,x0,y,colW,[
+      {text:r.estLabel},{text:svaMoney(form[r.estKey]),align:'right'},{text:'',span:3},
+      {text:r.actLabel},{text:form.status==='Finalized'||num(form[r.actKey])?svaMoney(form[r.actKey]):'',align:'right'},{text:''}
+    ]);
+  });
+  y+=svaGridRow(doc,x0,y,colW,[
+    {text:'TOTAL COST GHS',bold:true},{text:svaMoney(svaCostTotal(form,'Est')),bold:true,align:'right'},{text:'',span:3},
+    {text:'TOTAL COST GHS',bold:true},{text:form.status==='Finalized'||svaCostTotal(form,'Act')?svaMoney(svaCostTotal(form,'Act')):'',bold:true,align:'right'},{text:''}
+  ]);
+  doc.setDrawColor(20,20,20); doc.setLineWidth(0.7); doc.rect(x0,tableTop,tableW,y-tableTop);
+
+  y+=14;
+  if(y>270){ doc.addPage(); y=16; }
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(20,20,20);
+  doc.text('Signed:.....................................',x0,y);
+  const rx=x0+tableW-72;
+  doc.text('Approved By:.....................................',rx,y);
+  doc.text('Signed:.....................................',rx,y+9);
+  doc.text('Date:.....................................',rx,y+18);
+  if(form.status==='Finalized'&&form.approvedSignature) pdfStampSignature(doc,rx+30,y+9,32,12,form.approvedSignature);
+
+  const fname='SiteVisitAuth_'+form.weekStart+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
+}
+
 /* ================= ENQUIRY ================= */
 let enqTypes=new Set();
 function formEnquiry(){ enqTypes=new Set();
@@ -7282,7 +7510,7 @@ function formEnquiry(){ enqTypes=new Set();
 function pdfHeader(doc,title){
   const pageW=doc.internal.pageSize.getWidth();
   doc.setFillColor(11,30,61); doc.rect(0,0,pageW,26,'F');
-  try{ doc.addImage(LOGO_IMG,'PNG',12,4,18,18); }catch(e){}
+  try{ doc.addImage(LOGO_DATA_URI||LOGO_IMG,'PNG',12,4,18,18); }catch(e){}
   doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(14);
   doc.text('PEP LANDBANK',36,12);
   doc.setFont('helvetica','normal'); doc.setFontSize(9);
@@ -7297,7 +7525,7 @@ function pdfHeader(doc,title){
 function pdfBrandedHeader(doc,title,subtitle,rightLines){
   const pageW=doc.internal.pageSize.getWidth();
   doc.setFillColor(11,30,61); doc.rect(0,0,pageW,32,'F');
-  try{ doc.addImage(LOGO_IMG,'PNG',14,7,20,20); }catch(e){}
+  try{ doc.addImage(LOGO_DATA_URI||LOGO_IMG,'PNG',14,7,20,20); }catch(e){}
   doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(17);
   doc.text(title,42,16);
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(200,214,235);
@@ -7931,7 +8159,7 @@ function buildQuotationPDF(q){
   const docType=CONFIG.quoteDocTypeText||'Quotation with Payment Plan Schedule';
   pdfQuoteBg(doc,pageW,pageH);
 
-  try{ doc.addImage(TRULANDER_LOGO_IMG,'PNG',12,10,26,26); }catch(e){}
+  try{ doc.addImage(TRULANDER_LOGO_DATA_URI||TRULANDER_LOGO_IMG,'PNG',12,10,26,26); }catch(e){}
   doc.setFont('times','bold'); doc.setFontSize(20); doc.setTextColor(20,20,20);
   doc.text(companyName,44,22);
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100,112,133);
@@ -8635,6 +8863,7 @@ const MGR_APPS=[
   {key:'Enquiries',fic:'enquiry',label:'Enquiries',badgeKind:'enquiry',section:'crm'},
   {key:'Complaints',fic:'alert',label:'Client Feedback',badgeKind:'complaint',section:'crm'},
   {key:'Site visits',fic:'location',label:'Site Visits',badgeKind:'sitevisit',section:'crm'},
+  {key:'Site Visit Auth',fic:'clipboard',label:'Site Visit Auth'},
   {key:'Log Payment',fic:'savings',label:'Log Payment'},
   {key:'News',fic:'announce',label:'News & Announcements'},
   {key:'Commission',fic:'savings',label:'Commission'},
