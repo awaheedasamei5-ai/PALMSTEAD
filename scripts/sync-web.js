@@ -16,6 +16,10 @@ const files = [
   'icon-512.png',
   'apple-touch-icon.png',
   'favicon-32.png',
+  'logo.png',
+  'trulander-logo.png',
+  'site-plan.jpg',
+  'pipeline-template.xlsx',
 ];
 
 fs.rmSync(webDir, { recursive: true, force: true });
