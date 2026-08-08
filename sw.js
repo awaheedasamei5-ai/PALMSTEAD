@@ -3,14 +3,18 @@
    Your data (leads, enquiries, etc.) always comes live from Supabase when online —
    this only caches the app shell so the portal still opens with no signal. */
 
-const CACHE_NAME = 'pep-portal-v3';
+const CACHE_NAME = 'pep-portal-v4';
 const APP_SHELL = [
   './index.html',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',
   './apple-touch-icon.png',
-  './favicon-32.png'
+  './favicon-32.png',
+  './logo.png',
+  './trulander-logo.png',
+  './site-plan.jpg',
+  './pipeline-template.xlsx'
 ];
 
 self.addEventListener('install', (event) => {
