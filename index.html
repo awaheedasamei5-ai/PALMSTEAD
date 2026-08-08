@@ -170,7 +170,7 @@ a{color:var(--green2)}
 .loginOrbs .orb3{width:220px;height:220px;left:18%;bottom:-40px;background:radial-gradient(circle,rgba(234,179,8,.4),transparent 70%);animation-duration:13s;animation-delay:-7s}
 @keyframes orbDrift{0%{transform:translate(0,0) scale(1)}100%{transform:translate(26px,-22px) scale(1.16)}}
 
-.appPill{position:relative;display:flex;align-items:center;gap:9px;margin:0 auto 22px;padding:9px 18px 9px 10px;
+.appPill{position:relative;display:flex;align-items:center;gap:9px;margin:18px auto 0;padding:8px 16px 8px 8px;
   border-radius:100px;background:linear-gradient(100deg,rgba(132,204,22,.16),rgba(59,130,246,.14));
   border:1px solid rgba(190,242,100,.35);color:#EAF7D8;text-decoration:none;font-size:12.5px;font-weight:600;
   letter-spacing:.02em;backdrop-filter:blur(8px);box-shadow:0 8px 22px rgba(0,0,0,.25);overflow:hidden;
@@ -491,11 +491,12 @@ body.dark .insightCard.ok{color:#A3E635}body.dark .insightCard.warnt{color:#FBBF
 .rowcard .nm{font-weight:700;font-size:14.5px}
 .nm-link{cursor:pointer;transition:.15s}
 .nm-link:hover{color:var(--leaf);text-decoration:underline}
-.contactLinks{display:inline-flex;gap:5px;margin-left:6px;vertical-align:middle}
-.contactIcoBtn{display:inline-flex;width:20px;height:20px;border-radius:100px;align-items:center;justify-content:center;background:#EEF1F6;text-decoration:none!important;transition:.15s;color:#28405f}
-.contactIcoBtn svg{width:11px;height:11px}
-.contactIcoBtn:hover{transform:scale(1.12)}
-.contactIcoBtn.wa{background:#DCF8E7;color:#166534}
+.contactLinks{display:inline-flex;gap:6px;margin-left:6px;vertical-align:middle}
+.contactBadgeBtn{display:inline-flex;width:24px;height:24px;border-radius:100px;align-items:center;justify-content:center;text-decoration:none!important;transition:transform .15s,box-shadow .15s;box-shadow:0 2px 6px rgba(0,0,0,.2)}
+.contactBadgeBtn svg{width:13px;height:13px}
+.contactBadgeBtn:hover{transform:scale(1.14);box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.contactTileIcon{width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.18);transition:transform .15s}
+a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .tag.tagchip{background:linear-gradient(150deg,#F5B94F22,#B8791E22);color:#8A5F17;border:1px solid #F5B94F44}
 .rowcard .meta{font-size:12px;color:var(--muted);margin-top:2px}
 .rowcard .amt{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:14px;white-space:nowrap}
@@ -675,12 +676,6 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
     <div class="sub">Internal activity &amp; pipeline system · Royal Palm Enclave</div>
   </div>
 
-  <a href="https://github.com/awaheedasamei5-ai/pep-landbank-portal/releases/download/android-latest/Palmstead.apk" class="appPill">
-    <span class="aicon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="#0B1E3D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-    <span><b>Get the Palmstead app</b> for Android</span>
-    <span class="achev"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-  </a>
-
   <div class="card-auth" id="roleChoice">
     <div class="lbl">Sign in as</div>
     <div class="roleGrid">
@@ -696,6 +691,12 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
       </button>
     </div>
   </div>
+
+  <a href="https://github.com/awaheedasamei5-ai/pep-landbank-portal/releases/download/android-latest/Palmstead.apk" class="appPill">
+    <span class="aicon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="#0B1E3D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    <span><b>Get the Android app</b></span>
+    <span class="achev"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+  </a>
 
   <div class="card-auth hidden" id="authCard">
     <button class="linkbtn" id="staffBackBtn" style="text-align:left;margin:0 0 12px;padding:0;width:auto">← Choose a different sign-in</button>
@@ -849,38 +850,62 @@ function nowTime(){return new Date().toLocaleTimeString('en-GB',{hour:'2-digit',
 function num(x){const n=Number(x);return isNaN(n)?0:n;}
 function ghs(x){return 'GHS '+num(x).toLocaleString('en-US',{maximumFractionDigits:0});}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+/* Ghana numbers show up in every shape agents/clients happen to type them (or that
+   Excel mangles on export/import -- numeric-typed cells silently drop a leading 0):
+   "0244123456", "244123456", "+233244123456", "233244123456". Normalizing down to the
+   bare 9-digit subscriber number first means every downstream format (tel:, wa.me) is
+   built from the same canonical value instead of guessing which prefix is present. */
+function normalizeGhPhone(phone){
+  let d=String(phone||'').replace(/\D/g,'');
+  if(d.startsWith('233')) d=d.slice(3);
+  else if(d.startsWith('0')) d=d.slice(1);
+  return d;
+}
+function waNumberFromPhone(phone){ const d=normalizeGhPhone(phone); return d?('233'+d):''; }
+function telHrefFromPhone(phone){ const d=normalizeGhPhone(phone); return d?('tel:0'+d):('tel:'+String(phone||'').replace(/[^\d+]/g,'')); }
+/* Small branded glyphs (not the trademarked logos themselves, just recognizable
+   colour-coded shapes) so each contact channel reads at a glance instead of every
+   button sharing one generic icon. */
+const CONTACT_BADGE={
+  call:{bg:'linear-gradient(150deg,#22C55E,#15803D)',svg:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.4 21 3 13.6 3 4.6c0-.6.4-1 1-1h3.4c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.4 0 .8-.2 1l-2.2 2.2z" fill="#fff"/></svg>'},
+  whatsapp:{bg:'linear-gradient(150deg,#34D058,#0B7A3C)',svg:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 2.5A9.5 9.5 0 003.6 17L2.5 21.5l4.6-1.2A9.5 9.5 0 1012 2.5z" fill="#fff" fill-opacity=".14"/><path d="M17 14.3c-.3-.2-1.7-.9-2-1s-.5-.1-.7.1-.7.9-.9 1.1-.4.2-.7.1a7.6 7.6 0 01-2.2-1.4 8.4 8.4 0 01-1.6-2c-.2-.3 0-.5.1-.6l.4-.5c.1-.2.2-.3.3-.5s0-.4 0-.5c-.1-.1-.7-1.6-.9-2.2s-.4-.5-.7-.5h-.6a1.2 1.2 0 00-.9.4A3.5 3.5 0 007 9.4c0 1.9 1.4 3.7 1.6 4a13 13 0 005 4.4c2.4 1 2.4.7 2.8.6.5-.1 1.6-.6 1.8-1.3s.2-1.2.2-1.3-.1-.2-.4-.4z" fill="#fff"/></svg>'},
+  email:{bg:'linear-gradient(150deg,#3B82F6,#1D4ED8)',svg:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2.5" stroke="#fff" stroke-width="1.8"/><path d="M4 6.5l8 6 8-6" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'},
+  instagram:{bg:'linear-gradient(135deg,#F5A623,#E1306C 45%,#8134AF)',svg:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3.5" y="3.5" width="17" height="17" rx="5" stroke="#fff" stroke-width="1.8"/><circle cx="12" cy="12" r="4.2" stroke="#fff" stroke-width="1.8"/><circle cx="17.3" cy="6.7" r="1.15" fill="#fff"/></svg>'},
+  facebook:{bg:'linear-gradient(150deg,#3B82F6,#1447B8)',svg:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M14.5 21v-7.2h2.4l.4-2.8h-2.8v-1.8c0-.8.2-1.4 1.4-1.4h1.5V5.3c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.8v2.1H9v2.8h2.5V21h3z" fill="#fff"/></svg>'},
+  tiktok:{bg:'linear-gradient(150deg,#25F4EE,#0B1E3D 55%,#FE2C55)',svg:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15.5 3c.4 2.2 1.8 3.6 4 3.9v2.8c-1.5 0-2.9-.5-4-1.3v6.1a5.4 5.4 0 11-5.4-5.4c.3 0 .6 0 .9.1V12a2.6 2.6 0 102.2 2.6V3h2.3z" fill="#fff"/></svg>'}
+};
+function contactBadgeHtml(kind,href,title,external){
+  const b=CONTACT_BADGE[kind]; if(!b) return '';
+  return `<a href="${esc(href)}" ${external?'target="_blank" rel="noopener"':''} onclick="event.stopPropagation()" title="${esc(title)}" class="contactBadgeBtn" style="background:${b.bg}">${b.svg}</a>`;
+}
 function contactLinks(contact){
   if(!contact||!contact.trim()) return '';
-  const digits=contact.replace(/[^\d+]/g,'');
-  const waNum=digits.replace(/^\+?0/,'233').replace(/^\+/,'');
-  return `<span class="contactLinks"><a href="tel:${digits}" onclick="event.stopPropagation()" title="Call" class="contactIcoBtn">${ic.phone}</a><a href="https://wa.me/${waNum}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="WhatsApp" class="contactIcoBtn wa">${ic.chat}</a></span>`;
+  return `<span class="contactLinks">${contactBadgeHtml('call',telHrefFromPhone(contact),'Call')}${contactBadgeHtml('whatsapp','https://wa.me/'+waNumberFromPhone(contact),'WhatsApp',true)}</span>`;
 }
-function waNumberFromPhone(phone){
-  const digits=(phone||'').replace(/[^\d+]/g,'');
-  return digits.replace(/^\+?0/,'233').replace(/^\+/,'');
-}
-/* A richer "call this person/company" card -- one icon tile per channel, only the
-   channels that have a value show up, used for agent + company contact cards in the
-   client portal and staff dashboards. */
+/* A richer "call this person/company" card -- one branded icon tile per channel, only
+   the channels that have a value show up, used for agent + company contact cards in
+   the client portal and staff dashboards. Each tile is a real functioning tel:/wa.me/
+   mailto: link -- one tap opens the client's own phone/WhatsApp/mail app directly,
+   nothing in-page intercepts the click. */
 function renderContactCard(opts){
   const items=[];
-  if(opts.phone) items.push({icon:ic.phone,label:'Call',href:'tel:'+opts.phone.replace(/[^\d+]/g,'')});
+  if(opts.phone) items.push({kind:'call',label:'Call',href:telHrefFromPhone(opts.phone)});
   const wa=opts.whatsapp||opts.phone;
-  if(wa) items.push({icon:ic.chat,label:'WhatsApp',href:'https://wa.me/'+waNumberFromPhone(wa),external:true});
-  if(opts.email) items.push({icon:ic.mail,label:'Email',href:'mailto:'+opts.email});
+  if(wa) items.push({kind:'whatsapp',label:'WhatsApp',href:'https://wa.me/'+waNumberFromPhone(wa),external:true});
+  if(opts.email) items.push({kind:'email',label:'Email',href:'mailto:'+opts.email});
   const social=opts.social||{};
-  if(social.instagram) items.push({icon:ic.image,label:'Instagram',href:'https://instagram.com/'+social.instagram.replace(/^@/,''),external:true});
-  if(social.facebook) items.push({icon:ic.grid,label:'Facebook',href:'https://facebook.com/'+social.facebook,external:true});
-  if(social.tiktok) items.push({icon:ic.spark,label:'TikTok',href:'https://tiktok.com/@'+social.tiktok.replace(/^@/,''),external:true});
+  if(social.instagram) items.push({kind:'instagram',label:'Instagram',href:'https://instagram.com/'+social.instagram.replace(/^@/,''),external:true});
+  if(social.facebook) items.push({kind:'facebook',label:'Facebook',href:'https://facebook.com/'+social.facebook,external:true});
+  if(social.tiktok) items.push({kind:'tiktok',label:'TikTok',href:'https://tiktok.com/@'+social.tiktok.replace(/^@/,''),external:true});
   if(!items.length) return '';
   return `<div class="rowcard" style="padding:16px">
     ${opts.title?`<div style="font-weight:700;font-size:13px;margin-bottom:10px">${esc(opts.title)}</div>`:''}
     ${opts.name?`<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><div class="leaderAvatar" style="width:38px;height:38px;font-size:14px">${opts.avatar?`<img src="${opts.avatar}"/>`:esc((opts.name||'?')[0])}</div><div><div style="font-weight:700;font-size:13.5px">${esc(opts.name)}</div>${opts.role?`<div class="mini">${esc(opts.role)}</div>`:''}</div></div>`:''}
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(62px,1fr));gap:10px">
-      ${items.map(it=>`<a href="${esc(it.href)}" ${it.external?'target="_blank" rel="noopener"':''} style="display:flex;flex-direction:column;align-items:center;gap:5px;text-decoration:none;color:var(--text)">
-        <span style="width:40px;height:40px;border-radius:12px;background:#EEF1F6;display:flex;align-items:center;justify-content:center;color:var(--leaf)">${it.icon}</span>
+      ${items.map(it=>{ const b=CONTACT_BADGE[it.kind]; return `<a href="${esc(it.href)}" ${it.external?'target="_blank" rel="noopener"':''} style="display:flex;flex-direction:column;align-items:center;gap:6px;text-decoration:none;color:var(--text)">
+        <span class="contactTileIcon" style="background:${b.bg}">${b.svg}</span>
         <span style="font-size:10px;font-weight:600;text-align:center">${esc(it.label)}</span>
-      </a>`).join('')}
+      </a>`; }).join('')}
     </div>
   </div>`;
 }
@@ -8199,7 +8224,31 @@ async function importPipelineExcel(file){
     const ws=wb.getWorksheet('💼 Pipeline')||wb.getWorksheet('Pipeline')||wb.worksheets[0];
     if(!ws){ toast('Could not find the Pipeline sheet in that file'); return; }
     const cols=resolveImportColumns(ws);
-    let added=0, updated=0, unchanged=0, skipped=0; const errors=[];
+
+    // Always re-fetch the authoritative lead set fresh from the server right before
+    // diffing, instead of trusting whatever happened to already be in memory (DB.leads).
+    // A stale/out-of-scope in-memory list is what silently doubled whole pipelines on
+    // re-import: every existing row looked "new" because it wasn't found, so it got
+    // inserted as a duplicate on top of the real one. Managers importing the Master
+    // Pipeline (every agent combined) need the FULL company-wide set for this to work;
+    // regular agents only need their own.
+    const isManagerImport=PROFILE.role==='manager';
+    const canPay=canManagePayments();
+    let freshLeads;
+    if(DEMO_MODE){ freshLeads=DB.leads.slice(); }
+    else{
+      let lq=sb.from('leads').select('*');
+      if(!isManagerImport) lq=lq.eq('agent_key',PROFILE.agent_key);
+      const {data,error}=await lq; if(error) throw error;
+      freshLeads=(data||[]).map(mapLead);
+    }
+    // Master Pipeline exports tag each row's Notes with "[Agent Name] ..." so a
+    // re-import can put a row back under the RIGHT agent instead of re-attributing
+    // everyone to whoever happens to be doing the importing.
+    const nameToAgentKey={};
+    (DB.profiles||[]).forEach(p=>{ if(p.name&&p.agent_key) nameToAgentKey[p.name.trim().toLowerCase()]=p.agent_key; });
+
+    let added=0, updated=0, unchanged=0, skipped=0, paymentChangesIgnored=0; const errors=[];
     let r=PL_DATA_START;
     while(r<=Math.max(ws.rowCount,PL_DATA_END)+1){
       const row=ws.getRow(r);
@@ -8210,13 +8259,19 @@ async function importPipelineExcel(file){
       try{
         const stageRaw=xlCellText(get('stage'));
         const stage=STAGES.includes(stageRaw)?stageRaw:'1';
+        let rawNotes=xlCellText(get('notes'));
+        let taggedAgentKey=null;
+        if(isManagerImport){
+          const m=rawNotes.match(/^\[([^\]]+)\]\s*/);
+          if(m){ taggedAgentKey=nameToAgentKey[m[1].trim().toLowerCase()]||null; rawNotes=rawNotes.slice(m[0].length); }
+        }
         const parsed={
           name, contact:xlCellText(get('contact')), date:xlCellDate(get('date'))||today(), stage,
           plotType:(xlCellText(get('plotType'))||'Full Plot'), noPlots:xlCellNum(get('noPlots'))||1,
           discount:xlCellNum(get('discount'))||0,
           paymentPlan:xlCellText(get('paymentPlan'))||'Full Payment', siteVisit:xlCellText(get('siteVisit'))||'No',
           priority:(xlCellText(get('priority'))||'Low'), amtPaid:xlCellNum(get('amtPaid'))||0,
-          nextAction:xlCellText(get('nextAction')), notes:xlCellText(get('notes'))
+          nextAction:xlCellText(get('nextAction')), notes:rawNotes
         };
         if(!parsed.name){ skipped++; r++; continue; }
         // Match by name+contact FIRST — this is the most reliable signal of "same client"
@@ -8224,36 +8279,45 @@ async function importPipelineExcel(file){
         // as a fallback for clients with no contact number on file.
         let existing=null;
         if(parsed.contact){
-          existing=DB.leads.find(x=>x.name.trim().toLowerCase()===parsed.name.trim().toLowerCase() && normContact(x.contact)===normContact(parsed.contact));
+          existing=freshLeads.find(x=>(x.name||'').trim().toLowerCase()===parsed.name.trim().toLowerCase() && normContact(x.contact)===normContact(parsed.contact));
         }
         if(!existing && leadId){
-          existing=DB.leads.find(x=>x.id===leadId);
+          existing=freshLeads.find(x=>x.id===leadId);
         }
         if(!existing && !parsed.contact){
           // no contact number at all to key on — last resort, match by name alone
-          existing=DB.leads.find(x=>x.name.trim().toLowerCase()===parsed.name.trim().toLowerCase());
+          existing=freshLeads.find(x=>(x.name||'').trim().toLowerCase()===parsed.name.trim().toLowerCase());
         }
         if(existing){
-          const cc=computeLead({...existing,...parsed});
+          // Payment entry is Elias/Management-only (Phase 3a) -- a regular agent's
+          // offline edits to Amt Paid must be ignored here too, not just in the UI,
+          // or this becomes a backdoor around that restriction (and the server-side
+          // guard would just reject the whole row's update anyway).
+          const amtPaidForCompare=canPay?parsed.amtPaid:num(existing.amtPaid);
+          if(!canPay && parsed.amtPaid!==num(existing.amtPaid)) paymentChangesIgnored++;
+          const cc=computeLead({...existing,...parsed,amtPaid:amtPaidForCompare});
           const changed = existing.name!==parsed.name||existing.contact!==parsed.contact||existing.stage!==parsed.stage||
             existing.plotType!==parsed.plotType||num(existing.noPlots)!==parsed.noPlots||num(existing.discount)!==parsed.discount||
             existing.paymentPlan!==parsed.paymentPlan||existing.siteVisit!==parsed.siteVisit||existing.priority!==parsed.priority||
-            num(existing.amtPaid)!==parsed.amtPaid||(existing.nextAction||'')!==parsed.nextAction||(existing.notes||'')!==parsed.notes;
+            num(existing.amtPaid)!==amtPaidForCompare||(existing.nextAction||'')!==parsed.nextAction||(existing.notes||'')!==parsed.notes;
           if(changed){
             const patch={name:parsed.name,contact:parsed.contact,stage:parsed.stage,plotType:parsed.plotType,noPlots:parsed.noPlots,
               discount:parsed.discount,paymentPlan:parsed.paymentPlan,siteVisit:parsed.siteVisit,priority:parsed.priority,
-              amtPaid:parsed.amtPaid,nextAction:parsed.nextAction,notes:parsed.notes,netTotal:cc.net,grandTotal:cc.grand,balance:cc.bal};
+              amtPaid:amtPaidForCompare,nextAction:parsed.nextAction,notes:parsed.notes,netTotal:cc.net,grandTotal:cc.grand,balance:cc.bal};
             await apiUpdateLead(existing.id,patch);
-            if(parsed.amtPaid>num(existing.amtPaid)){ const pr=await apiInsertPayment(existing.id,parsed.name,parsed.amtPaid-num(existing.amtPaid)); if(pr) DB.payments.unshift(pr); }
+            if(canPay && amtPaidForCompare>num(existing.amtPaid)){ const pr=await apiInsertPayment(existing.id,parsed.name,amtPaidForCompare-num(existing.amtPaid)); if(pr) DB.payments.unshift(pr); }
             Object.assign(existing,patch);
+            const dbIdx=DB.leads.findIndex(x=>x.id===existing.id); if(dbIdx>=0) Object.assign(DB.leads[dbIdx],patch);
             await checkAllocationTrigger(existing);
             updated++;
           } else unchanged++;
         }else{
+          if(!canPay && parsed.amtPaid>0){ paymentChangesIgnored++; parsed.amtPaid=0; }
           const cc=computeLead(parsed);
-          const rec=await apiInsertLead(parsed,cc);
-          DB.leads.unshift(rec);
-          if(parsed.amtPaid>0){ const pr=await apiInsertPayment(rec.id,parsed.name,parsed.amtPaid); if(pr) DB.payments.unshift(pr); }
+          const rec=await apiInsertLead(parsed,cc,taggedAgentKey||undefined);
+          freshLeads.push(rec);
+          if(!isManagerImport || rec.agent===PROFILE.agent_key) DB.leads.unshift(rec);
+          if(canPay && parsed.amtPaid>0){ const pr=await apiInsertPayment(rec.id,parsed.name,parsed.amtPaid); if(pr) DB.payments.unshift(pr); }
           await checkAllocationTrigger(rec);
           added++;
         }
@@ -8261,7 +8325,9 @@ async function importPipelineExcel(file){
       r++;
     }
     viewPipeline();
-    const summary=`Import done — ${added} added, ${updated} updated, ${unchanged} unchanged`+(skipped?`, ${skipped} skipped (blank name)`:'')+(errors.length?`, ${errors.length} failed`:'');
+    const summary=`Import done — ${added} added, ${updated} updated, ${unchanged} unchanged`+(skipped?`, ${skipped} skipped (blank name)`:'')
+      +(paymentChangesIgnored?`, ${paymentChangesIgnored} payment change(s) ignored (ask Elias/Management to log those)`:'')
+      +(errors.length?`, ${errors.length} failed`:'');
     toast(summary);
     if(errors.length) console.warn('Import row errors:',errors);
   }catch(e){ toast('Import failed: '+(e.message||e)); }
