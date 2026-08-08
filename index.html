@@ -864,8 +864,61 @@ function normalizeGhPhone(phone){
   else if(d.startsWith('0')) d=d.slice(1);
   return d;
 }
-function waNumberFromPhone(phone){ const d=normalizeGhPhone(phone); return d?('233'+d):''; }
-function telHrefFromPhone(phone){ const d=normalizeGhPhone(phone); return d?('tel:0'+d):('tel:'+String(phone||'').replace(/[^\d+]/g,'')); }
+// Not every client is in Ghana. A number saved with a leading "+" (see COUNTRIES /
+// the client Settings country picker) is treated as already fully international and
+// used as-is; anything else falls back to the Ghana-only heuristic above, which is
+// what every pre-existing agent/company/client number in this system already is.
+function internationalDigits(phone){
+  const s=String(phone||'').trim();
+  if(s.startsWith('+')) return s.replace(/\D/g,'');
+  return null;
+}
+function waNumberFromPhone(phone){
+  const intl=internationalDigits(phone); if(intl) return intl;
+  const d=normalizeGhPhone(phone); return d?('233'+d):'';
+}
+function telHrefFromPhone(phone){
+  const intl=internationalDigits(phone); if(intl) return 'tel:+'+intl;
+  const d=normalizeGhPhone(phone); return d?('tel:0'+d):('tel:'+String(phone||'').replace(/[^\d+]/g,''));
+}
+// A working, non-exhaustive list -- covers Ghana + the countries clients are most
+// likely to actually be in. Ghana is first/default since that's everyone existing.
+const COUNTRIES=[
+  {name:'Ghana',code:'233'},{name:'Nigeria',code:'234'},{name:'United States / Canada',code:'1'},
+  {name:'United Kingdom',code:'44'},{name:'South Africa',code:'27'},{name:'Kenya',code:'254'},
+  {name:"Côte d'Ivoire",code:'225'},{name:'Togo',code:'228'},{name:'Benin',code:'229'},
+  {name:'Burkina Faso',code:'226'},{name:'Senegal',code:'221'},{name:'Cameroon',code:'237'},
+  {name:'Germany',code:'49'},{name:'France',code:'33'},{name:'Netherlands',code:'31'},
+  {name:'Belgium',code:'32'},{name:'Italy',code:'39'},{name:'Spain',code:'34'},
+  {name:'United Arab Emirates',code:'971'},{name:'Saudi Arabia',code:'966'},{name:'Qatar',code:'974'},
+  {name:'Australia',code:'61'},{name:'India',code:'91'},{name:'China',code:'86'},
+  {name:'Switzerland',code:'41'},{name:'Sweden',code:'46'},{name:'Ireland',code:'353'},
+  {name:'Other',code:''}
+];
+function countrySelectHtml(id,selectedCode){
+  return `<select id="${id}">${COUNTRIES.map(c=>`<option value="${c.code}" ${c.code===(selectedCode||'233')?'selected':''}>${esc(c.name)}${c.code?(' (+'+c.code+')'):''}</option>`).join('')}</select>`;
+}
+// Combines a country dial code + locally-typed digits into the canonical stored
+// format: "+<code><digits>" for anywhere outside Ghana, or the bare local number
+// (no +) for Ghana, matching every existing number already in this system.
+function composeIntlPhone(dialCode,localNumber){
+  const digits=String(localNumber||'').replace(/\D/g,'').replace(/^0+/,'');
+  if(!digits) return '';
+  if(!dialCode || dialCode==='233') return '0'+digits;
+  return '+'+dialCode+digits;
+}
+// Splits a stored number back into {dialCode, local} for re-populating the country
+// select + plain-number input when a client reopens Settings.
+function splitIntlPhone(phone){
+  const s=String(phone||'').trim();
+  if(s.startsWith('+')){
+    const digits=s.slice(1).replace(/\D/g,'');
+    const match=COUNTRIES.filter(c=>c.code&&digits.startsWith(c.code)).sort((a,b)=>b.code.length-a.code.length)[0];
+    if(match) return {dialCode:match.code, local:digits.slice(match.code.length)};
+    return {dialCode:'', local:digits};
+  }
+  return {dialCode:'233', local:normalizeGhPhone(s)};
+}
 /* Small branded glyphs (not the trademarked logos themselves, just recognizable
    colour-coded shapes) so each contact channel reads at a glance instead of every
    button sharing one generic icon. */
@@ -7850,14 +7903,16 @@ function formClientSettings(){
   <div class="formwrap">
     <div class="mini" style="margin-bottom:14px">Keep this current — it's what your agent, Management and any documents we send you use to reach you.</div>
     ${fld('Full name','<input id="cs_name" value="'+esc(CLIENT_PROFILE.name||'')+'"/>')}
-    ${fld('Phone number','<input id="cs_contact" value="'+esc(CLIENT_PROFILE.contact||'')+'" placeholder="0244…"/>','changing this also updates your login')}
+    ${fld('Country',countrySelectHtml('cs_country',splitIntlPhone(CLIENT_PROFILE.contact).dialCode))}
+    ${fld('Phone number','<input id="cs_contact" value="'+esc(splitIntlPhone(CLIENT_PROFILE.contact).local)+'" placeholder="e.g. 244123456"/>','changing this also updates your login')}
     <div class="formactions"><button class="btn primary" id="saveClientContact">Save details</button></div>
   </div>
   <div class="sectitle"><h3>Email &amp; WhatsApp</h3></div>
   <div class="formwrap">
     <div class="mini" style="margin-bottom:14px">Optional, but this is where we'll send your receipts and documents if you ask us to.</div>
     ${fld('Email address','<input id="cs_email" type="email" value="'+esc(CLIENT_PROFILE.email||'')+'" placeholder="you@example.com"/>')}
-    ${fld('WhatsApp number','<input id="cs_whatsapp" value="'+esc(CLIENT_PROFILE.whatsapp||'')+'" placeholder="0244… — leave blank to use your phone number above"/>')}
+    ${fld('WhatsApp country',countrySelectHtml('cs_wacountry',splitIntlPhone(CLIENT_PROFILE.whatsapp).dialCode))}
+    ${fld('WhatsApp number','<input id="cs_whatsapp" value="'+esc(splitIntlPhone(CLIENT_PROFILE.whatsapp).local)+'" placeholder="leave blank to use your phone number above"/>')}
     <div class="formactions"><button class="btn primary" id="saveClientChannels">Save</button></div>
   </div>
   <div class="sectitle"><h3>Change your PIN</h3></div>
@@ -7868,7 +7923,7 @@ function formClientSettings(){
     <div class="formactions"><button class="btn primary" id="saveClientPin">Update PIN</button></div>
   </div>`;
   document.getElementById('saveClientContact').onclick=async()=>{
-    const name=val('cs_name').trim(), contact=val('cs_contact').trim();
+    const name=val('cs_name').trim(); const contact=composeIntlPhone(val('cs_country'),val('cs_contact'));
     if(!name||!contact){ toast('Name and phone number are required'); return; }
     const btn=document.getElementById('saveClientContact'); btn.disabled=true; btn.textContent='Saving…';
     try{ await apiClientUpdateContact(name,contact); document.getElementById('tbName').textContent=name.split(' ')[0]; toast('Details updated — your agent has been notified'); formClientSettings(); }
@@ -7876,7 +7931,8 @@ function formClientSettings(){
   };
   document.getElementById('saveClientChannels').onclick=async()=>{
     const btn=document.getElementById('saveClientChannels'); btn.disabled=true; btn.textContent='Saving…';
-    try{ await apiClientUpdateChannels(val('cs_email').trim(),val('cs_whatsapp').trim()); toast('Saved'); btn.disabled=false; btn.textContent='Save'; }
+    const whatsapp=val('cs_whatsapp').trim()?composeIntlPhone(val('cs_wacountry'),val('cs_whatsapp')):'';
+    try{ await apiClientUpdateChannels(val('cs_email').trim(),whatsapp); toast('Saved'); btn.disabled=false; btn.textContent='Save'; }
     catch(e){ toast(e.message||'Could not save'); btn.disabled=false; btn.textContent='Save'; }
   };
   const avInput=document.getElementById('clientAvatarInput');
