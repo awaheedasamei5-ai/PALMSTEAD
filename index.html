@@ -1294,7 +1294,7 @@ const mapEnq=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,name:r.nam
   followDate:r.follow_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
 const mapCmp=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,name:r.name,contact:r.contact,plot:r.plot,
   category:r.category,details:r.details,owner:r.owner,priority:r.priority,resolution:r.resolution,status:r.status,source:r.source,
-  createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
+  sentiment:r.sentiment||null,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
 const mapSV=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,name:r.name,contact:r.contact,plot:r.plot,site:r.site,
   date:r.visit_date,time:r.visit_time,people:r.people,transport:r.transport,pickup:r.pickup,notes:r.notes,status:r.status,
   placeOfWork:r.place_of_work,position:r.position,nationality:r.nationality,purpose:r.purpose,source:r.source,accompanied:r.accompanied,
@@ -1874,9 +1874,9 @@ async function apiInsertComplaint(row){
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),agentKey:PROFILE.key,agentName:PROFILE.name,...row,createdAt:today()+' '+nowTime()};
     d.complaints.unshift(rec); await demoSave(); return rec; }
   const dbrow={agent_key:PROFILE.agent_key,agent_name:PROFILE.name,name:row.name,contact:row.contact,plot:row.plot,
-    category:row.category,details:row.details,owner:row.owner,priority:row.priority,resolution:row.resolution,status:row.status};
+    category:row.category,details:row.details,owner:row.owner,priority:row.priority,resolution:row.resolution,status:row.status,sentiment:row.sentiment||null};
   const {data,error}=await sb.from('complaints').insert(dbrow).select().single(); if(error) throw error;
-  if(row.contact) apiSendSms(row.contact,`Hi ${row.name||''}, we've received your complaint and someone from our team will follow up with you soon. - PEP Landbank`,'complaint_submitted');
+  if(row.contact) apiSendSms(row.contact,`Hi ${row.name||''}, we've received your feedback and someone from our team will follow up with you soon. - PEP Landbank`,'complaint_submitted');
   return mapCmp(data);
 }
 async function apiUpdateComplaintStatus(id,status){
@@ -2041,7 +2041,7 @@ async function apiClientInsertEnquiry(row){
 async function apiClientInsertComplaint(row){
   const {key:agentKey,name:agentName}=await apiClientAgentKeyName();
   const dbrow={name:CLIENT_PROFILE.name,contact:CLIENT_PROFILE.contact,category:row.category,details:row.details,status:'Open',
-    agent_key:agentKey,agent_name:agentName,source:'Client portal'};
+    agent_key:agentKey,agent_name:agentName,source:'Client portal',sentiment:row.sentiment||null};
   const {data,error}=await sb.from('complaints').insert(dbrow).select().single(); if(error) throw error;
   return mapCmp(data);
 }
@@ -3894,7 +3894,7 @@ const AGENT_HUBS={
   crm:{title:'CRM Tools',items:[
     {r:'sitevisit',fic:'location',label:'Site visit',badgeKind:'sitevisit'},
     {r:'enquiry',fic:'enquiry',label:'Client enquiry',badgeKind:'enquiry'},
-    {r:'complaint',fic:'alert',label:'Client complaint',badgeKind:'complaint'}
+    {r:'complaint',fic:'alert',label:'Client feedback',badgeKind:'complaint'}
   ]}
 };
 // Small red count badge overlaid on an appGrid tile -- data-badgekind lets
@@ -3918,7 +3918,7 @@ function viewSalesDesk(){
 }
 function viewCRM(){
   const hub=AGENT_HUBS.crm;
-  V.innerHTML=`<div class="pagehead"><div><h2>CRM Tools</h2><p>Site visits, enquiries &amp; complaints</p></div></div>
+  V.innerHTML=`<div class="pagehead"><div><h2>CRM Tools</h2><p>Site visits, enquiries &amp; client feedback</p></div></div>
   <div class="appGrid">${hub.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`;
   V.querySelectorAll('[data-hubroute]').forEach(b=>{
     const item=hub.items.find(a=>a.r===b.dataset.hubroute);
@@ -4275,7 +4275,7 @@ function renderComplaintAssignBanners(){
   if(!mine.length) return '';
   return mine.map(c=>`<div class="rowcard" style="margin-bottom:14px;padding:16px;border-left:4px solid #B4472F;position:relative">
     <button data-dismisscmp="${c.id}" style="position:absolute;top:10px;right:10px;background:none;border:none;color:var(--muted);cursor:pointer;line-height:1;padding:0;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center">${ic.close}</button>
-    <div style="font-weight:700;font-size:14.5px;margin-bottom:4px;padding-right:24px;display:flex;align-items:center;gap:7px"><span style="width:16px;height:16px;color:#B4472F">${ic.flag}</span>Complaint assigned to you</div>
+    <div style="font-weight:700;font-size:14.5px;margin-bottom:4px;padding-right:24px;display:flex;align-items:center;gap:7px"><span style="width:16px;height:16px;color:#B4472F">${ic.flag}</span>Feedback assigned to you</div>
     <div class="meta">${esc(c.name)} · ${esc(c.category||'')} · <span class="tag warnt" style="margin-left:2px">${esc(c.status)}</span></div>
   </div>`).join('');
 }
@@ -7344,10 +7344,10 @@ function buildEnquiryFormPDF(rec,asDataUri){
 function buildComplaintFormPDF(rec,asDataUri){
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
   const pageW=doc.internal.pageSize.getWidth();
-  let y=pdfHeader(doc,'CLIENT COMPLAINT');
+  let y=pdfHeader(doc,'CLIENT FEEDBACK');
   y+=6;
   doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(11,30,61);
-  doc.text('CLIENT COMPLAINT RECORD',12,y); y+=8;
+  doc.text('CLIENT FEEDBACK RECORD',12,y); y+=8;
 
   y=pdfSectionBar(doc,y,pageW,'1.0  CLIENT INFORMATION');
   let h1=pdfLabeledPair(doc,12,y,88,'1.1 Client Name',rec.name);
@@ -7355,7 +7355,9 @@ function buildComplaintFormPDF(rec,asDataUri){
   y+=Math.max(h1,h2)*5+7;
   h1=pdfLabeledPair(doc,12,y,88,'1.3 Plot / Reference',rec.plot);
   h2=pdfLabeledPair(doc,108,y,88,'1.4 Assigned To',rec.owner);
-  y+=Math.max(h1,h2)*5+9;
+  y+=Math.max(h1,h2)*5+7;
+  h1=pdfLabeledPair(doc,12,y,88,'1.5 Sentiment',rec.sentiment||'—');
+  y+=h1*5+9;
 
   y=pdfSectionBar(doc,y,pageW,'2.0  CATEGORY');
   y=pdfCheckRow(doc,y,pageW,['Documentation','Payment / Refund','Land / Plot Issue','Service Quality','Communication','Delay','Other'],rec.category)+2;
@@ -7366,11 +7368,11 @@ function buildComplaintFormPDF(rec,asDataUri){
 
   if(y>230){ doc.addPage(); y=16; }
   y=pdfSectionBar(doc,y,pageW,'DETAILS & RESOLUTION');
-  y=pdfFields(doc,y,[['Complaint details',rec.details],['Desired resolution',rec.resolution],['Resolution notes',rec.resolution]]);
+  y=pdfFields(doc,y,[['Feedback details',rec.details],['Desired resolution',rec.resolution],['Resolution notes',rec.resolution]]);
   y+=3; doc.setDrawColor(226,231,237); doc.line(12,y,pageW-12,y); y+=6;
   pdfFields(doc,y,[['Logged by',rec.agentName],['Logged at',rec.createdAt]]);
   if(asDataUri) return doc.output('datauristring');
-  { const fname='Complaint_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri); }
+  { const fname='Feedback_'+(rec.name||'client').replace(/\s+/g,'_')+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri); }
 }
 /* ---- Site visit PDF: sectioned form layout matching the real TSOPOLI request form ---- */
 function pdfSectionBar(doc,y,pageW,label){
@@ -7520,35 +7522,42 @@ async function saveEnq(){ const name=val('e_name').trim(), contact=val('e_contac
   catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save enquiry'; }
 }
 
-/* ================= COMPLAINT ================= */
+/* ================= CLIENT FEEDBACK (was "Complaint" -- feedback can be positive or negative;
+   internal identifiers/table name are unchanged, only what staff/clients see is renamed) ================= */
 function formComplaint(){
-  V.innerHTML=`${back('home')}<div class="pagehead"><div><div class="eyebrow">Client complaint</div><h2>Record complaint</h2></div></div>
+  V.innerHTML=`${back('home')}<div class="pagehead"><div><div class="eyebrow">Client feedback</div><h2>Record feedback</h2></div></div>
   <div class="formwrap">${fld('Client name *','<input id="c_name"/>')}
   <div class="grid2">${fld('Contact *','<input id="c_contact"/>')}${fld('Plot ID / reference','<input id="c_plot"/>')}</div>
+  ${fld('Sentiment',`<div class="chips" id="c_sentimentChips"><button type="button" class="chip2 on" data-sent="Negative">🙁 Negative</button><button type="button" class="chip2" data-sent="Positive">🙂 Positive</button></div>`)}
   ${fld('Category',sel('c_cat',['Documentation','Payment / Refund','Land / Plot Issue','Service Quality','Communication','Delay','Other']))}
-  ${fld('Complaint details *','<textarea id="c_details" placeholder="Describe the complaint"></textarea>')}
+  ${fld('Feedback details *','<textarea id="c_details" placeholder="Describe what the client said"></textarea>')}
   <div class="grid2">${fld('Assign to',sel('c_owner',['Elizabeth Misiame','Elias Torgbuivi','Abdul Waheed','Emmanuel Anane','Sales Manager','Admin / Documentation','Legal','Management']))}${fld('Priority',sel('c_pri',['High','Medium','Low']))}</div>
   ${fld('Desired resolution','<textarea id="c_res" placeholder="What outcome does the client want?"></textarea>')}
   ${fld('Status',sel('c_status',['Open','In Progress','Escalated','Resolved']))}
-  <div class="formactions"><button class="btn ghost" onclick="route('home')">Cancel</button><button class="btn primary" id="saveCmp">Save complaint</button></div></div>`;
-  document.getElementById('saveCmp').onclick=saveCmp;
+  <div class="formactions"><button class="btn ghost" onclick="route('home')">Cancel</button><button class="btn primary" id="saveCmp">Save feedback</button></div></div>`;
+  let cSentiment='Negative';
+  document.querySelectorAll('#c_sentimentChips .chip2').forEach(c=>c.onclick=()=>{
+    document.querySelectorAll('#c_sentimentChips .chip2').forEach(x=>x.classList.remove('on'));
+    c.classList.add('on'); cSentiment=c.dataset.sent;
+  });
+  document.getElementById('saveCmp').onclick=()=>saveCmp(cSentiment);
 }
-async function saveCmp(){ const name=val('c_name').trim();
+async function saveCmp(sentiment){ const name=val('c_name').trim();
   if(!name||!val('c_details').trim()){ toast('Client name and details are required'); return; }
   const btn=document.getElementById('saveCmp'); btn.disabled=true; btn.textContent='Saving…';
   const row={name,contact:val('c_contact').trim(),plot:val('c_plot').trim(),category:val('c_cat'),details:val('c_details').trim(),
-    owner:val('c_owner'),priority:val('c_pri'),resolution:val('c_res').trim(),status:val('c_status')};
+    owner:val('c_owner'),priority:val('c_pri'),resolution:val('c_res').trim(),status:val('c_status'),sentiment};
   try{
     const rec=await apiInsertComplaint(row); DB.complaints.unshift(rec);
     const ownerKey=staffKeyByName(row.owner);
     if(ownerKey && ownerKey!==PROFILE.key){
       const pdfUri=buildComplaintFormPDF(rec,true);
-      const msg=`Hi ${row.owner.split(' ')[0]}, a complaint has been assigned to you by ${PROFILE.name} for client ${rec.name}. Attached is the complaint form.`;
-      sendPdfToStaffChat(ownerKey,pdfUri,'Complaint_'+rec.name.replace(/\s+/g,'_')+'.pdf',msg);
+      const msg=`Hi ${row.owner.split(' ')[0]}, feedback has been assigned to you by ${PROFILE.name} for client ${rec.name}. Attached is the feedback form.`;
+      sendPdfToStaffChat(ownerKey,pdfUri,'Feedback_'+rec.name.replace(/\s+/g,'_')+'.pdf',msg);
     }
-    showSavedScreen('complaint',rec,'Complaint recorded \u00b7 assigned to '+row.owner);
+    showSavedScreen('complaint',rec,'Feedback recorded \u00b7 assigned to '+row.owner);
   }
-  catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save complaint'; }
+  catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save feedback'; }
 }
 
 /* ================= SITE VISIT ================= */
@@ -8369,25 +8378,33 @@ async function saveClientVisit(){
   }catch(e){ toast('Could not send request: '+(e.message||e)); btn.disabled=false; btn.textContent='Submit request'; }
 }
 function formClientFeedback(){
-  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">We're listening</div><h2>Feedback &amp; enquiries</h2><p>Ask a question or tell us how we're doing.</p></div></div>
+  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">We're listening</div><h2>Feedback &amp; enquiries</h2><p>Ask a question or tell us how we're doing — good or bad.</p></div></div>
   <div class="formwrap">
-    ${fld('This is a',sel('cf_type',['General enquiry','Complaint']))}
-    <div id="cf_catWrap" class="hidden">${fld('Category',sel('cf_cat',['Payment issue','Plot allocation','Communication','Other']))}</div>
+    ${fld('This is a',sel('cf_type',['General enquiry','Feedback']))}
+    <div id="cf_catWrap" class="hidden">
+      ${fld('How do you feel about it?',`<div class="chips" id="cf_sentimentChips"><button type="button" class="chip2" data-sent="Positive">🙂 Positive</button><button type="button" class="chip2" data-sent="Negative">🙁 Negative</button></div>`)}
+      ${fld('Category',sel('cf_cat',['Payment issue','Plot allocation','Communication','Other']))}
+    </div>
     ${fld('Message *','<textarea id="cf_msg" rows="5"></textarea>')}
     <div class="formactions"><button class="btn gold" id="saveCF">Send</button></div>
   </div>`;
   const typeSel=document.getElementById('cf_type');
-  const toggleCat=()=>document.getElementById('cf_catWrap').classList.toggle('hidden',typeSel.value!=='Complaint');
+  let cfSentiment='';
+  const toggleCat=()=>document.getElementById('cf_catWrap').classList.toggle('hidden',typeSel.value!=='Feedback');
   typeSel.addEventListener('change',toggleCat); toggleCat();
-  document.getElementById('saveCF').onclick=saveClientFeedback;
+  document.querySelectorAll('#cf_sentimentChips .chip2').forEach(c=>c.onclick=()=>{
+    document.querySelectorAll('#cf_sentimentChips .chip2').forEach(x=>x.classList.remove('on'));
+    c.classList.add('on'); cfSentiment=c.dataset.sent;
+  });
+  document.getElementById('saveCF').onclick=()=>saveClientFeedback(cfSentiment);
 }
-async function saveClientFeedback(){
+async function saveClientFeedback(sentiment){
   const msg=val('cf_msg').trim();
   if(!msg){ toast('Please enter a message'); return; }
   const btn=document.getElementById('saveCF'); btn.disabled=true; btn.textContent='Sending…';
   try{
-    if(val('cf_type')==='Complaint'){
-      const rec=await apiClientInsertComplaint({category:val('cf_cat'),details:msg}); CLIENT_DB.complaints.unshift(rec);
+    if(val('cf_type')==='Feedback'){
+      const rec=await apiClientInsertComplaint({category:val('cf_cat'),details:msg,sentiment:sentiment||null}); CLIENT_DB.complaints.unshift(rec);
     } else {
       const rec=await apiClientInsertEnquiry({details:msg}); CLIENT_DB.enquiries.unshift(rec);
     }
@@ -8466,7 +8483,7 @@ const MGR_APPS=[
   {key:'Plot Requests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
   {key:'Company Leads',fic:'briefcase',label:'Company Leads'},
   {key:'Enquiries',fic:'enquiry',label:'Enquiries',badgeKind:'enquiry'},
-  {key:'Complaints',fic:'alert',label:'Complaints',badgeKind:'complaint'},
+  {key:'Complaints',fic:'alert',label:'Client Feedback',badgeKind:'complaint'},
   {key:'Site visits',fic:'location',label:'Site Visits',badgeKind:'sitevisit'},
   {key:'News',fic:'announce',label:'News & Announcements'},
   {key:'Commission',fic:'savings',label:'Commission'},
@@ -8686,14 +8703,15 @@ function mgrComplaints(){
   const counts={All:DB.complaints.length}; CMP_STATUSES.forEach(s=>counts[s]=DB.complaints.filter(c=>c.status===s).length);
   const chips=['All',...CMP_STATUSES].map(s=>`<button data-cf="${s}" class="${cmpFilter===s?'on':''}">${s} (${counts[s]||0})</button>`).join('');
   const list=DB.complaints.filter(c=>cmpFilter==='All'||c.status===cmpFilter);
-  const body = !list.length ? emptyState(ic.complaint,'No complaints in this view') :
+  const body = !list.length ? emptyState(ic.complaint,'No feedback in this view') :
    `<div class="list">`+list.map(c=>{
     const statusTag = c.status==='Resolved'?'ok':c.status==='Escalated'?'dgr':'warnt';
+    const sentTag = c.sentiment==='Positive'?'<span class="tag ok">🙂 Positive</span>':c.sentiment==='Negative'?'<span class="tag dgr">🙁 Negative</span>':'';
     return `<div class="rowcard"><div class="top"><div><div class="nm nm-link" data-custname="${esc(c.name)}" data-custcontact="${esc(c.contact||'')}">${esc(c.name)}</div><div class="meta">${esc(c.agentName)} · ${esc(c.createdAt)}${c.plot?(' · '+esc(c.plot)):''}</div></div>
     <div style="display:flex;gap:8px;align-items:center"><span class="tag pri-${esc(c.priority)}">${esc(c.priority)}</span>
     <button class="trashbtn" data-pdfcmp="${c.id}" title="Download PDF"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="trashbtn" data-delcmp="${c.id}" title="Delete"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V4h6v3m-8 0l1 13h8l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
-    <div class="foot"><span class="tag ghost">${esc(c.category)}</span><span class="tag ${statusTag}">${esc(c.status)}</span>${tg('portal',c.source==='Client portal'?'Client portal':'')}</div>
+    <div class="foot"><span class="tag ghost">${esc(c.category)}</span><span class="tag ${statusTag}">${esc(c.status)}</span>${sentTag}${tg('portal',c.source==='Client portal'?'Client portal':'')}</div>
     <div class="note">${esc(c.details)}</div>${c.resolution?`<div class="note"><b>Wants:</b> ${esc(c.resolution)}</div>`:''}
     <div class="foot" style="justify-content:space-between"><span class="mini">Owner: <b>${esc(c.owner)}</b></span><select class="assign" data-status="${c.id}">${CMP_STATUSES.map(s=>`<option ${s===c.status?'selected':''}>${s}</option>`).join('')}</select></div></div>`;}).join('')+`</div>`;
   return `<div class="tabs" id="cmptabs" style="margin-bottom:12px">${chips}</div>${body}`;
@@ -8872,7 +8890,7 @@ function mgrReports(){
   <div class="formwrap" style="display:flex;flex-direction:column;gap:10px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div class="nm">Company pipeline</div><div class="meta">All agents' leads, one row each</div></div><button class="chip" id="csvLeads">⬇ CSV</button></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div class="nm">Enquiries</div><div class="meta">${DB.enquiries.length} logged</div></div><button class="chip" id="csvEnq">⬇ CSV</button></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div class="nm">Complaints</div><div class="meta">${DB.complaints.length} logged</div></div><button class="chip" id="csvCmp">⬇ CSV</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div class="nm">Client Feedback</div><div class="meta">${DB.complaints.length} logged</div></div><button class="chip" id="csvCmp">⬇ CSV</button></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div class="nm">Site visits</div><div class="meta">${DB.sitevisits.length} logged</div></div><button class="chip" id="csvVis">⬇ CSV</button></div>
   </div>
   <p class="mini" style="margin-top:14px">Word and PDF report templates aren't built yet — tell me which one you need first and I'll add it next.</p>`;
@@ -8923,7 +8941,7 @@ function bindReportCtrls(){
   document.getElementById('csvEnq').onclick=()=>exportCSV(DB.enquiries,[['Agent','agentName'],['Client','name'],['Contact','contact'],['Location','location'],
     ['Types',r=>(r.types||[]).join('; ')],['Plot','plot'],['Source','source'],['Details','details'],['Follow-up','follow'],['Follow-up Date','followDate'],['Logged','createdAt']],'PEP_Landbank_Enquiries.csv');
   document.getElementById('csvCmp').onclick=()=>exportCSV(DB.complaints,[['Agent','agentName'],['Client','name'],['Contact','contact'],['Plot','plot'],
-    ['Category','category'],['Details','details'],['Assigned','owner'],['Priority','priority'],['Status','status'],['Resolution','resolution'],['Logged','createdAt']],'PEP_Landbank_Complaints.csv');
+    ['Sentiment','sentiment'],['Category','category'],['Details','details'],['Assigned','owner'],['Priority','priority'],['Status','status'],['Resolution','resolution'],['Logged','createdAt']],'PEP_Landbank_ClientFeedback.csv');
   document.getElementById('csvVis').onclick=()=>exportCSV(DB.sitevisits,[['Agent','agentName'],['Client','name'],['Contact','contact'],['Plot','plot'],['Site','site'],
     ['Date','date'],['Time','time'],['Guests','people'],['Transport','transport'],['Pickup','pickup'],['Status','status'],['Notes','notes'],['Logged','createdAt']],'PEP_Landbank_SiteVisits.csv');
 }
@@ -9268,10 +9286,10 @@ async function downloadCompanyExcel(){
       {header:'Follow-up Date',key:'followDate',width:14},{header:'Logged',key:'createdAt',width:16}
     ], DB.enquiries.map(e=>({...e,typesStr:(e.types||[]).join('; ')})));
 
-    /* ---- Complaints sheet ---- */
-    xlAddDataSheet(wb,'Complaints',[
+    /* ---- Client Feedback sheet ---- */
+    xlAddDataSheet(wb,'Client Feedback',[
       {header:'Agent',key:'agentName',width:16},{header:'Client',key:'name',width:22},{header:'Contact',key:'contact',width:16},
-      {header:'Plot',key:'plot',width:12},{header:'Category',key:'category',width:14},{header:'Details',key:'details',width:28},
+      {header:'Plot',key:'plot',width:12},{header:'Sentiment',key:'sentiment',width:12},{header:'Category',key:'category',width:14},{header:'Details',key:'details',width:28},
       {header:'Assigned',key:'owner',width:14},{header:'Priority',key:'priority',width:10},{header:'Status',key:'status',width:12},
       {header:'Resolution',key:'resolution',width:24},{header:'Logged',key:'createdAt',width:16}
     ], DB.complaints);
