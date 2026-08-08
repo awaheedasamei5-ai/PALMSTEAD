@@ -966,6 +966,56 @@ function renderContactCard(opts){
   </div>`;
 }
 
+/* Signatures keep their natural (non-square) shape -- unlike the avatar cropper,
+   this just downscales to a sane max width so the stored PNG stays small, and
+   flattens onto white so a transparent-background upload still prints cleanly. */
+function readSignatureFile(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('Could not read that file'));
+    reader.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error('Could not read that image'));
+      img.onload=()=>{
+        const maxW=420; const scale=Math.min(1,maxW/img.width);
+        const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+        const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
+        const ctx=canvas.getContext('2d');
+        ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
+        ctx.drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL('image/png',0.92));
+      };
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+async function apiUpdateSignature(dataUrlOrNull){
+  const {error}=await sb.from('profiles').update({signature_data:dataUrlOrNull}).eq('id',USER.id);
+  if(error) throw error;
+  PROFILE.signature_data=dataUrlOrNull;
+  const mine=(DB.profiles||[]).find(p=>p.id===USER.id); if(mine) mine.signature_data=dataUrlOrNull;
+}
+/* Looks up a staff member's saved signature (by agent_key) from whatever profiles
+   are already loaded -- works for any staff session since profiles are readable
+   company-wide, which is what lets the system stamp an approver's signature into a
+   document regardless of who is actually viewing/generating it at that moment. */
+function getStaffSignature(agentKey){
+  const p=(DB.profiles||[]).find(x=>x.agent_key===agentKey);
+  return (p&&p.signature_data)||null;
+}
+/* Draws a signature image into a jsPDF doc at natural aspect ratio, capped to
+   maxW/maxH -- used anywhere a document needs an approver's signature auto-filled. */
+function pdfStampSignature(doc,x,y,maxW,maxH,signatureDataUrl){
+  if(!signatureDataUrl) return false;
+  try{
+    const props=doc.getImageProperties(signatureDataUrl);
+    const scale=Math.min(maxW/props.width,maxH/props.height);
+    const w=props.width*scale, h=props.height*scale;
+    doc.addImage(signatureDataUrl,'PNG',x,y-h,w,h);
+    return true;
+  }catch(e){ return false; }
+}
 function openAvatarCropper(file){
   return new Promise(resolve=>{
     const reader=new FileReader();
@@ -7251,6 +7301,14 @@ function formAccount(){
     <div id="avatarPreview" style="width:64px;height:64px;border-radius:100px;overflow:hidden;flex:0 0 auto;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted);font-size:22px">${PROFILE.avatar?`<img src="${PROFILE.avatar}" style="width:100%;height:100%;object-fit:cover"/>`:esc((PROFILE.name||'?')[0])}</div>
     <div style="flex:1"><input type="file" id="avatarInput" accept="image/*"/><div class="mini" style="margin-top:6px">You'll be able to crop and zoom before it's saved.</div></div>
   </div>
+  <div class="sectitle"><h3>E-signature</h3><span class="cnt">used to auto-sign documents you approve</span></div>
+  <div class="formwrap">
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
+      <div id="signaturePreview" style="width:120px;height:60px;border-radius:10px;overflow:hidden;flex:0 0 auto;background:#F4F6F5;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">${PROFILE.signature_data?`<img src="${PROFILE.signature_data}" style="max-width:100%;max-height:100%;object-fit:contain"/>`:'No signature yet'}</div>
+      <div style="flex:1"><input type="file" id="signatureInput" accept="image/png,image/jpeg"/><div class="mini" style="margin-top:6px">PNG or JPEG, ideally on a white or transparent background. Used to automatically sign Site Visit Authorization Forms, contracts and other documents when you approve them.</div></div>
+    </div>
+    ${PROFILE.signature_data?'<button class="btn ghost" id="removeSigBtn" style="width:100%">Remove signature</button>':''}
+  </div>
   <div class="sectitle"><h3>Contact info</h3><span class="cnt">shown to clients &amp; teammates</span></div>
   <div class="formwrap">
     <div class="grid2">${fld('Phone','<input id="ct_phone" placeholder="0244…" value="'+esc(PROFILE.phone||'')+'"/>')}${fld('WhatsApp','<input id="ct_whatsapp" placeholder="0244… (if different)" value="'+esc(PROFILE.whatsapp||'')+'"/>')}</div>
@@ -7296,6 +7354,20 @@ function formAccount(){
       PROFILE.avatar=b64; document.getElementById('avatarPreview').innerHTML=`<img src="${b64}" style="width:100%;height:100%;object-fit:cover"/>`;
       paintTopbarAvatar(); toast('Profile picture updated');
     }catch(err){ toast('Could not save photo: '+(err.message||err)); }
+  };
+  const sigInput=document.getElementById('signatureInput');
+  sigInput.onchange=async(e)=>{ const file=e.target.files[0]; e.target.value=''; if(!file) return;
+    try{
+      const b64=await readSignatureFile(file);
+      await apiUpdateSignature(b64);
+      toast('Signature saved'); formAccount();
+    }catch(err){ toast('Could not save signature: '+(err.message||err)); }
+  };
+  const removeSigBtn=document.getElementById('removeSigBtn');
+  if(removeSigBtn) removeSigBtn.onclick=async()=>{
+    if(!confirm('Remove your saved signature?')) return;
+    try{ await apiUpdateSignature(null); toast('Signature removed'); formAccount(); }
+    catch(err){ toast('Could not remove signature'); }
   };
   { const cur=applyDisplayPrefs();
     const ffSel=document.getElementById('dispFontFamily');
