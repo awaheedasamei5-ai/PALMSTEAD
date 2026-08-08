@@ -1841,6 +1841,19 @@ async function apiClientUpdateContact(name,contact){
   if(CLIENT_DB&&CLIENT_DB.leads) CLIENT_DB.leads.forEach(l=>{ l.name=name; l.contact=contact; });
   return data;
 }
+async function apiClientLoadChannels(){
+  try{
+    const {data,error}=await sb.from('client_portal_access').select('client_email,client_whatsapp').eq('id',CLIENT_PROFILE.id).single();
+    if(error) throw error;
+    CLIENT_PROFILE.email=data.client_email||''; CLIENT_PROFILE.whatsapp=data.client_whatsapp||'';
+  }catch(e){ CLIENT_PROFILE.email=''; CLIENT_PROFILE.whatsapp=''; }
+}
+async function apiClientUpdateChannels(email,whatsapp){
+  const {data,error}=await sb.rpc('client_portal_update_channels',{p_email:email,p_whatsapp:whatsapp});
+  if(error) throw error;
+  if(!data||!data.ok) throw new Error('Could not save your contact details');
+  CLIENT_PROFILE.email=email; CLIENT_PROFILE.whatsapp=whatsapp;
+}
 async function apiClientUpdateAvatar(dataUrl){
   const {error}=await sb.rpc('client_portal_update_avatar',{p_avatar:dataUrl}); if(error) throw error;
   CLIENT_PROFILE.avatar=dataUrl;
@@ -2924,6 +2937,7 @@ async function enterClientPortal(){
   const loadPromise=(async()=>{
     try{ await apiLoadConfig(); await apiClientLoadAll(); }catch(e){ toast('Could not load your data'); }
     try{ await apiClientLoadNotifications(); refreshClientBellBadge(); }catch(e){}
+    try{ await apiClientLoadChannels(); }catch(e){}
   })();
   const greetPromise=showGreetScreen(CLIENT_PROFILE.name.split(' ')[0]);
   ensureClientLiveSubscribed();
@@ -6253,6 +6267,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   <div class="formwrap" style="padding:6px 15px;margin-bottom:12px">${myPayments.length?myPayments.map(p=>`<div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">${esc(p.date||'')}</div></div></div><div class="amt mono" style="font-weight:700;color:#1E7A56">+${ghs(num(p.amount))}</div></div>`).join(''):'<div class="empty">No individual payments logged yet — only a starting total.</div>'}</div>
   <div style="margin-bottom:18px"><button class="chip" id="viewLedgerBtn" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.calendar}</span>Log payment for a specific month →</button></div>
   <div style="margin-bottom:18px"><button class="btn primary" id="dlUpdPdf" style="width:100%">⬇ Download this client's pipeline (PDF)</button></div>
+  <div style="margin-bottom:18px"><button class="btn ghost" id="dlUpdQuote" style="width:100%">⬇ Download quotation</button></div>
 
   <div class="dangerzone"><div class="dz-text"><b>Delete this client</b><br>Permanently removes ${esc(l.name)} and their record from the pipeline. This can't be undone.</div>
   <button class="btn danger" id="delLead">Delete client</button></div>`;
@@ -6279,6 +6294,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   document.getElementById('saveUpd').onclick=()=>handleSaveUpdateClick(id,myDep);
   document.getElementById('delLead').onclick=()=>deleteLeadConfirm(id,l.name);
   document.getElementById('dlUpdPdf').onclick=()=>downloadClientRecordPDF(l.name,l.contact,l,myPayments,g,num(l.amtPaid),bal);
+  document.getElementById('dlUpdQuote').onclick=()=>buildClientQuotationPDF(l);
   const viewSchedBtn=document.getElementById('viewSchedBtn'); if(viewSchedBtn) viewSchedBtn.onclick=()=>route('paymentSchedule',id);
   document.getElementById('viewLedgerBtn').onclick=()=>route('paymentSchedule',id);
   const saveDocStageBtn=document.getElementById('saveDocStage');
@@ -7312,9 +7328,12 @@ function computeLeadQuotationTotals(lead){
   }
   return {listTotal:c.gross,discountTotal:c.disc,net:c.net,interestTotal:c.interest,grand,planMonths,deposit,balance,monthlyDue,schedule};
 }
+/* Shared by the client portal's own quotation download and the staff-side "Download
+   quotation" button on a lead's Update Pipeline screen -- same real terms either way,
+   sourced from the lead record itself rather than the session type. */
 function buildClientQuotationPDF(lead){
   const t=computeLeadQuotationTotals(lead);
-  buildQuotationPDF({clientName:CLIENT_PROFILE.name,address:'',contact:CLIENT_PROFILE.contact,email:'',
+  buildQuotationPDF({clientName:lead.name,address:'',contact:lead.contact,email:'',
     plotType:lead.plotType,noPlots:lead.noPlots,period:lead.paymentPlan,...t});
 }
 async function saveAccountPin(){
@@ -7599,17 +7618,22 @@ function buildClientStatementPDF(){
    with a thank-you message -- the file itself still has to be attached by hand in
    WhatsApp/the mail client, since there's no way to push a file through a wa.me or
    mailto link, but this removes everything else about sending it manually. */
-function offerSendReceipt(lead,payment){
+async function offerSendReceipt(lead,payment){
   if(!lead||!lead.contact) return;
+  // Always lands in the client's own Palmstead inbox regardless of what's clicked below --
+  // WhatsApp/email are just extra reach, not the only way the client finds out.
+  notifyClient(lead,'New receipt','A receipt for '+ghs(payment.amount)+' was added to your payment history.').catch(()=>{});
+  let channels={}; try{ const r=await sb.rpc('staff_get_client_channels',{p_contact:lead.contact}); if(r.data&&r.data.ok) channels=r.data; }catch(e){}
+  const waTarget=channels.whatsapp||lead.contact;
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Send receipt?</div><button id="closeSendReceipt" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
-    <div class="mini" style="margin-bottom:16px">${esc(lead.name)} · ${ghs(payment.amount)} logged just now. Download the receipt, then send it via WhatsApp or email.</div>
+    <div class="mini" style="margin-bottom:16px">${esc(lead.name)} · ${ghs(payment.amount)} logged just now — already added to their Palmstead payment history and notified in-system. Download it, or reach them directly:</div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <button class="btn primary" id="srDownload" style="width:100%">⬇ Download receipt PDF</button>
       <a class="btn ghost" id="srWhatsapp" target="_blank" rel="noopener" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Open WhatsApp to ${esc(lead.name)}</a>
-      ${lead.email?`<a class="btn ghost" id="srEmail" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Open email to ${esc(lead.name)}</a>`:''}
+      ${channels.email?`<a class="btn ghost" id="srEmail" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Open email to ${esc(lead.name)}</a>`:''}
     </div>
     <button class="btn ghost" id="closeSendReceipt2" style="width:100%;margin-top:14px">Not now</button>
   </div>`;
@@ -7617,9 +7641,9 @@ function offerSendReceipt(lead,payment){
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeSendReceipt').onclick=()=>ov.remove();
   document.getElementById('closeSendReceipt2').onclick=()=>ov.remove();
-  const msg=`Hi ${lead.name}, thank you for your payment of ${ghs(payment.amount)} towards your plot at Royal Palm Enclave. Your receipt is attached.`;
-  document.getElementById('srWhatsapp').href='https://wa.me/'+waNumberFromPhone(lead.contact)+'?text='+encodeURIComponent(msg);
-  const emailEl=document.getElementById('srEmail'); if(emailEl) emailEl.href='mailto:'+lead.email+'?subject='+encodeURIComponent('Your payment receipt')+'&body='+encodeURIComponent(msg);
+  const msg=`Hi ${lead.name}, thank you for your payment of ${ghs(payment.amount)} towards your plot at Royal Palm Enclave. Your receipt is attached (also saved to your Palmstead payment history).`;
+  document.getElementById('srWhatsapp').href='https://wa.me/'+waNumberFromPhone(waTarget)+'?text='+encodeURIComponent(msg);
+  const emailEl=document.getElementById('srEmail'); if(emailEl) emailEl.href='mailto:'+channels.email+'?subject='+encodeURIComponent('Your payment receipt')+'&body='+encodeURIComponent(msg);
   document.getElementById('srDownload').onclick=()=>{
     const doc=buildReceiptPDF(lead.name,payment,lead); if(!doc) return;
     const fname='Receipt_'+lead.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
@@ -7689,6 +7713,13 @@ function formClientSettings(){
     ${fld('Phone number','<input id="cs_contact" value="'+esc(CLIENT_PROFILE.contact||'')+'" placeholder="0244…"/>','changing this also updates your login')}
     <div class="formactions"><button class="btn primary" id="saveClientContact">Save details</button></div>
   </div>
+  <div class="sectitle"><h3>Email &amp; WhatsApp</h3></div>
+  <div class="formwrap">
+    <div class="mini" style="margin-bottom:14px">Optional, but this is where we'll send your receipts and documents if you ask us to.</div>
+    ${fld('Email address','<input id="cs_email" type="email" value="'+esc(CLIENT_PROFILE.email||'')+'" placeholder="you@example.com"/>')}
+    ${fld('WhatsApp number','<input id="cs_whatsapp" value="'+esc(CLIENT_PROFILE.whatsapp||'')+'" placeholder="0244… — leave blank to use your phone number above"/>')}
+    <div class="formactions"><button class="btn primary" id="saveClientChannels">Save</button></div>
+  </div>
   <div class="sectitle"><h3>Change your PIN</h3></div>
   <div class="formwrap">
     <div class="mini" style="margin-bottom:14px">${CLIENT_PROFILE.isDefaultPin?"You're currently using the default PIN (1122) — set your own below.":'Choose a new 4–6 digit PIN.'}</div>
@@ -7702,6 +7733,11 @@ function formClientSettings(){
     const btn=document.getElementById('saveClientContact'); btn.disabled=true; btn.textContent='Saving…';
     try{ await apiClientUpdateContact(name,contact); document.getElementById('tbName').textContent=name.split(' ')[0]; toast('Details updated — your agent has been notified'); formClientSettings(); }
     catch(e){ toast(e.message||'Could not update your details'); btn.disabled=false; btn.textContent='Save details'; }
+  };
+  document.getElementById('saveClientChannels').onclick=async()=>{
+    const btn=document.getElementById('saveClientChannels'); btn.disabled=true; btn.textContent='Saving…';
+    try{ await apiClientUpdateChannels(val('cs_email').trim(),val('cs_whatsapp').trim()); toast('Saved'); btn.disabled=false; btn.textContent='Save'; }
+    catch(e){ toast(e.message||'Could not save'); btn.disabled=false; btn.textContent='Save'; }
   };
   const avInput=document.getElementById('clientAvatarInput');
   avInput.onchange=async(e)=>{ const file=e.target.files[0]; e.target.value=''; if(!file) return;
