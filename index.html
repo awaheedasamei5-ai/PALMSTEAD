@@ -2226,13 +2226,17 @@ async function apiLoadDownloads(){
 async function apiLogDownload(filename,kind,fileData){
   const rec={id:uid(),userKey:PROFILE.key,userName:PROFILE.name,filename,kind,fileData:fileData||null,createdAt:new Date().toISOString()};
   if(DEMO_MODE){ const d=await demoLoad(); d.downloads=d.downloads||[]; d.downloads.unshift(rec); await demoSave(); return rec; }
-  try{ const {data,error}=await sb.from('downloads').insert({user_key:PROFILE.key,user_name:PROFILE.name,filename,kind,file_data:fileData||null}).select().single();
-    if(error) throw error; return mapDownload(data); }
-  catch(e){ return rec; }
+  const {data,error}=await sb.from('downloads').insert({user_key:PROFILE.key,user_name:PROFILE.name,filename,kind,file_data:fileData||null}).select().single();
+  if(error){ rec.__persistFailed=true; throw Object.assign(error,{rec}); }
+  return mapDownload(data);
 }
+// A download that only lives in this session's memory (server insert failed) will
+// show "file not found" the moment the tab closes or someone else looks for it in
+// the Directory -- surfacing that immediately beats a confusing failure days later.
 function logDownload(filename,kind,fileData){
   DB.downloads=DB.downloads||[];
-  apiLogDownload(filename,kind,fileData).then(rec=>{ DB.downloads.unshift(rec); }).catch(()=>{});
+  apiLogDownload(filename,kind,fileData).then(rec=>{ DB.downloads.unshift(rec); })
+    .catch(e=>{ if(e&&e.rec){ DB.downloads.unshift(e.rec); toast("Downloaded, but couldn't save a copy to the Download Directory — it won't be re-openable later."); } });
 }
 async function apiLoadDownloadFile(id){
   if(DEMO_MODE) return (DB.downloads.find(d=>d.id===id)||{}).fileData||null;
@@ -2521,8 +2525,12 @@ async function checkTargetExceeded(){
 let CHAT_CHANNEL=null;
 async function apiLoadMessages(){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.messages||[]).slice(-500); }
-  try{ const {data,error}=await sb.from('messages').select('*').order('created_at',{ascending:true}).limit(500); if(error) throw error;
-    return (data||[]).map(mapMsg);
+  // Ordering ascending-then-limit(500) was fetching the OLDEST 500 messages ever sent --
+  // once total volume passed 500, every new message (and any attachment on it) silently
+  // stopped loading at all. Fetch the most recent 500 instead, then restore chronological
+  // order for display.
+  try{ const {data,error}=await sb.from('messages').select('*').order('created_at',{ascending:false}).limit(500); if(error) throw error;
+    return (data||[]).reverse().map(mapMsg);
   }catch(e){ return []; }
 }
 function mapMsg(r){ return {id:r.id,senderKey:r.sender_key,senderName:r.sender_name,recipientKey:r.recipient_key,body:r.body,read:!!r.read,
