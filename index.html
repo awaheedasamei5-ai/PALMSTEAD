@@ -2640,13 +2640,16 @@ function bindClientDatabaseCtrls(container){
   if(inp) inp.oninput=e=>{ CLIENTDB_QUERY=e.target.value; container.querySelector('#cdbList').innerHTML=clientDatabaseListHtml(); bindClientDbRows(container); };
   const addBtn=container.querySelector('#cdbAddBtn');
   if(addBtn) addBtn.onclick=openAddClientDbLead;
+  const logPayBtn=container.querySelector('#cdbLogPaymentBtn');
+  if(logPayBtn) logPayBtn.onclick=openLogPaymentFlow;
   bindClientDbRows(container);
 }
 function bindClientDbRows(container){
   container.querySelectorAll('[data-cdbopen]').forEach(b=>b.onclick=()=>route('updateOne',b.dataset.cdbopen));
 }
 function clientDatabaseBodyHtml(){
-  return `<div style="margin-bottom:14px"><button class="btn primary" id="cdbAddBtn" style="width:100%">+ Add new client</button></div>
+  return `${canManagePayments()?`<button class="btn gold" id="cdbLogPaymentBtn" style="width:100%;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px;padding:14px"><span style="width:18px;height:18px;display:inline-flex">${ic.doc}</span>Log a Payment</button>`:''}
+  <div style="margin-bottom:14px"><button class="btn primary" id="cdbAddBtn" style="width:100%">+ Add new client</button></div>
   <div class="searchbar"><input id="cdbq" placeholder="Search name or contact…" value="${esc(CLIENTDB_QUERY)}"/></div>
   <div class="list" id="cdbList">${clientDatabaseListHtml()}</div>`;
 }
@@ -6895,6 +6898,98 @@ function openLogMonthPayment(lead,slotKey,expected){
         offerSendReceipt(lead,prec);
       }
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save payment'; }
+  };
+}
+
+/* Dedicated payment-only flow for Client Database: search a client, pick which of
+   their purchases the payment is for (a client can hold more than one lead/plot),
+   then a screen showing ONLY what's relevant to logging a payment -- no notes,
+   stage, next-action, or any other unrelated field. Reuses the exact same save
+   path as openLogMonthPayment (insert payment, sync lead balance, allocation/target
+   checks, thank-you SMS, offer a receipt) so this never drifts from Update Pipeline's
+   own payment entry. */
+function openLogPaymentFlow(){
+  if(!canManagePayments()){ toast('Payment entry is Elias/Management only'); return; }
+  openLogPaymentSearchStep('');
+}
+function logPaymentSearchResultsHtml(q){
+  const query=(q||'').toLowerCase();
+  const list=CLIENTDB_LIST.filter(l=>!query||(l.name||'').toLowerCase().includes(query)||String(l.contact||'').includes(query));
+  if(!list.length) return `<div class="empty" style="padding:20px 0">No clients found</div>`;
+  return list.slice(0,40).map(l=>{
+    const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0);
+    return `<button class="rowcard" style="text-align:left;width:100%;margin-bottom:8px" data-lpsel="${esc(l.id)}">
+      <div class="top"><div><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''} · agent ${esc(soldByLabel(l.agent)||l.agent||'—')}</div></div>
+      <div style="text-align:right"><div class="amt">${bal>0?ghs(bal):'Paid'}</div><div class="meta">${bal>0?'balance':'in full'}</div></div></div></button>`;
+  }).join('');
+}
+function openLogPaymentSearchStep(prevQuery){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Log a payment</div><button id="closeLP" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:10px">Search the client, then pick which purchase this payment is for.</div>
+    <div class="searchbar" style="margin-bottom:10px"><input id="lp_q" placeholder="Search name or contact…" value="${esc(prevQuery||'')}"/></div>
+    <div id="lpResults" style="max-height:340px;overflow-y:auto">${logPaymentSearchResultsHtml(prevQuery)}</div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeLP').onclick=()=>ov.remove();
+  const inp=document.getElementById('lp_q');
+  const bindLpResultRows=()=>{
+    document.querySelectorAll('[data-lpsel]').forEach(b=>b.onclick=()=>{
+      const lead=DB.leads.find(x=>x.id===b.dataset.lpsel)||CLIENTDB_LIST.find(x=>x.id===b.dataset.lpsel);
+      if(lead) openLogPaymentFormStep(lead);
+    });
+  };
+  inp.oninput=()=>{ document.getElementById('lpResults').innerHTML=logPaymentSearchResultsHtml(inp.value); bindLpResultRows(); };
+  inp.focus();
+  bindLpResultRows();
+}
+function openLogPaymentFormStep(lead){
+  const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand; const bal=Math.max(grand-num(lead.amtPaid),0);
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><button id="lpBack" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0">‹ Search again</button><button id="closeLP2" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div style="font-weight:800;font-size:17px;margin-bottom:2px">${esc(lead.name)}</div>
+    <div class="mini" style="margin-bottom:14px">${esc(lead.contact||'')} · ${esc(lead.plotType||'')}${lead.noPlots?' ×'+esc(lead.noPlots):''}</div>
+    <div style="display:flex;gap:10px;margin-bottom:16px">
+      <div style="flex:1;background:#F4F6F8;border-radius:12px;padding:10px 12px"><div class="mini" style="margin-bottom:2px">Total price (all plots)</div><div style="font-weight:800;font-size:15px">${ghs(grand)}</div></div>
+      <div style="flex:1;background:#F4F6F8;border-radius:12px;padding:10px 12px"><div class="mini" style="margin-bottom:2px">Balance remaining</div><div style="font-weight:800;font-size:15px;color:${bal>0?'#B4472F':'#16A34A'}">${bal>0?ghs(bal):'Paid in full'}</div></div>
+    </div>
+    ${fld('Mode of payment',sel('lp_method',PAYMENT_METHODS))}
+    ${fld('Amount paid (GHS)','<input id="lp_amount" type="number" placeholder="0"/>')}
+    ${fld('Date of payment','<input id="lp_date" type="date" value="'+today()+'" max="'+today()+'"/>')}
+    <div class="formactions"><button class="btn primary" id="saveLP" style="width:100%">Log payment</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeLP2').onclick=()=>ov.remove();
+  document.getElementById('lpBack').onclick=()=>openLogPaymentSearchStep('');
+  document.getElementById('saveLP').onclick=async()=>{
+    const amount=num(val('lp_amount')); const date=val('lp_date'); const method=val('lp_method');
+    if(amount<=0){ toast('Enter an amount'); return; }
+    if(!date){ toast('Pick a date'); return; }
+    const btn=document.getElementById('saveLP'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const prec=await apiInsertPayment(lead.id,lead.name,amount,date,method);
+      if(prec) DB.payments.unshift(prec);
+      const newPaid=num(lead.amtPaid)+amount;
+      const grand2=lead.grandTotal!=null?num(lead.grandTotal):computeLead(lead).grand;
+      const newBal=Math.max(grand2-newPaid,0);
+      await apiUpdateLead(lead.id,{amtPaid:newPaid,balance:newBal});
+      Object.assign(lead,{amtPaid:newPaid,balance:newBal});
+      const cdbLead=CLIENTDB_LIST.find(x=>x.id===lead.id); if(cdbLead) Object.assign(cdbLead,{amtPaid:newPaid,balance:newBal});
+      await checkAllocationTrigger(lead);
+      await checkTargetExceeded();
+      await addActivity(lead.name,'Payment logged',ghs(amount)+' via Client Database','','',null);
+      toast('Payment logged · '+ghs(amount));
+      if(lead.contact) apiSendSms(lead.contact,`Hi ${lead.name}, thank you for your payment of ${ghs(amount)} towards your plot at Royal Palm Enclave. - PEP Landbank`,'payment_thanks').catch(()=>{});
+      if(prec) offerSendReceipt(lead,prec); else { const ov2=document.getElementById('announceOverlay'); if(ov2) ov2.remove(); }
+      const cdbBodyEl=document.getElementById('cdbBody')||document.getElementById('mbody');
+      if(cdbBodyEl && (cdbBodyEl.id==='cdbBody' || mgrTab==='Client Database')){ cdbBodyEl.innerHTML=clientDatabaseBodyHtml(); bindClientDatabaseCtrls(cdbBodyEl); }
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Log payment'; }
   };
 }
 
