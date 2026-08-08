@@ -1734,7 +1734,7 @@ async function apiLoadAll(){
       let pq=sb.from('payments').select('*').order('payment_date',{ascending:false});
       if(PROFILE.role!=='manager') pq=pq.eq('agent_key',PROFILE.agent_key);
       const {data:pd,error:pErr}=await pq; if(pErr) throw pErr;
-      DB.payments=(pd||[]).map(r=>({id:r.id,leadId:r.lead_id,agentKey:r.agent_key,clientName:r.client_name,amount:r.amount,date:r.payment_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
+      DB.payments=(pd||[]).map(r=>({id:r.id,leadId:r.lead_id,agentKey:r.agent_key,clientName:r.client_name,amount:r.amount,date:r.payment_date,method:r.payment_method||'',createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
     }catch(e){ DB.payments=[]; } // payments table not set up yet — Monthly Collected just shows empty
   };
   const loadPlots=async()=>{
@@ -1828,7 +1828,7 @@ async function apiUpdateVisitStatus(id,status){
   const {error}=await sb.from('site_visits').update({status}).eq('id',id); if(error) throw error;
 }
 /* ================= CLIENT PORTAL: DATA ================= */
-const mapClientPay=r=>({id:r.id,leadId:r.lead_id,clientName:r.client_name,amount:r.amount,date:r.payment_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
+const mapClientPay=r=>({id:r.id,leadId:r.lead_id,clientName:r.client_name,amount:r.amount,date:r.payment_date,method:r.payment_method||'',createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
 async function apiClientLoadAll(){
   const [{data:leads,error:le},{data:payments,error:pe},{data:visits,error:ve},{data:enqs,error:ee},{data:cmps,error:ce}]=await Promise.all([
     sb.from('leads').select('*').order('date_added',{ascending:false}),
@@ -2020,10 +2020,11 @@ async function apiInsertActivity(row){
     detail:row.detail||'',note:row.note||'',method:row.method||'',follow:row.follow||null};
   const {data,error}=await sb.from('activity_log').insert(dbrow).select().single(); if(error) throw error; return mapAct(data);
 }
-async function apiInsertPayment(leadId,clientName,amount,paymentDate){
+const PAYMENT_METHODS=['Ecobank','Stanbic Bank','MTN MoMo','Vodafone Cash','Hubtel','Cash','Other'];
+async function apiInsertPayment(leadId,clientName,amount,paymentDate,paymentMethod){
   const pdate=paymentDate||today();
   if(DEMO_MODE){ const d=await demoLoad(); d.payments=d.payments||[];
-    const rec={id:uid(),leadId,agentKey:PROFILE.key,clientName,amount,date:pdate,createdAt:today()+' '+nowTime()};
+    const rec={id:uid(),leadId,agentKey:PROFILE.key,clientName,amount,date:pdate,method:paymentMethod||'',createdAt:today()+' '+nowTime()};
     d.payments.unshift(rec); await demoSave(); return rec; }
   // Payments are always attributed to the lead's own assigned agent, never to whoever is
   // physically logging them (payment entry is Elias/Management-only, but visibility for the
@@ -2031,14 +2032,15 @@ async function apiInsertPayment(leadId,clientName,amount,paymentDate){
   // possibly-stale in-memory lead, and enforced again at the database level either way.
   let leadAgentKey=PROFILE.agent_key;
   try{ const {data:leadRow}=await sb.from('leads').select('agent_key').eq('id',leadId).maybeSingle(); if(leadRow) leadAgentKey=leadRow.agent_key; }catch(e){}
-  const dbrow={lead_id:leadId,agent_key:leadAgentKey,client_name:clientName,amount,payment_date:pdate};
+  const dbrow={lead_id:leadId,agent_key:leadAgentKey,client_name:clientName,amount,payment_date:pdate,payment_method:paymentMethod||null};
   try{ const {data,error}=await sb.from('payments').insert(dbrow).select().single(); if(error) throw error;
-    return {id:data.id,leadId:data.lead_id,agentKey:data.agent_key,clientName:data.client_name,amount:data.amount,date:data.payment_date,createdAt:(data.created_at||'').slice(0,16).replace('T',' ')};
+    return {id:data.id,leadId:data.lead_id,agentKey:data.agent_key,clientName:data.client_name,amount:data.amount,date:data.payment_date,method:data.payment_method||'',createdAt:(data.created_at||'').slice(0,16).replace('T',' ')};
   }catch(e){ return null; } // payments table not set up yet — pipeline still saves fine, just no ledger entry
 }
-async function apiUpdatePayment(id,amount,paymentDate){
-  if(DEMO_MODE){ const d=await demoLoad(); const p=(d.payments||[]).find(x=>x.id===id); if(p){ p.amount=amount; p.date=paymentDate; } await demoSave(); return; }
-  const {error}=await sb.from('payments').update({amount,payment_date:paymentDate}).eq('id',id); if(error) throw error;
+async function apiUpdatePayment(id,amount,paymentDate,paymentMethod){
+  if(DEMO_MODE){ const d=await demoLoad(); const p=(d.payments||[]).find(x=>x.id===id); if(p){ p.amount=amount; p.date=paymentDate; if(paymentMethod!==undefined) p.method=paymentMethod; } await demoSave(); return; }
+  const patch={amount,payment_date:paymentDate}; if(paymentMethod!==undefined) patch.payment_method=paymentMethod||null;
+  const {error}=await sb.from('payments').update(patch).eq('id',id); if(error) throw error;
 }
 async function apiDeletePayment(id){
   if(DEMO_MODE){ const d=await demoLoad(); d.payments=(d.payments||[]).filter(x=>x.id!==id); await demoSave(); return; }
@@ -2482,7 +2484,7 @@ async function apiLoadClientDatabase(){
   const mapped=(leadsData||[]).map(mapLead);
   const existingIds=new Set(DB.leads.map(l=>l.id));
   mapped.forEach(l=>{ if(existingIds.has(l.id)) Object.assign(DB.leads.find(x=>x.id===l.id),l); else DB.leads.push(l); });
-  const mappedPay=(paymentsData||[]).map(r=>({id:r.id,leadId:r.lead_id,agentKey:r.agent_key,clientName:r.client_name,amount:r.amount,date:r.payment_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
+  const mappedPay=(paymentsData||[]).map(r=>({id:r.id,leadId:r.lead_id,agentKey:r.agent_key,clientName:r.client_name,amount:r.amount,date:r.payment_date,method:r.payment_method||'',createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
   const existingPayIds=new Set(DB.payments.map(p=>p.id));
   mappedPay.forEach(p=>{ if(!existingPayIds.has(p.id)) DB.payments.push(p); });
   CLIENTDB_LIST=mapped; CLIENTDB_LOADED=true;
@@ -3029,6 +3031,7 @@ async function enterApp(){
   document.getElementById('tbName').textContent = PROFILE.role==='manager' ? 'Management' : PROFILE.name.split(' ')[0];
   document.getElementById('topbarSub').innerHTML = DEMO_MODE ? 'by PEP Landbank <span class="demodot"></span> Demo data' : 'by PEP Landbank';
   paintTopbarAvatar();
+  const searchBtnS=document.getElementById('globalSearchBtn'); if(searchBtnS) searchBtnS.classList.remove('hidden');
   // The greeting animation used to run AFTER data finished loading, stacking its fixed
   // 5s on top of however long the network took. Running both at once means the wait is
   // whichever is longer, not both added together -- same animation, faster sign-in.
@@ -3084,6 +3087,7 @@ async function enterClientPortal(){
   paintTopbarAvatar();
   const bellBtn=document.getElementById('clientBellBtn');
   if(bellBtn){ bellBtn.classList.remove('hidden'); bellBtn.onclick=openClientNotifications; }
+  const searchBtn=document.getElementById('globalSearchBtn'); if(searchBtn) searchBtn.classList.add('hidden');
   // Same overlap-instead-of-stack fix as the staff login: run the data load and the
   // greeting animation at once so sign-in doesn't wait for both back-to-back.
   const loadPromise=(async()=>{
@@ -6406,6 +6410,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   </div>`:''}
   ${fld('Total paid to date (GHS)','<input id="u_paidtotal" type="number" value="'+num(l.amtPaid)+'"'+(canEnterPayments?'':' disabled')+'/>',canEnterPayments?'only for a lump sum not yet itemized below — to correct or remove a specific logged payment, use Payment schedule instead':'only Elias or Management can record payments — ask them to log it')}
   ${fld(mySched?"This month's payment (GHS)":(myDep&&!myDep.complete?'Deposit payment (GHS)':'...or add a new payment now (GHS)'),'<input id="u_pay" type="number" placeholder="0"'+(canEnterPayments?'':' disabled')+'/>'+(mySched?'<div id="u_payCompare" class="mini" style="margin-top:7px;font-weight:700"></div>':''),canEnterPayments?(mySched?('expected '+ghs(mySched.monthlyInstallment)+' this month — enter what they actually paid'):(myDep&&!myDep.complete?(ghs(myDep.remaining)+' left on the deposit'):'adds on top of the total above')):'only Elias or Management can record payments — ask them to log it')}
+  ${canEnterPayments?fld('Payment method',sel('u_paymethod',PAYMENT_METHODS)):''}
   <div class="sectitle"><h3>Stage &amp; follow-up</h3></div>
   <div class="grid2">${fld('Move stage to',stageSel('u_stage',l.stage))}${fld('Contact method',sel('u_method',['Phone Call','WhatsApp','Email','In-person']))}</div>
   ${fld('What was discussed / outcome','<textarea id="u_disc" placeholder="Summary of the interaction"></textarea>')}
@@ -6604,7 +6609,7 @@ async function saveUpdate(id,resolvedDepositTarget){ const l=DB.leads.find(x=>x.
       notifyClient({...l,name,contact},'Account details updated','Your details on file were updated by your agent. Log in to review them.').catch(()=>{});
     }
     let loggedPayment=null;
-    if(pay>0){ const prec=await apiInsertPayment(id,name,pay); if(prec){ DB.payments.unshift(prec); loggedPayment=prec; } }
+    if(pay>0){ const methodEl=document.getElementById('u_paymethod'); const prec=await apiInsertPayment(id,name,pay,undefined,methodEl?methodEl.value:undefined); if(prec){ DB.payments.unshift(prec); loggedPayment=prec; } }
     await checkAllocationTrigger(l);
     await checkTargetExceeded();
     const parts=[]; if(pay>0)parts.push('Payment '+ghs(pay)); parts.push('Stage: '+stage); if(discount!==oldDiscount)parts.push('Discount now '+ghs(discount));
@@ -6700,20 +6705,21 @@ function openEditPaymentModal(p,lead){
     <div class="mini" style="margin-bottom:14px">Correcting this updates the payment history, Agent of the Month, and commission figures everywhere they're used — not just this client's total.</div>
     ${fld('Amount paid (GHS)','<input id="ep_amount" type="number" value="'+num(p.amount)+'"/>')}
     ${fld('Date','<input id="ep_date" type="date" value="'+esc(p.date||'')+'"/>')}
+    ${fld('Payment method',sel('ep_method',PAYMENT_METHODS,p.method||PAYMENT_METHODS[0]))}
     <div class="formactions"><button class="btn primary" id="saveEditPayment" style="width:100%">Save correction</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeEditPayment').onclick=()=>ov.remove();
   document.getElementById('saveEditPayment').onclick=async()=>{
-    const newAmount=num(val('ep_amount')); const newDate=val('ep_date');
+    const newAmount=num(val('ep_amount')); const newDate=val('ep_date'); const newMethod=val('ep_method');
     if(newAmount<=0){ toast('Enter an amount, or use Delete to remove this payment entirely'); return; }
     if(!newDate){ toast('Pick a date'); return; }
     const btn=document.getElementById('saveEditPayment'); btn.disabled=true; btn.textContent='Saving…';
     try{
       const oldAmount=num(p.amount);
-      await apiUpdatePayment(p.id,newAmount,newDate);
-      p.amount=newAmount; p.date=newDate;
+      await apiUpdatePayment(p.id,newAmount,newDate,newMethod);
+      p.amount=newAmount; p.date=newDate; p.method=newMethod;
       await syncLeadAfterPaymentDelta(lead.id,newAmount-oldAmount);
       await checkAllocationTrigger(lead);
       await addActivity(lead.name,'Payment corrected',ghs(oldAmount)+' → '+ghs(newAmount)+' ('+monthLabel(newDate.slice(0,7))+')','','',null);
@@ -6745,18 +6751,19 @@ function openLogMonthPayment(lead,slotKey,expected){
     <div class="mini" style="margin-bottom:14px">${expected>0?('Expected this month: '+ghs(expected)+'. '):''}Enter what the client actually paid this month.</div>
     ${fld('Amount paid (GHS)','<input id="lm_amount" type="number" placeholder="'+expected+'"/>')}
     ${fld('Date within '+monthLabel(slotKey),'<input id="lm_date" type="date" value="'+defaultDate+'" min="'+slotKey+'-01" max="'+slotKey+'-'+String(lastDay).padStart(2,'0')+'"/>')}
+    ${fld('Payment method',sel('lm_method',PAYMENT_METHODS))}
     <div class="formactions"><button class="btn primary" id="saveLogMonth" style="width:100%">Save payment</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeLogMonth').onclick=()=>ov.remove();
   document.getElementById('saveLogMonth').onclick=async()=>{
-    const amount=num(val('lm_amount')); const date=val('lm_date');
+    const amount=num(val('lm_amount')); const date=val('lm_date'); const method=val('lm_method');
     if(amount<=0){ toast('Enter an amount'); return; }
     if(!date||date.slice(0,7)!==slotKey){ toast('Date must fall within '+monthLabel(slotKey)); return; }
     const btn=document.getElementById('saveLogMonth'); btn.disabled=true; btn.textContent='Saving…';
     try{
-      const prec=await apiInsertPayment(lead.id,lead.name,amount,date);
+      const prec=await apiInsertPayment(lead.id,lead.name,amount,date,method);
       if(prec) DB.payments.unshift(prec);
       const newPaid=num(lead.amtPaid)+amount;
       const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand;
@@ -7733,8 +7740,9 @@ function downloadReceiptForMonth(monthKey){
   const leads=(CLIENT_DB&&CLIENT_DB.leads)||[]; const payments=((CLIENT_DB&&CLIENT_DB.payments)||[]).filter(p=>(p.date||'').slice(0,7)===monthKey);
   if(!payments.length){ toast('No payments recorded for '+monthLabel(monthKey)); return; }
   const sorted=payments.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,leads);
   let doc=null;
-  sorted.forEach(p=>{ const lead=leads.find(l=>l.id===p.leadId)||leads[0]; doc=buildReceiptPDF(CLIENT_PROFILE.name,p,lead,doc); });
+  sorted.forEach(p=>{ const lead=leads.find(l=>l.id===p.leadId)||leads[0]; doc=buildReceiptPDF(CLIENT_PROFILE.name,p,lead,doc,portfolioTotal); });
   if(!doc) return;
   const fname='Receipt_'+monthKey+'_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'.pdf';
   const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
@@ -7743,7 +7751,19 @@ function downloadReceiptForMonth(monthKey){
    flow after logging a payment (Phase 3c) -- same document either way. Accepts an
    optional existingDoc so downloadAllReceipts() can stack every receipt as its own
    page inside one merged PDF instead of one file per payment. */
-function buildReceiptPDF(clientName,payment,lead,existingDoc){
+// Sums grand-total across every lead belonging to the same client (matched by
+// contact digits, same convention used everywhere else) -- the receipt's "Total
+// across all your purchases" figure, since a client can hold more than one plot.
+function computeClientPortfolioTotal(contact,leadsList){
+  const digits=normalizeGhPhone(contact)||String(contact||'').replace(/\D/g,'');
+  const own=(leadsList||[]).filter(l=>{
+    const ld=normalizeGhPhone(l.contact)||String(l.contact||'').replace(/\D/g,'');
+    return ld && digits && ld.slice(-9)===digits.slice(-9);
+  });
+  if(own.length<2) return null;
+  return own.reduce((s,l)=>{ const c=computeLead(l); return s+(l.grandTotal!=null?num(l.grandTotal):c.grand); },0);
+}
+function buildReceiptPDF(clientName,payment,lead,existingDoc,portfolioTotal){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return null; }
   const {jsPDF}=window.jspdf; const doc=existingDoc||new jsPDF({unit:'mm',format:'a4'});
   if(existingDoc) doc.addPage();
@@ -7765,7 +7785,9 @@ function buildReceiptPDF(clientName,payment,lead,existingDoc){
   }
   y+=8;
 
-  y=pdfDarkStatBar(doc,y,pageW,[{label:'Amount paid',value:ghs(payment.amount)}]);
+  const statItems=[{label:'Amount paid',value:ghs(payment.amount)},{label:'Date of payment',value:dateStr}];
+  if(payment.method) statItems.push({label:'Payment method',value:payment.method});
+  y=pdfDarkStatBar(doc,y,pageW,statItems);
   y+=2;
 
   if(lead){
@@ -7775,8 +7797,13 @@ function buildReceiptPDF(clientName,payment,lead,existingDoc){
     pdfStatCard(doc,12,y,cardW,'Total price',ghs(grand));
     pdfStatCard(doc,12+cardW+gap,y,cardW,'Paid to date',ghs(paid));
     pdfStatCard(doc,12+(cardW+gap)*2,y,cardW,'Balance remaining',ghs(bal));
-    y+=17+12;
+    y+=17+8;
   } else y+=6;
+
+  if(portfolioTotal!=null){
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(60,68,82);
+    doc.text('Total value across all your purchases with us: '+ghs(portfolioTotal),12,y); y+=9;
+  }
 
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(60,68,82);
   const thanksLines=doc.splitTextToSize(CONFIG.receiptThanksText||'Thank you for your payment. This receipt confirms the amount above was received by us and applied to your account.',pageW-24);
@@ -7793,7 +7820,8 @@ function buildReceiptPDF(clientName,payment,lead,existingDoc){
   return doc;
 }
 function buildClientReceiptPDF(payment,lead){
-  const doc=buildReceiptPDF(CLIENT_PROFILE.name,payment,lead); if(!doc) return;
+  const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,(CLIENT_DB&&CLIENT_DB.leads)||[]);
+  const doc=buildReceiptPDF(CLIENT_PROFILE.name,payment,lead,undefined,portfolioTotal); if(!doc) return;
   const fname='Receipt_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
   const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
 }
@@ -7805,10 +7833,11 @@ function downloadAllReceipts(){
   const leads=(CLIENT_DB&&CLIENT_DB.leads)||[]; const payments=(CLIENT_DB&&CLIENT_DB.payments)||[];
   if(!payments.length){ toast('No payments recorded yet'); return; }
   const sorted=payments.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,leads);
   let doc=null;
   sorted.forEach(p=>{
     const lead=leads.find(l=>l.id===p.leadId)||leads[0];
-    doc=buildReceiptPDF(CLIENT_PROFILE.name,p,lead,doc);
+    doc=buildReceiptPDF(CLIENT_PROFILE.name,p,lead,doc,portfolioTotal);
   });
   if(!doc) return;
   const fname='Receipts_All_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'_'+today()+'.pdf';
@@ -7919,7 +7948,8 @@ async function offerSendReceipt(lead,payment){
   document.getElementById('srWhatsapp').href='https://wa.me/'+waNumberFromPhone(waTarget)+'?text='+encodeURIComponent(msg);
   const emailEl=document.getElementById('srEmail'); if(emailEl) emailEl.href='mailto:'+channels.email+'?subject='+encodeURIComponent('Your payment receipt')+'&body='+encodeURIComponent(msg);
   document.getElementById('srDownload').onclick=()=>{
-    const doc=buildReceiptPDF(lead.name,payment,lead); if(!doc) return;
+    const portfolioTotal=computeClientPortfolioTotal(lead.contact,DB.leads||[]);
+    const doc=buildReceiptPDF(lead.name,payment,lead,undefined,portfolioTotal); if(!doc) return;
     const fname='Receipt_'+lead.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
     doc.save(fname);
   };
