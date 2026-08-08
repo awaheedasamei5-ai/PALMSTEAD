@@ -1803,6 +1803,56 @@ async function apiClientAgentKeyName(){
   try{ const c=await apiClientAgentContact(); return {key:agentKey,name:(c&&c.name)||null}; }
   catch(e){ return {key:agentKey,name:null}; }
 }
+const mapPlotRequest=r=>({id:r.id,clientName:r.client_name,clientContact:r.client_contact,agentKey:r.agent_key,
+  plotType:r.plot_type,noPlots:r.no_plots,paymentPlan:r.payment_plan,combineWithLeadId:r.combine_with_lead_id,
+  notes:r.notes,status:r.status,resultingLeadId:r.resulting_lead_id,resolvedBy:r.resolved_by,
+  createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
+async function apiClientInsertPlotRequest(row){
+  const {key:agentKey}=await apiClientAgentKeyName();
+  const dbrow={client_name:CLIENT_PROFILE.name,client_contact:CLIENT_PROFILE.contact,agent_key:agentKey,
+    plot_type:row.plotType,no_plots:num(row.noPlots),payment_plan:row.paymentPlan,
+    combine_with_lead_id:row.combineWithLeadId||null,notes:row.notes||null};
+  const {data,error}=await sb.from('plot_requests').insert(dbrow).select().single(); if(error) throw error;
+  return mapPlotRequest(data);
+}
+// RLS scopes this automatically -- a client sees only their own requests, staff see
+// whatever their role/agent_key allows -- so one loader works for both contexts.
+async function apiLoadPlotRequests(){
+  const {data,error}=await sb.from('plot_requests').select('*').order('created_at',{ascending:false}); if(error) throw error;
+  return (data||[]).map(mapPlotRequest);
+}
+/* Approving either bumps an existing lead's plot count (combined quotation) or
+   creates a brand-new lead under the client's own agent (separate quotation) --
+   either way it lands in the one shared leads table, so the agent pipeline, Client
+   Database, Master Pipeline and the client's own dashboard all pick it up with no
+   separate sync step. */
+async function apiApprovePlotRequest(req){
+  let resultingId;
+  if(req.combineWithLeadId){
+    const {data:leadRow,error:le}=await sb.from('leads').select('*').eq('id',req.combineWithLeadId).single(); if(le) throw le;
+    const existing=mapLead(leadRow);
+    const newNoPlots=num(existing.noPlots)+num(req.noPlots);
+    const cc=computeLead({...existing,noPlots:newNoPlots});
+    const patch={noPlots:newNoPlots,netTotal:cc.net,grandTotal:cc.grand,balance:cc.bal};
+    await apiUpdateLead(req.combineWithLeadId,patch);
+    const local=DB.leads.find(x=>x.id===req.combineWithLeadId); if(local) Object.assign(local,patch);
+    resultingId=req.combineWithLeadId;
+  } else {
+    const l={name:req.clientName,contact:req.clientContact,date:today(),stage:'1',priority:'Low',
+      plotType:req.plotType,noPlots:req.noPlots,paymentPlan:req.paymentPlan,siteVisit:'No',nextAction:'',notes:req.notes||''};
+    const cc=computeLead(l);
+    const rec=await apiInsertLead(l,cc,req.agentKey||undefined);
+    DB.leads.unshift(rec);
+    resultingId=rec.id;
+  }
+  const {error}=await sb.from('plot_requests').update({status:'Approved',resolved_at:new Date().toISOString(),resolved_by:PROFILE.name,resulting_lead_id:resultingId}).eq('id',req.id);
+  if(error) throw error;
+  return resultingId;
+}
+async function apiRejectPlotRequest(id){
+  const {error}=await sb.from('plot_requests').update({status:'Rejected',resolved_at:new Date().toISOString(),resolved_by:PROFILE.name}).eq('id',id);
+  if(error) throw error;
+}
 async function apiClientInsertSiteVisit(row){
   const {key:agentKey,name:agentName}=await apiClientAgentKeyName();
   const dbrow={name:CLIENT_PROFILE.name,contact:CLIENT_PROFILE.contact,plot:row.plot,site:row.site,visit_date:row.date,
@@ -2465,6 +2515,44 @@ async function viewClientDatabase(){
   const body=document.getElementById('cdbBody');
   body.innerHTML=clientDatabaseBodyHtml();
   bindClientDatabaseCtrls(body);
+}
+async function viewPlotRequests(){
+  const homeRoute=PROFILE.role==='manager'?'mgr':'more';
+  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Additional plot requests</div><h2>Plot Requests</h2><p>Submitted by clients from their dashboard.</p></div></div>
+  <div id="prBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  let list=[];
+  try{ list=await apiLoadPlotRequests(); }catch(e){ toast('Could not load plot requests: '+(e.message||e)); }
+  document.getElementById('prBody').innerHTML=plotRequestsListHtml(list);
+  bindPlotRequestCtrls(list);
+}
+function plotRequestsListHtml(list){
+  if(!list.length) return emptyState(ic.lead,'No plot requests','Requests clients submit for an additional plot show up here.');
+  const statusCls={Pending:'warnt',Approved:'ok',Rejected:'dgr'};
+  return `<div class="list">`+list.map(r=>`<div class="rowcard">
+    <div class="top"><div><div class="nm">${esc(r.clientName)}</div><div class="meta">${esc(r.plotType)} · ${r.noPlots} plot(s) · ${esc(r.paymentPlan)}</div></div>
+    <span class="tag ${statusCls[r.status]||'ghost'}">${esc(r.status)}</span></div>
+    <div class="mini" style="margin-top:6px">${r.combineWithLeadId?'Combine with existing plot quotation':'Wants a new, separate quotation'}${r.notes?(' · '+esc(r.notes)):''}</div>
+    <div class="mini" style="margin-top:2px">${esc(r.createdAt)}</div>
+    ${r.status==='Pending'?`<div class="foot" style="gap:8px">
+      <button class="btn primary" style="flex:1" data-approvepr="${esc(r.id)}">Approve</button>
+      <button class="btn ghost" style="flex:1" data-rejectpr="${esc(r.id)}">Reject</button>
+    </div>`:''}
+  </div>`).join('')+`</div>`;
+}
+function bindPlotRequestCtrls(list){
+  document.querySelectorAll('[data-approvepr]').forEach(b=>b.onclick=async()=>{
+    const req=list.find(x=>x.id===b.dataset.approvepr); if(!req) return;
+    b.disabled=true; b.textContent='Approving…';
+    try{ await apiApprovePlotRequest(req); toast('Approved — added to the pipeline'); viewPlotRequests(); }
+    catch(e){ toast('Could not approve: '+(e.message||e)); b.disabled=false; b.textContent='Approve'; }
+  });
+  document.querySelectorAll('[data-rejectpr]').forEach(b=>b.onclick=async()=>{
+    const req=list.find(x=>x.id===b.dataset.rejectpr); if(!req) return;
+    if(!confirm('Reject this request from '+req.clientName+'?')) return;
+    b.disabled=true;
+    try{ await apiRejectPlotRequest(req.id); toast('Request rejected'); viewPlotRequests(); }
+    catch(e){ toast('Could not reject: '+(e.message||e)); b.disabled=false; }
+  });
 }
 async function apiFlagAllocation(id,reason){
   if(DEMO_MODE){ const d=await demoLoad(); const a=(d.allocations||[]).find(x=>x.id===id);
@@ -3256,7 +3344,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
+    clientdb:viewClientDatabase,plotrequests:viewPlotRequests}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -3525,13 +3613,14 @@ function viewMore(){
     grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
     grid.querySelectorAll('[data-moreapp]').forEach(b=>b.onclick=()=>{
       const key=b.dataset.moreapp;
-      if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else if(key==='Downloads') route('downloads'); else route('mgrTabView',key);
+      if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else if(key==='Downloads') route('downloads'); else if(key==='Plot Requests') route('plotrequests'); else route('mgrTabView',key);
     });
   } else {
     const items=[
       {key:'insights',fic:'target',label:'Smart Insights'},
       {key:'downloads',fic:'document',label:'Download Directory'},
       {key:'feedback',fic:'chat',label:'Feedback'},
+      {key:'plotrequests',fic:'savings',label:'Plot Requests'},
       ...(canManagePlots()?[{key:'allocations',fic:'allocation',label:'Allocations'}]:[]),
       ...(canViewClientDatabase()?[{key:'clientdb',fic:'savings',label:'Client Database'}]:[]),
       {key:'account',fic:'settings',label:'Settings'}
@@ -7435,6 +7524,8 @@ async function clientHome(){
         <button class="btn ghost" id="dlMonthReceipt" style="white-space:nowrap">⬇ Receipt</button>
       </div>`:''}
     </div>
+    ${leads.length?`<div class="sectitle"><h3>Buy another plot?</h3></div>
+    <div class="formwrap"><button class="btn gold" id="reqPlotBtn" style="width:100%">+ Request an additional plot</button></div>`:''}
     <div class="sectitle"><h3>Your agent</h3></div>
     ${agent? (renderContactCard({title:'Your agent',name:agent.name,avatar:agent.avatar,phone:agent.phone,whatsapp:agent.whatsapp,social:agent.social_handles})||`<div class="formwrap"><div class="mini">Your agent hasn't added contact details yet.</div></div>`) : `<div class="formwrap"><div class="mini">Agent contact not available yet.</div></div>`}
     <div class="sectitle"><h3>PEP Landbank</h3></div>
@@ -7451,6 +7542,31 @@ async function clientHome(){
   const stBtn=document.getElementById('dlStatement'); if(stBtn) stBtn.onclick=()=>buildClientStatementPDF();
   const arBtn=document.getElementById('dlAllReceipts'); if(arBtn) arBtn.onclick=()=>downloadAllReceipts();
   const moBtn=document.getElementById('dlMonthReceipt'); if(moBtn) moBtn.onclick=()=>downloadReceiptForMonth(val('dlMonthSel'));
+  const reqBtn=document.getElementById('reqPlotBtn'); if(reqBtn) reqBtn.onclick=()=>openClientPlotRequestModal(leads);
+}
+function openClientPlotRequestModal(leads){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Request an additional plot</div><button id="closePlotReq" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:14px">Sent to your agent and Management for review — nothing is added to your account until they approve it.</div>
+    <div class="grid2">${fld('Plot type',sel('pr_plot',['Full Plot','Half Plot']))}${fld('No. of plots','<input id="pr_noplots" type="number" min="0.5" step="0.5" value="1"/>')}</div>
+    ${fld('Payment plan',sel('pr_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}
+    ${fld('Quotation for this plot',`<select id="pr_combine"><option value="">A new, separate quotation</option>${leads.map(l=>`<option value="${esc(l.id)}">Add to my existing ${esc(l.plotType||'Plot')} quotation</option>`).join('')}</select>`)}
+    ${fld('Anything else to add?','<textarea id="pr_notes" placeholder="Optional"></textarea>')}
+    <div class="formactions"><button class="btn gold" id="submitPlotReq" style="width:100%">Send request</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closePlotReq').onclick=()=>ov.remove();
+  document.getElementById('submitPlotReq').onclick=async()=>{
+    const btn=document.getElementById('submitPlotReq'); btn.disabled=true; btn.textContent='Sending…';
+    try{
+      await apiClientInsertPlotRequest({plotType:val('pr_plot'),noPlots:val('pr_noplots'),paymentPlan:val('pr_plan'),
+        combineWithLeadId:val('pr_combine')||null,notes:val('pr_notes').trim()});
+      toast('Request sent — your agent and Management have been notified'); ov.remove();
+    }catch(e){ toast('Could not send request: '+(e.message||e)); btn.disabled=false; btn.textContent='Send request'; }
+  };
 }
 /* One or more payments can land in the same calendar month -- merge whichever ones
    match into a single PDF rather than forcing a pick when there's more than one. */
@@ -7764,6 +7880,7 @@ const MGR_APPS=[
   {key:'Plots',fic:'map',label:'Plot Inventory'},
   {key:'Allocations',fic:'allocation',label:'Allocations'},
   {key:'Client Database',fic:'savings',label:'Client Database'},
+  {key:'Plot Requests',fic:'savings',label:'Plot Requests'},
   {key:'Enquiries',fic:'enquiry',label:'Enquiries'},
   {key:'Complaints',fic:'alert',label:'Complaints'},
   {key:'Site visits',fic:'location',label:'Site Visits'},
