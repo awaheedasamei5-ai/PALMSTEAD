@@ -410,10 +410,13 @@ a{color:var(--green2)}
 .commentItem{font-size:12.5px;padding:8px 0;border-top:1px solid var(--line)}
 .commentItem b{color:var(--text)}
 .appGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.appGridIcon{display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;cursor:pointer;padding:14px 6px;border-radius:16px;transition:.15s}
+.appGridIcon{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;cursor:pointer;padding:14px 6px;border-radius:16px;transition:.15s}
 .appGridIcon:hover{background:#F4F6F5;transform:translateY(-4px)}
 .appGridIcon:hover .fic{transform:scale(1.06)}
 .appGridIcon:active{transform:translateY(-1px) scale(.97)}
+.appGridBadge{position:absolute;top:6px;right:14%;min-width:17px;height:17px;padding:0 4px;border-radius:100px;
+  background:linear-gradient(150deg,#EF4444,#B91C1C);color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--card);z-index:1;animation:badgePop .25s ease}
+@keyframes badgePop{from{transform:scale(0)}to{transform:scale(1)}}
 .appGridGlyph{width:52px;height:52px;display:flex;align-items:center;justify-content:center}
 .appGridGlyph .fic{width:100%;height:100%;transition:transform .2s cubic-bezier(.34,1.4,.64,1)}
 body.dark .appGridIcon:hover{background:#182541}
@@ -2826,7 +2829,7 @@ async function apiLoadMessages(){
   }catch(e){ return []; }
 }
 function mapMsg(r){ return {id:r.id,senderKey:r.sender_key,senderName:r.sender_name,recipientKey:r.recipient_key,body:r.body,read:!!r.read,
-  attachData:r.attachment_data,attachType:r.attachment_type,attachName:r.attachment_name,createdAt:r.created_at}; }
+  attachData:r.attachment_data,attachType:r.attachment_type,attachName:r.attachment_name,createdAt:r.created_at,kind:r.kind||null}; }
 async function apiSendMessage(recipientKey,body,attachment){
   const att=attachment||{};
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),senderKey:PROFILE.key,senderName:PROFILE.name,recipientKey,body,read:false,
@@ -2858,6 +2861,16 @@ async function apiMarkThreadRead(otherKey){
   if(DEMO_MODE){ const d=await demoLoad(); (d.messages||[]).forEach(m=>{ if(m.senderKey===otherKey && m.recipientKey===PROFILE.key) m.read=true; }); await demoSave(); return; }
   try{ await sb.from('messages').update({read:true}).eq('sender_key',otherKey).eq('recipient_key',PROFILE.key).eq('read',false); }catch(e){}
 }
+// Clears a nav/app-icon badge (e.g. opening CRM Tools > Site visit) by marking every
+// unread system notification of that kind, addressed to this staff member, as read --
+// same underlying read/unread column the Chat badge already uses, just filtered by
+// which feature the notification belongs to instead of who sent it.
+async function apiMarkKindRead(kind){
+  DB.messages.forEach(m=>{ if(m.kind===kind && m.recipientKey===PROFILE.key) m.read=true; });
+  if(DEMO_MODE){ const d=await demoLoad(); (d.messages||[]).forEach(m=>{ if(m.kind===kind && m.recipientKey===PROFILE.key) m.read=true; }); await demoSave(); return; }
+  try{ await sb.from('messages').update({read:true}).eq('kind',kind).eq('recipient_key',PROFILE.key).eq('read',false); }catch(e){}
+}
+function unreadByKind(kind){ return DB.messages.filter(m=>m.recipientKey===PROFILE.key&&!m.read&&m.kind===kind).length; }
 function subscribeToChat(onMessage){
   if(DEMO_MODE || !sb || CHAT_CHANNEL) return;
   try{
@@ -3574,12 +3587,14 @@ function renderBottomNavNow(){
   const isMgr=PROFILE.role==='manager';
   const openTasks=computeDutiesSummary((DB.tasks||[]).filter(t=>isMgr||t.assignedTo===PROFILE.key)).openCount;
   const unread=totalUnread();
+  const crmBadge=unreadByKind('sitevisit')+unreadByKind('enquiry')+unreadByKind('complaint');
+  const moreBadge=isMgr?(crmBadge+unreadByKind('plotrequest')):unreadByKind('plotrequest');
   const tabDefs=[
     {key:'home',label:'Home',icon:ic.home,r:isMgr?'mgr':'home'},
-    ...(isMgr?[]:[{key:'salesdesk',label:'Sales Desk',icon:ic.briefcase2,r:'salesdesk'},{key:'crm',label:'CRM Tools',icon:ic.phone,r:'crm'}]),
+    ...(isMgr?[]:[{key:'salesdesk',label:'Sales Desk',icon:ic.briefcase2,r:'salesdesk'},{key:'crm',label:'CRM Tools',icon:ic.phone,r:'crm',badge:crmBadge}]),
     {key:'operations',label:'Operations',icon:ic.check2,r:'duties',badge:openTasks},
     {key:'chat',label:'Chat',icon:ic.chat,r:'chat',badge:unread,badgeId:'bnChatBadge'},
-    {key:'more',label:'More',icon:ic.more,r:'more'}
+    {key:'more',label:'More',icon:ic.more,r:'more',badge:moreBadge}
   ];
   nav.innerHTML=tabDefs.map(t=>{
     const show=t.badge>0;
@@ -3767,11 +3782,18 @@ const AGENT_HUBS={
     {r:'pipeline',fic:'document',label:'My pipeline'}
   ]},
   crm:{title:'CRM Tools',items:[
-    {r:'sitevisit',fic:'location',label:'Site visit'},
-    {r:'enquiry',fic:'enquiry',label:'Client enquiry'},
-    {r:'complaint',fic:'alert',label:'Client complaint'}
+    {r:'sitevisit',fic:'location',label:'Site visit',badgeKind:'sitevisit'},
+    {r:'enquiry',fic:'enquiry',label:'Client enquiry',badgeKind:'enquiry'},
+    {r:'complaint',fic:'alert',label:'Client complaint',badgeKind:'complaint'}
   ]}
 };
+// Small red count badge overlaid on an appGrid tile -- data-badgekind lets
+// refreshAllBadges() update it live without a full screen re-render.
+function appGridBadgeHtml(kind){
+  if(!kind) return '';
+  const n=unreadByKind(kind);
+  return `<span class="appGridBadge${n>0?'':' hidden'}" data-badgekind="${esc(kind)}">${n>9?'9+':n}</span>`;
+}
 function viewSmartInsights(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
   const scope=PROFILE.role==='manager'?allAgentLists().flatMap(a=>a.list):DB.leads;
@@ -3787,8 +3809,11 @@ function viewSalesDesk(){
 function viewCRM(){
   const hub=AGENT_HUBS.crm;
   V.innerHTML=`<div class="pagehead"><div><h2>CRM Tools</h2><p>Site visits, enquiries &amp; complaints</p></div></div>
-  <div class="appGrid">${hub.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`;
-  V.querySelectorAll('[data-hubroute]').forEach(b=>b.onclick=()=>route(b.dataset.hubroute));
+  <div class="appGrid">${hub.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`;
+  V.querySelectorAll('[data-hubroute]').forEach(b=>{
+    const item=hub.items.find(a=>a.r===b.dataset.hubroute);
+    b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); route(b.dataset.hubroute); };
+  });
 }
 function viewMore(){
   V.innerHTML=`<div class="pagehead"><div><h2>More</h2><p>Additional tools and settings</p></div></div>
@@ -3796,9 +3821,11 @@ function viewMore(){
   const grid=document.getElementById('moreGrid');
   if(PROFILE.role==='manager'){
     const items=MGR_APPS.filter(a=>a.key!=='Duties');
-    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
     grid.querySelectorAll('[data-moreapp]').forEach(b=>b.onclick=()=>{
       const key=b.dataset.moreapp;
+      const item=items.find(a=>a.key===key);
+      if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges);
       if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else if(key==='Downloads') route('downloads'); else if(key==='Plot Requests') route('plotrequests'); else route('mgrTabView',key);
     });
   } else {
@@ -3806,13 +3833,16 @@ function viewMore(){
       {key:'insights',fic:'target',label:'Smart Insights'},
       {key:'downloads',fic:'document',label:'Download Directory'},
       {key:'feedback',fic:'chat',label:'Feedback'},
-      {key:'plotrequests',fic:'savings',label:'Plot Requests'},
+      {key:'plotrequests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
       ...(canManagePlots()?[{key:'allocations',fic:'allocation',label:'Allocations'}]:[]),
       ...(canViewClientDatabase()?[{key:'clientdb',fic:'savings',label:'Client Database'}]:[]),
       {key:'account',fic:'settings',label:'Settings'}
     ];
-    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
-    grid.querySelectorAll('[data-moreapp]').forEach(b=>b.onclick=()=>route(b.dataset.moreapp));
+    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+    grid.querySelectorAll('[data-moreapp]').forEach(b=>{
+      const item=items.find(a=>a.key===b.dataset.moreapp);
+      b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); route(b.dataset.moreapp); };
+    });
   }
 }
 let downloadsKindFilter='';
@@ -5423,6 +5453,19 @@ function refreshChatNavBadge(){
   const n=totalUnread();
   if(n>0){ badge.textContent=n>9?'9+':n; badge.classList.remove('hidden'); } else badge.classList.add('hidden');
 }
+// Refreshes every live notification badge on screen -- the bottom nav's CRM/More
+// counts plus any appGrid tile currently showing a data-badgekind span -- without
+// a full page re-render, so a badge can appear/disappear mid-session the instant a
+// new client-portal submission (or someone else opening/resolving one) comes in.
+function refreshAllBadges(){
+  refreshChatNavBadge();
+  if(typeof PROFILE!=='undefined' && PROFILE) renderBottomNavNow();
+  document.querySelectorAll('[data-badgekind]').forEach(el=>{
+    const n=unreadByKind(el.dataset.badgekind);
+    el.textContent=n>9?'9+':String(n);
+    el.classList.toggle('hidden',n<=0);
+  });
+}
 function lastMsgPreview(m){
   if(m.body) return m.body;
   if(m.attachType==='image') return '📷 Photo';
@@ -5748,6 +5791,7 @@ function ensureChatSubscribed(){
     if(DB.messages.some(m=>m.id===newMsg.id)) return;
     DB.messages.push(newMsg);
     refreshChatNavBadge();
+    if(newMsg.kind) refreshAllBadges();
     const l=document.getElementById('chatLog');
     const otherKey=newMsg.senderKey===PROFILE.key?newMsg.recipientKey:newMsg.senderKey;
     if(l && document.getElementById('chatInput')){
@@ -8309,10 +8353,10 @@ const MGR_APPS=[
   {key:'Plots',fic:'map',label:'Plot Inventory'},
   {key:'Allocations',fic:'allocation',label:'Allocations'},
   {key:'Client Database',fic:'savings',label:'Client Database'},
-  {key:'Plot Requests',fic:'savings',label:'Plot Requests'},
-  {key:'Enquiries',fic:'enquiry',label:'Enquiries'},
-  {key:'Complaints',fic:'alert',label:'Complaints'},
-  {key:'Site visits',fic:'location',label:'Site Visits'},
+  {key:'Plot Requests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
+  {key:'Enquiries',fic:'enquiry',label:'Enquiries',badgeKind:'enquiry'},
+  {key:'Complaints',fic:'alert',label:'Complaints',badgeKind:'complaint'},
+  {key:'Site visits',fic:'location',label:'Site Visits',badgeKind:'sitevisit'},
   {key:'News',fic:'announce',label:'News & Announcements'},
   {key:'Commission',fic:'savings',label:'Commission'},
   {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
