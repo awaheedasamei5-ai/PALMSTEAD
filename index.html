@@ -473,6 +473,7 @@ body.dark .insightCard.ok{color:#A3E635}body.dark .insightCard.warnt{color:#FBBF
 .tag.ok{background:#DCEEE4;color:#1E7A56}
 .tag.warnt{background:#F6EBD3;color:#8A6E12}
 .tag.dgr{background:#F4E0DA;color:#B4472F}
+.tag.portal{background:#EAF7D8;color:#4D7C0F}
 .chip{border:1px solid var(--line);background:var(--card);border-radius:100px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--text);transition:.15s}
 .chip:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
 
@@ -1107,11 +1108,11 @@ const mapEnq=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,name:r.nam
   types:(r.types||'').split(',').filter(Boolean),plot:r.plot,source:r.source,details:r.details,follow:r.follow,
   followDate:r.follow_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
 const mapCmp=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,name:r.name,contact:r.contact,plot:r.plot,
-  category:r.category,details:r.details,owner:r.owner,priority:r.priority,resolution:r.resolution,status:r.status,
+  category:r.category,details:r.details,owner:r.owner,priority:r.priority,resolution:r.resolution,status:r.status,source:r.source,
   createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
 const mapSV=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,name:r.name,contact:r.contact,plot:r.plot,site:r.site,
   date:r.visit_date,time:r.visit_time,people:r.people,transport:r.transport,pickup:r.pickup,notes:r.notes,status:r.status,
-  placeOfWork:r.place_of_work,position:r.position,nationality:r.nationality,purpose:r.purpose,
+  placeOfWork:r.place_of_work,position:r.position,nationality:r.nationality,purpose:r.purpose,source:r.source,
   discussion:r.discussion_so_far,understanding:r.key_understanding,feedback:r.feedback_after,nextSteps:r.key_next_steps,
   createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
 const mapAct=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,client:r.client,action:r.action,detail:r.detail,
@@ -1716,19 +1717,35 @@ async function apiClientAgentContact(){
   if(error||!data) return null;
   return data;
 }
+/* Client-portal submissions are attributed to the client's own linked agent (not
+   left agent_key-less) so they show up in that agent's normal enquiry/complaint/site-visit
+   views under the same RLS the agent already has, and a DB trigger (see
+   notify_staff_on_client_submission) fires an in-app message to the agent + management the
+   moment a 'Client portal'-sourced row lands, regardless of who logged in when it happened. */
+async function apiClientAgentKeyName(){
+  const agentKey=(CLIENT_DB.leads[0]||{}).agent; if(!agentKey) return {key:null,name:null};
+  try{ const c=await apiClientAgentContact(); return {key:agentKey,name:(c&&c.name)||null}; }
+  catch(e){ return {key:agentKey,name:null}; }
+}
 async function apiClientInsertSiteVisit(row){
+  const {key:agentKey,name:agentName}=await apiClientAgentKeyName();
   const dbrow={name:CLIENT_PROFILE.name,contact:CLIENT_PROFILE.contact,plot:row.plot,site:row.site,visit_date:row.date,
-    visit_time:row.time,people:num(row.people),transport:row.transport,pickup:row.pickup,notes:row.notes,status:'Pending'};
+    visit_time:row.time,people:num(row.people),transport:row.transport,pickup:row.pickup,notes:row.notes,status:'Pending',
+    agent_key:agentKey,agent_name:agentName,source:'Client portal'};
   const {data,error}=await sb.from('site_visits').insert(dbrow).select().single(); if(error) throw error;
   return mapSV(data);
 }
 async function apiClientInsertEnquiry(row){
-  const dbrow={name:CLIENT_PROFILE.name,contact:CLIENT_PROFILE.contact,details:row.details,source:'Client portal'};
+  const {key:agentKey,name:agentName}=await apiClientAgentKeyName();
+  const dbrow={name:CLIENT_PROFILE.name,contact:CLIENT_PROFILE.contact,details:row.details,source:'Client portal',
+    agent_key:agentKey,agent_name:agentName};
   const {data,error}=await sb.from('enquiries').insert(dbrow).select().single(); if(error) throw error;
   return mapEnq(data);
 }
 async function apiClientInsertComplaint(row){
-  const dbrow={name:CLIENT_PROFILE.name,contact:CLIENT_PROFILE.contact,category:row.category,details:row.details,status:'Open'};
+  const {key:agentKey,name:agentName}=await apiClientAgentKeyName();
+  const dbrow={name:CLIENT_PROFILE.name,contact:CLIENT_PROFILE.contact,category:row.category,details:row.details,status:'Open',
+    agent_key:agentKey,agent_name:agentName,source:'Client portal'};
   const {data,error}=await sb.from('complaints').insert(dbrow).select().single(); if(error) throw error;
   return mapCmp(data);
 }
@@ -6937,9 +6954,10 @@ function buildQuotationPDF(q){
 
   let y=48;
   const leftX=14, rightX=110;
+  const depositPct=q.planMonths&&q.grand>0?Math.round((q.deposit||0)/q.grand*100):Math.round(QUOTE_DEPOSIT_PCT*100);
   const leftRows=[['Customer Name',q.clientName,null],['Address',q.address||'—',null],
     ['Contact',[q.contact,q.email].filter(Boolean).join('  ·  ')||'—',null],
-    ['Payment Plan',q.planMonths?(Math.round(QUOTE_DEPOSIT_PCT*100)+'%'):'Outright',null]];
+    ['Payment Plan',q.planMonths?(depositPct+'%'):'Outright',null]];
   const rightRows=[['Date:',dateStr,null],['Credit Period months',q.planMonths||'—',QRED],['No of Plots',q.noPlots,QRED],
     ['Original Plot Price',ghs(q.listTotal/q.noPlots),null],['Discount',ghs((q.discountTotal||0)/q.noPlots),null],
     ['Interest',ghs((q.interestTotal||0)/q.noPlots),null],['Cost with Interest',ghs((q.net+q.interestTotal)/q.noPlots),null],
@@ -7001,6 +7019,35 @@ function buildQuotationPDF(q){
   const fname='Quotation_'+q.clientName.replace(/\s+/g,'_')+'_'+today()+'.pdf';
   const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
 }
+/* Client-portal quotation: same document, but the terms come from the client's REAL
+   lead (their agent's actual plotType/qty/unitPrice/discount/paymentPlan/depositTarget
+   via computeLead), not a fresh generic recompute -- so it always matches what was
+   actually agreed, discount included or not. */
+function computeLeadQuotationTotals(lead){
+  const c=computeLead(lead);
+  const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand;
+  const planMonths=PLAN_MONTHS[lead.paymentPlan]||0;
+  const target=lead.depositTarget!=null?num(lead.depositTarget):Math.round(grand*QUOTE_DEPOSIT_PCT);
+  let deposit=0,balance=grand,monthlyDue=0,schedule=[];
+  if(planMonths && grand>0){
+    deposit=Math.min(Math.max(target,0),grand);
+    balance=grand-deposit;
+    monthlyDue=Math.round(balance/planMonths);
+    let opening=balance;
+    for(let m=1;m<=planMonths;m++){
+      const payment=(m===planMonths)?opening:monthlyDue;
+      const closing=Math.max(0,Math.round((opening-payment)*100)/100);
+      schedule.push({month:m,opening,payment,closing});
+      opening=closing;
+    }
+  }
+  return {listTotal:c.gross,discountTotal:c.disc,net:c.net,interestTotal:c.interest,grand,planMonths,deposit,balance,monthlyDue,schedule};
+}
+function buildClientQuotationPDF(lead){
+  const t=computeLeadQuotationTotals(lead);
+  buildQuotationPDF({clientName:CLIENT_PROFILE.name,address:'',contact:CLIENT_PROFILE.contact,email:'',
+    plotType:lead.plotType,noPlots:lead.noPlots,period:lead.paymentPlan,...t});
+}
 async function saveAccountPin(){
   const p1=val('pin1'), p2=val('pin2');
   if(!/^\d{4,6}$/.test(p1)){ toast('PIN must be 4–6 digits'); return; }
@@ -7037,6 +7084,8 @@ async function clientHome(){
       ${leads.length? leads.map(l=>{
         const c=computeLead(l); const grand=l.grandTotal!=null?num(l.grandTotal):c.grand; const paid=num(l.amtPaid); const bal=Math.max(grand-paid,0);
         const pct=grand>0?Math.min(100,Math.round(paid/grand*100)):0;
+        const paymentsForLead=payments.filter(p=>p.leadId===l.id);
+        const sched=bal>0.01?computeMonthlySchedule(l,paymentsForLead):null;
         return `<div class="rowcard" style="padding:16px;margin-bottom:12px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
             <div><div style="font-weight:700;font-size:14px">${esc(l.plotType||'Plot')} · ${l.noPlots||1} plot(s)</div><div class="mini" style="margin-top:2px">${esc(clientStageLabel(l.stage))}</div></div>
@@ -7044,6 +7093,10 @@ async function clientHome(){
           </div>
           <div style="height:6px;border-radius:6px;background:#EEF1F6;margin-top:10px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--leaf)"></div></div>
           <div class="mini" style="margin-top:6px">${pct}% paid · balance ${ghs(bal)}</div>
+          ${sched?`<div style="margin-top:8px;padding:8px 10px;border-radius:10px;font-size:11.5px;font-weight:600;background:${sched.arrears>0?'#FDECEA':'#EAF6EC'};color:${sched.arrears>0?'#B4472F':'#1E7A56'}">
+            ${sched.arrears>0?`Overdue ${ghs(sched.arrears)} — `:''}Next payment ${ghs(sched.expectedThisMonth||sched.monthlyInstallment)} due ${new Date(sched.nextDueDate+'T00:00:00').toLocaleDateString('en-GB')}
+          </div>`:''}
+          <div style="margin-top:10px"><button class="btn ghost" data-quote="${l.id}" style="padding:7px 14px;font-size:11.5px">Download quotation</button></div>
         </div>`;
       }).join('') : emptyState(ic.lead,'No purchases on file yet','Once your agent records your purchase, it will show up here.')}
     </div>
@@ -7054,6 +7107,11 @@ async function clientHome(){
         <button class="btn ghost" data-receipt="${p.id}" style="padding:6px 12px;font-size:11.5px">Receipt</button>
       </div>`).join('') : emptyState(ic.update,'No payments recorded yet','')}
     </div>
+    <div class="sectitle"><h3>Documents</h3></div>
+    <div class="formwrap" style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn ghost" id="dlStatement" style="width:100%">⬇ Download account statement</button>
+      <button class="btn ghost" id="dlAllReceipts" style="width:100%"${payments.length?'':' disabled'}>⬇ Download all receipts</button>
+    </div>
     <div class="sectitle"><h3>Your agent</h3></div>
     ${agent? (renderContactCard({title:'Your agent',name:agent.name,avatar:agent.avatar,phone:agent.phone,whatsapp:agent.whatsapp,social:agent.social_handles})||`<div class="formwrap"><div class="mini">Your agent hasn't added contact details yet.</div></div>`) : `<div class="formwrap"><div class="mini">Agent contact not available yet.</div></div>`}
     <div class="sectitle"><h3>PEP Landbank</h3></div>
@@ -7063,12 +7121,21 @@ async function clientHome(){
     const lead=leads.find(x=>x.id===(pay&&pay.leadId))||leads[0];
     if(pay) buildClientReceiptPDF(pay,lead);
   });
+  V.querySelectorAll('[data-quote]').forEach(b=>b.onclick=()=>{
+    const lead=leads.find(x=>x.id===b.dataset.quote);
+    if(lead) buildClientQuotationPDF(lead);
+  });
+  const stBtn=document.getElementById('dlStatement'); if(stBtn) stBtn.onclick=()=>buildClientStatementPDF();
+  const arBtn=document.getElementById('dlAllReceipts'); if(arBtn) arBtn.onclick=()=>downloadAllReceipts();
 }
 /* Shared by the client portal's own receipt download and the staff "Send receipt"
-   flow after logging a payment (Phase 3c) -- same document either way. */
-function buildReceiptPDF(clientName,payment,lead){
+   flow after logging a payment (Phase 3c) -- same document either way. Accepts an
+   optional existingDoc so downloadAllReceipts() can stack every receipt as its own
+   page inside one merged PDF instead of one file per payment. */
+function buildReceiptPDF(clientName,payment,lead,existingDoc){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return null; }
-  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const {jsPDF}=window.jspdf; const doc=existingDoc||new jsPDF({unit:'mm',format:'a4'});
+  if(existingDoc) doc.addPage();
   const pageW=doc.internal.pageSize.getWidth();
   const ref=Math.random().toString(16).slice(2,10).toUpperCase();
   const dateStr=payment.date?new Date(payment.date+'T00:00:00').toLocaleDateString('en-GB'):new Date().toLocaleDateString('en-GB');
@@ -7117,7 +7184,97 @@ function buildReceiptPDF(clientName,payment,lead){
 function buildClientReceiptPDF(payment,lead){
   const doc=buildReceiptPDF(CLIENT_PROFILE.name,payment,lead); if(!doc) return;
   const fname='Receipt_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
-  doc.save(fname);
+  const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
+}
+/* Every receipt the client has ever been issued, merged into one PDF (one receipt
+   per page) so they can pull their whole payment record in a single download
+   instead of hunting for individual ones. */
+function downloadAllReceipts(){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const leads=(CLIENT_DB&&CLIENT_DB.leads)||[]; const payments=(CLIENT_DB&&CLIENT_DB.payments)||[];
+  if(!payments.length){ toast('No payments recorded yet'); return; }
+  const sorted=payments.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  let doc=null;
+  sorted.forEach(p=>{
+    const lead=leads.find(l=>l.id===p.leadId)||leads[0];
+    doc=buildReceiptPDF(CLIENT_PROFILE.name,p,lead,doc);
+  });
+  if(!doc) return;
+  const fname='Receipts_All_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'_'+today()+'.pdf';
+  const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
+}
+/* Client portal: full account statement -- every purchase plus the complete payment
+   ledger with running totals, generated on demand so a client always has a current,
+   downloadable record of their account without asking staff for one. */
+function buildClientStatementPDF(){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const leads=(CLIENT_DB&&CLIENT_DB.leads)||[]; const payments=(CLIENT_DB&&CLIENT_DB.payments)||[];
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  const siteName=CONFIG.quoteSiteName||'Royal Palm Enclave, Tsopoli';
+  const dateStr=new Date().toLocaleDateString('en-GB');
+  let y=pdfBrandedHeader(doc,'ACCOUNT STATEMENT',siteName,['Client: '+CLIENT_PROFILE.name,'Date: '+dateStr]);
+  y+=8;
+
+  let grandAll=0,paidAll=0;
+  leads.forEach(l=>{
+    const c=computeLead(l); const grand=l.grandTotal!=null?num(l.grandTotal):c.grand;
+    const paid=num(l.amtPaid); const bal=Math.max(grand-paid,0);
+    grandAll+=grand; paidAll+=paid;
+    if(y>245){ doc.addPage(); y=16; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
+    doc.text((l.plotType||'Plot')+' × '+(l.noPlots||1)+'  ·  '+clientStageLabel(l.stage),12,y); y+=5;
+    const gap=4, cardW=(pageW-24-gap*2)/3;
+    pdfStatCard(doc,12,y,cardW,'Total price',ghs(grand));
+    pdfStatCard(doc,12+cardW+gap,y,cardW,'Paid to date',ghs(paid));
+    pdfStatCard(doc,12+(cardW+gap)*2,y,cardW,'Balance',ghs(bal));
+    y+=17+8;
+  });
+  if(!leads.length){ doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(100,112,133); doc.text('No purchases on file yet.',12,y); y+=10; }
+
+  if(y>255){ doc.addPage(); y=16; }
+  y=pdfDarkStatBar(doc,y,pageW,[{label:'Total across purchases',value:ghs(grandAll)},{label:'Total paid',value:ghs(paidAll)},{label:'Total balance',value:ghs(Math.max(grandAll-paidAll,0))}]);
+
+  if(y>255){ doc.addPage(); y=16; }
+  doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(20,20,20);
+  doc.text('Payment history',12,y); y+=6;
+
+  const usableW=pageW-24, rowH=7, colX=[12,12+usableW*0.22,12+usableW*0.62];
+  const drawHead=()=>{
+    doc.setFillColor(11,30,61); doc.rect(12,y,usableW,rowH,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(255,255,255);
+    doc.text('DATE',colX[0]+3,y+4.8); doc.text('FOR',colX[1],y+4.8); doc.text('AMOUNT',colX[2],y+4.8);
+    doc.setTextColor(20,20,20); y+=rowH;
+  };
+  if(payments.length){
+    drawHead();
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    const sorted=payments.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    sorted.forEach((p,i)=>{
+      if(y>272){ doc.addPage(); y=16; drawHead(); }
+      if(i%2===1){ doc.setFillColor(244,246,248); doc.rect(12,y,usableW,rowH,'F'); }
+      doc.setTextColor(20,20,20);
+      const lead=leads.find(l=>l.id===p.leadId);
+      doc.text(p.date||'—',colX[0]+3,y+4.8);
+      doc.text(String(lead?(lead.plotType+' × '+(lead.noPlots||1)):'Plot').slice(0,42),colX[1],y+4.8);
+      doc.text(ghs(p.amount),colX[2],y+4.8);
+      y+=rowH;
+    });
+  } else {
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(100,112,133);
+    doc.text('No payments recorded yet.',12,y); y+=8;
+  }
+
+  const pageCount=doc.internal.getNumberOfPages();
+  for(let i=1;i<=pageCount;i++){
+    doc.setPage(i);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(140,140,140);
+    doc.text('Generated '+dateStr,12,290);
+    doc.text('Page '+i+' of '+pageCount,pageW-12,290,{align:'right'});
+  }
+
+  const fname='Statement_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'_'+today()+'.pdf';
+  const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
 }
 /* Staff-side "Send receipt" offer, shown right after Elias/Management logs a payment.
    Downloads the same branded receipt and offers WhatsApp/email deep-links prefilled
@@ -7447,14 +7604,14 @@ function mgrComplaints(){
     <div style="display:flex;gap:8px;align-items:center"><span class="tag pri-${esc(c.priority)}">${esc(c.priority)}</span>
     <button class="trashbtn" data-pdfcmp="${c.id}" title="Download PDF"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="trashbtn" data-delcmp="${c.id}" title="Delete"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V4h6v3m-8 0l1 13h8l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
-    <div class="foot"><span class="tag ghost">${esc(c.category)}</span><span class="tag ${statusTag}">${esc(c.status)}</span></div>
+    <div class="foot"><span class="tag ghost">${esc(c.category)}</span><span class="tag ${statusTag}">${esc(c.status)}</span>${tg('portal',c.source==='Client portal'?'Client portal':'')}</div>
     <div class="note">${esc(c.details)}</div>${c.resolution?`<div class="note"><b>Wants:</b> ${esc(c.resolution)}</div>`:''}
     <div class="foot" style="justify-content:space-between"><span class="mini">Owner: <b>${esc(c.owner)}</b></span><select class="assign" data-status="${c.id}">${CMP_STATUSES.map(s=>`<option ${s===c.status?'selected':''}>${s}</option>`).join('')}</select></div></div>`;}).join('')+`</div>`;
   return `<div class="tabs" id="cmptabs" style="margin-bottom:12px">${chips}</div>${body}`;
 }
 function mgrVisits(){ if(!DB.sitevisits.length) return emptyState(ic.visit,'No site visit requests','Requests from agents appear here for confirmation.');
   return `<div class="list">`+DB.sitevisits.map(v=>`<div class="rowcard"><div class="top"><div><div class="nm nm-link" data-custname="${esc(v.name)}" data-custcontact="${esc(v.contact||'')}">${esc(v.name)}</div><div class="meta">${esc(v.agentName)} · ${esc(v.site)}</div></div>
-    <div style="display:flex;gap:8px;align-items:center"><span class="tag ${v.status==='Confirmed'?'ok':'warnt'}">${esc(v.status)}</span>
+    <div style="display:flex;gap:8px;align-items:center">${tg('gold',v.source==='Client portal'?'Client portal':'')}<span class="tag ${v.status==='Confirmed'?'ok':'warnt'}">${esc(v.status)}</span>
     <button class="trashbtn" data-pdfvisit="${v.id}" title="Download PDF"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="trashbtn" data-delvisit="${v.id}" title="Delete"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V4h6v3m-8 0l1 13h8l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
     <div class="meta" style="margin-top:6px">${esc(v.date)} · ${esc(v.time)} · ${esc(v.people)} pax · ${esc(v.transport)}${v.pickup?(' · pickup: '+esc(v.pickup)):''}</div>${v.notes?`<div class="note">${esc(v.notes)}</div>`:''}
