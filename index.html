@@ -1964,6 +1964,14 @@ async function apiClientUpdateAvatar(dataUrl){
   const {error}=await sb.rpc('client_portal_update_avatar',{p_avatar:dataUrl}); if(error) throw error;
   CLIENT_PROFILE.avatar=dataUrl;
 }
+let CLIENT_ALLOCATIONS=[];
+async function apiClientLoadAllocations(){
+  const {data,error}=await sb.from('allocation_requests').select('*').eq('status','Allocated').order('resolved_at',{ascending:false});
+  if(error) throw error;
+  CLIENT_ALLOCATIONS=(data||[]).map(r=>({id:r.id,leadId:r.lead_id,plotNumber:r.plot_number,note:r.note,
+    allocatedBy:r.allocated_by,resolvedAt:r.resolved_at,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
+  return CLIENT_ALLOCATIONS;
+}
 let CLIENT_NOTIFICATIONS=[];
 async function apiClientLoadNotifications(){
   const {data,error}=await sb.from('client_notifications').select('*').order('created_at',{ascending:false});
@@ -3082,6 +3090,7 @@ async function enterClientPortal(){
     try{ await apiLoadConfig(); await apiClientLoadAll(); }catch(e){ toast('Could not load your data'); }
     try{ await apiClientLoadNotifications(); refreshClientBellBadge(); }catch(e){}
     try{ await apiClientLoadChannels(); }catch(e){}
+    try{ await apiClientLoadAllocations(); }catch(e){}
   })();
   const greetPromise=showGreetScreen(CLIENT_PROFILE.name.split(' ')[0]);
   ensureClientLiveSubscribed();
@@ -3400,7 +3409,8 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
+    clientdb:viewClientDatabase,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
+    clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -3418,6 +3428,7 @@ function tabForRoute(name){
     if(name==='clientfeedback') return 'clientfeedback';
     if(name==='clientsettings') return 'clientsettings';
     if(name==='clientmore'||name==='clientcontact') return 'clientmore';
+    if(name==='clientallocation') return 'clienthome';
     return 'clienthome';
   }
   if(['salesdesk','addlead','update','updateOne','myDataCheck','plots','pipeline'].includes(name)) return 'salesdesk';
@@ -6154,6 +6165,7 @@ function bindAllocationAwaitingCtrls(a,wrap){
       await apiResolveAllocation(a.id,plot,'Approved via signed authorization form');
       const nowStr=today()+' '+nowTime();
       Object.assign(a,{status:'Allocated',plotNumber:plot,note:'Approved via signed authorization form',allocatedBy:PROFILE.name,resolvedAt:nowStr});
+      { const leadRec=DB.leads.find(x=>x.id===a.leadId); if(leadRec) notifyClient(leadRec,'Plot allocated','Plot '+plot+' has been allocated to you. Log in to view the details and download your allocation confirmation.').catch(()=>{}); }
       if(canManagePlots()){
         if(existingPlot){
           await apiUpdatePlot(existingPlot.id,{status:'Allocated',clientName:a.clientName,agentKey:a.agentKey});
@@ -6221,6 +6233,7 @@ function openEditAllocatedPlotModal(a){
           price:null,clientName:a.clientName,clientContact:'',agentKey:a.agentKey,notes:'Reassigned from Plot '+(oldPlotNumber||'—')}); DB.plots.unshift(newPlotRec); }
       }
       Object.assign(a,{plotNumber:newPlot});
+      { const leadRec=DB.leads.find(x=>x.id===a.leadId); if(leadRec) notifyClient(leadRec,'Plot allocation updated','Your allocated plot is now '+newPlot+'. Log in to view the details.').catch(()=>{}); }
       toast('Allocation updated — now Plot '+newPlot); ov.remove();
       PROFILE.role==='manager'?managerView():viewAllocations();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save change'; }
@@ -7553,6 +7566,7 @@ async function clientHome(){
         const paymentsForLead=payments.filter(p=>p.leadId===l.id);
         const sched=bal>0.01?computeMonthlySchedule(l,paymentsForLead):null;
         const stageIdx=l.docStage?DOC_STAGES.findIndex(d=>d.key===l.docStage):-1;
+        const alloc=(CLIENT_ALLOCATIONS||[]).find(a=>a.leadId===l.id);
         return `<div class="rowcard" style="padding:16px;margin-bottom:12px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
             <div><div style="font-weight:700;font-size:14px">${esc(l.plotType||'Plot')} · ${l.noPlots||1} plot(s)</div><div class="mini" style="margin-top:2px">${esc(clientStageLabel(l.stage))}</div></div>
@@ -7560,6 +7574,10 @@ async function clientHome(){
           </div>
           <div style="height:6px;border-radius:6px;background:#EEF1F6;margin-top:10px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--leaf)"></div></div>
           <div class="mini" style="margin-top:6px">${pct}% paid · balance ${ghs(bal)}</div>
+          ${alloc?`<button data-viewalloc="${esc(alloc.id)}" style="margin-top:10px;width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:10px;border:none;background:linear-gradient(135deg,#EAF6EC,#F4F6F5);cursor:pointer">
+            <span style="font-size:12px;font-weight:700;color:#1E7A56">🏡 Plot ${esc(alloc.plotNumber||'')} allocated to you</span>
+            <span style="font-size:11px;color:#1E7A56">View →</span>
+          </button>`:''}
           ${stageIdx>=0?`<div style="margin-top:10px">
             <div class="mini" style="margin-bottom:5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10px">Documentation progress</div>
             <div style="display:flex;gap:3px">${DOC_STAGES.map((d,i)=>`<div style="flex:1;height:5px;border-radius:4px;background:${i<=stageIdx?'var(--leaf)':'#EEF1F6'}" title="${esc(d.label)}"></div>`).join('')}</div>
@@ -7599,6 +7617,7 @@ async function clientHome(){
     const lead=leads.find(x=>x.id===b.dataset.quote);
     if(lead) buildClientQuotationPDF(lead);
   });
+  V.querySelectorAll('[data-viewalloc]').forEach(b=>b.onclick=()=>route('clientallocation',b.dataset.viewalloc));
   const stBtn=document.getElementById('dlStatement'); if(stBtn) stBtn.onclick=()=>buildClientStatementPDF();
   const arBtn=document.getElementById('dlAllReceipts'); if(arBtn) arBtn.onclick=()=>downloadAllReceipts();
   const moBtn=document.getElementById('dlMonthReceipt'); if(moBtn) moBtn.onclick=()=>downloadReceiptForMonth(val('dlMonthSel'));
@@ -7620,6 +7639,68 @@ async function viewClientContact(){
     ${agent? (renderContactCard({title:'Your agent',name:agent.name,avatar:agent.avatar,phone:agent.phone,whatsapp:agent.whatsapp,social:agent.social_handles})||`<div class="formwrap"><div class="mini">Your agent hasn't added contact details yet.</div></div>`) : `<div class="formwrap"><div class="mini">Agent contact not available yet.</div></div>`}
     <div class="sectitle"><h3>PEP Landbank</h3></div>
     ${renderContactCard({title:'Company',phone:CONFIG.companyPhone,whatsapp:CONFIG.companyWhatsapp,email:CONFIG.companyEmail})||`<div class="formwrap"><div class="mini">Company contact not set up yet.</div></div>`}`;
+}
+function viewClientAllocation(allocId){
+  const alloc=(CLIENT_ALLOCATIONS||[]).find(a=>a.id===allocId);
+  const lead=(CLIENT_DB&&CLIENT_DB.leads||[]).find(l=>l.id===(alloc&&alloc.leadId));
+  if(!alloc){ route('clienthome'); return; }
+  const resolvedDate=alloc.resolvedAt?new Date(alloc.resolvedAt):null;
+  V.innerHTML=`${back('clienthome')}<div class="pagehead"><div><div class="eyebrow">Your allocation</div><h2>Plot ${esc(alloc.plotNumber||'')}</h2><p>${lead?esc(lead.plotType||'Plot')+' · '+(lead.noPlots||1)+' plot(s)':''}</p></div></div>
+  <div class="rowcard" style="padding:20px;margin-bottom:16px;background:linear-gradient(135deg,#EAF6EC,#F4F6F5)">
+    <div class="mini" style="font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10.5px;color:#1E7A56">Plot number</div>
+    <div style="font-size:28px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-top:4px">${esc(alloc.plotNumber||'—')}</div>
+  </div>
+  <div class="formwrap">
+    ${fld('Allocated on','<div style="padding:10px 0;font-weight:600">'+(resolvedDate?esc(resolvedDate.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' at '+resolvedDate.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})):'—')+'</div>')}
+    ${fld('Confirmed by','<div style="padding:10px 0;font-weight:600">'+esc(alloc.allocatedBy||'PEP Landbank')+'</div>')}
+    ${alloc.note?fld('Notes','<div style="padding:10px 0">'+esc(alloc.note)+'</div>'):''}
+  </div>
+  <div class="formwrap" style="margin-top:14px"><button class="btn primary" id="dlAllocCert" style="width:100%">⬇ Download allocation certificate (PDF)</button></div>`;
+  document.getElementById('dlAllocCert').onclick=()=>buildAllocationCertPDF(alloc,lead);
+}
+/* A simple certificate-style confirmation the client can keep -- not a legal title
+   document (that's the indenture, handled separately in the doc-stage pipeline), just
+   a clear, professional record of which plot was confirmed for them and when. */
+function buildAllocationCertPDF(alloc,lead){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  const siteName=CONFIG.quoteSiteName||'Royal Palm Enclave, Tsopoli';
+  const dateStr=new Date().toLocaleDateString('en-GB');
+  const resolvedDate=alloc.resolvedAt?new Date(alloc.resolvedAt):new Date();
+  let y=pdfBrandedHeader(doc,'ALLOCATION CONFIRMATION',siteName,['Date: '+dateStr]);
+  y+=14;
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(60,68,82);
+  doc.text('This confirms that the plot below has been allocated to:',12,y); y+=8;
+  doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(20,20,20);
+  doc.text(CLIENT_PROFILE.name,12,y); y+=14;
+
+  y=pdfDarkStatBar(doc,y,pageW,[{label:'Plot Number',value:String(alloc.plotNumber||'—')},
+    {label:'Allocation Date',value:resolvedDate.toLocaleDateString('en-GB')},
+    {label:'Time',value:resolvedDate.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}]);
+  y+=6;
+
+  if(lead){
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(60,68,82);
+    doc.text('Purchase: '+(lead.plotType||'Plot')+' × '+(lead.noPlots||1),12,y); y+=10;
+  }
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(60,68,82);
+  doc.text('Confirmed by: '+(alloc.allocatedBy||'PEP Landbank'),12,y); y+=8;
+  if(alloc.note){
+    const lines=doc.splitTextToSize('Notes: '+alloc.note,pageW-24);
+    doc.text(lines,12,y); y+=lines.length*5+4;
+  }
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100,112,133);
+  const disclaimer=doc.splitTextToSize('This document confirms plot allocation within the estate. It is not a substitute for the site plan, indenture, or any other legal land document, which will be processed separately.',pageW-24);
+  doc.text(disclaimer,12,270);
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(140,140,140);
+  doc.text('Generated '+dateStr,12,290);
+
+  const fname='Allocation_'+String(alloc.plotNumber||'plot').replace(/\s+/g,'_')+'_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'.pdf';
+  const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
 }
 function openClientPlotRequestModal(leads){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
