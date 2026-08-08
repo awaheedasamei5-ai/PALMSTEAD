@@ -2788,6 +2788,34 @@ async function enterApp(){
   await showGreetScreen(PROFILE.role==='manager'?'Management':PROFILE.name.split(' ')[0]);
   route(PROFILE.role==='manager'?'mgr':'home');
 }
+let CLIENT_LIVE_CHANNEL=null;
+/* Mirrors ensureClientDbSubscribed() but for the client's OWN session -- so if an
+   agent edits their name/contact/stage, logs a payment, or a notification lands while
+   they're already looking at their dashboard, it updates live instead of needing a
+   fresh login. RLS on leads/payments/client_notifications already scopes these
+   postgres_changes events to just this client's own rows. */
+function ensureClientLiveSubscribed(){
+  if(DEMO_MODE || !sb || CLIENT_LIVE_CHANNEL || !IS_CLIENT) return;
+  try{
+    const refreshHomeIfOpen=()=>{ if(CURRENT_ROUTE_NAME==='clienthome') clientHome(); };
+    CLIENT_LIVE_CHANNEL=sb.channel('client-live')
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'leads'},payload=>{
+        const l=mapLead(payload.new); if(!CLIENT_DB||!CLIENT_DB.leads) return;
+        const i=CLIENT_DB.leads.findIndex(x=>x.id===l.id);
+        if(i>=0) CLIENT_DB.leads[i]=l; else CLIENT_DB.leads.push(l);
+        refreshHomeIfOpen();
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'payments'},payload=>{
+        const p=mapClientPay(payload.new); if(!CLIENT_DB||!CLIENT_DB.payments) return;
+        if(!CLIENT_DB.payments.some(x=>x.id===p.id)) CLIENT_DB.payments.unshift(p);
+        refreshHomeIfOpen();
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'client_notifications'},()=>{
+        apiClientLoadNotifications().then(refreshClientBellBadge).catch(()=>{});
+      })
+      .subscribe();
+  }catch(e){}
+}
 async function enterClientPortal(){
   document.getElementById('view').innerHTML='<div style="padding:70px 0;text-align:center"><div class="skel" style="height:120px;border-radius:16px;margin-bottom:14px"></div><div class="skel" style="height:80px;border-radius:16px"></div></div>';
   document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden');
@@ -2798,6 +2826,7 @@ async function enterClientPortal(){
   if(bellBtn){ bellBtn.classList.remove('hidden'); bellBtn.onclick=openClientNotifications; }
   try{ await apiLoadConfig(); await apiClientLoadAll(); }catch(e){ toast('Could not load your data'); }
   try{ await apiClientLoadNotifications(); refreshClientBellBadge(); }catch(e){}
+  ensureClientLiveSubscribed();
   startInactivityTimer();
   if(CLIENT_PROFILE.isDefaultPin){ setTimeout(()=>toast("You're using the default PIN — set your own in Settings for extra security."),1200); }
   setupPushNotifications();
@@ -2860,6 +2889,7 @@ document.getElementById('logoutBtn').onclick=async()=>{
   if(!DEMO_MODE){ try{await sb.auth.signOut();}catch(e){} }
   if(CHAT_CHANNEL){ try{ sb.removeChannel(CHAT_CHANNEL); }catch(e){} CHAT_CHANNEL=null; }
   if(CLIENTDB_CHANNEL){ try{ sb.removeChannel(CLIENTDB_CHANNEL); }catch(e){} CLIENTDB_CHANNEL=null; }
+  if(CLIENT_LIVE_CHANNEL){ try{ sb.removeChannel(CLIENT_LIVE_CHANNEL); }catch(e){} CLIENT_LIVE_CHANNEL=null; }
   CLIENTDB_LOADED=false; CLIENTDB_LIST=[];
   CLIENT_NOTIFICATIONS=[];
   const bellBtn=document.getElementById('clientBellBtn'); if(bellBtn) bellBtn.classList.add('hidden');
