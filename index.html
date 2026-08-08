@@ -4363,7 +4363,7 @@ function viewPipeline(){
     </div>
     <input type="file" id="xlImportFile" accept=".xlsx" class="hidden"/>
   </div>
-  <div class="rowcard" style="margin-bottom:16px;padding:16px 16px 6px">
+  ${PROFILE.role==='manager'?`<div class="rowcard" style="margin-bottom:16px;padding:16px 16px 6px">
     <div style="font-weight:700;font-size:14px;margin-bottom:2px">Backup &amp; restore</div>
     <div class="mini" style="margin-bottom:6px">Before deleting a client — or your whole pipeline — back them up here, full payment history included. Restoring always creates new records; it never overwrites anything live.</div>
     <div class="appGrid" style="grid-template-columns:repeat(2,1fr)">
@@ -4371,7 +4371,14 @@ function viewPipeline(){
       <button class="appGridIcon" id="pipeRestoreBtn"><span class="appGridGlyph">${fic('access')}</span><span class="appGridLabel">Restore backup</span></button>
     </div>
     <input type="file" id="pipeRestoreFile" accept=".json" class="hidden"/>
-  </div>
+  </div>`:`<div class="rowcard" style="margin-bottom:16px;padding:16px 16px 6px">
+    <div style="font-weight:700;font-size:14px;margin-bottom:2px">Backup &amp; restore</div>
+    <div class="mini" style="margin-bottom:10px">Backups and restores are handled by Management to keep pipeline data safe. Request one below and they'll take care of it.</div>
+    <div class="appGrid" style="grid-template-columns:repeat(2,1fr)">
+      <button class="appGridIcon" id="reqBackupBtn"><span class="appGridGlyph">${fic('savings')}</span><span class="appGridLabel">Request backup</span></button>
+      <button class="appGridIcon" id="reqRestoreBtn"><span class="appGridGlyph">${fic('access')}</span><span class="appGridLabel">Request restore</span></button>
+    </div>
+  </div>`}
   <div class="searchbar"><input id="pq" placeholder="Search name or contact…" value="${esc(pf.q)}"/>
   <select id="ps"><option value="">All stages</option>${STAGES.map(s=>`<option value="${s}" ${s===pf.stage?'selected':''}>${STAGE_LABELS[s]}</option>`).join('')}</select></div>
   <div style="margin-bottom:14px"><button class="chip ${pf.paidOnly?'on':''}" id="paidOnlyBtn">✓ Fully paid only${pf.paidOnly?' ✕':''}</button></div>
@@ -4384,10 +4391,23 @@ function viewPipeline(){
   document.getElementById('xlMyPipelineBtn').onclick=downloadAgentPipelineExcel;
   document.getElementById('xlImportBtn').onclick=()=>document.getElementById('xlImportFile').click();
   document.getElementById('xlImportFile').onchange=e=>{ if(e.target.files[0]) importPipelineExcel(e.target.files[0]); e.target.value=''; };
-  document.getElementById('pipeBackupBtn').onclick=openPipelineBackupModal;
-  document.getElementById('pipeRestoreBtn').onclick=()=>document.getElementById('pipeRestoreFile').click();
-  document.getElementById('pipeRestoreFile').onchange=e=>{ if(e.target.files[0]) openPipelineRestoreModal(e.target.files[0]); e.target.value=''; };
+  if(PROFILE.role==='manager'){
+    document.getElementById('pipeBackupBtn').onclick=openPipelineBackupModal;
+    document.getElementById('pipeRestoreBtn').onclick=()=>document.getElementById('pipeRestoreFile').click();
+    document.getElementById('pipeRestoreFile').onchange=e=>{ if(e.target.files[0]) openPipelineRestoreModal(e.target.files[0]); e.target.value=''; };
+  } else {
+    document.getElementById('reqBackupBtn').onclick=()=>requestPipelineOp('backup');
+    document.getElementById('reqRestoreBtn').onclick=()=>requestPipelineOp('restore');
+  }
   paintPipe();
+}
+async function requestPipelineOp(kind){
+  const label=kind==='backup'?'a backup':'a restore';
+  try{
+    const rec=await apiSendMessage('manager',PROFILE.name+' has requested '+label+' of their pipeline.');
+    if(rec) DB.messages.push(rec);
+    toast('Request sent to Management');
+  }catch(e){ toast('Could not send request: '+(e.message||e)); }
 }
 function paintPipe(){ const wrap=document.getElementById('plist'); const q=pf.q.toLowerCase();
   const list=DB.leads.filter(l=>(!q||(l.name||'').toLowerCase().includes(q)||String(l.contact||'').includes(q))&&(!pf.stage||l.stage===pf.stage)&&(!pf.paidOnly||isFullyPaid(l)));
