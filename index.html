@@ -1296,6 +1296,11 @@ function buildGenericMonthLedger(lead,paymentsForLead){
 function INTEREST(){ return {'Full Payment':0,'3 Months':num(CONFIG.int3),'6 Months':num(CONFIG.int6),
   '9 Months':num(CONFIG.int9),'12 Months':num(CONFIG.int12)}; }
 function isFullyPaid(l){ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; return g>0 && num(l.amtPaid)>=g; }
+// A manually-typed discount is ambiguous for a multi-plot lead: "2000" could mean
+// GHS 2000 off the whole deal, or GHS 2000 off each plot. computeLead() always treats
+// an explicit l.discount as the already-resolved TOTAL -- this just resolves a raw
+// form entry against whichever mode the agent picked before it's stored/computed.
+function discForMode(raw,qty,mode){ return mode==='perplot'?num(raw)*num(qty):num(raw); }
 function computeLead(l){const P=PRICING();const p=P[l.plotType]||P['Full Plot'];const qty=num(l.noPlots);
   const unit=num(l.unitPrice)||p.list;const gross=unit*qty;
   const disc=(l.discount!=null&&l.discount!=='')?num(l.discount):p.disc*qty;
@@ -6668,14 +6673,33 @@ function formCustomer(arg){
 }
 
 /* ================= ADD LEAD ================= */
+// Shared 2-way toggle for whether a manually-typed discount is a single total or a
+// per-plot amount to be multiplied by the quantity -- see discForMode() up top.
+function discModeToggleHtml(prefix,mode){
+  return `<div class="chips" id="${prefix}DiscModeChips" style="margin:-8px 0 12px">
+    <button type="button" class="chip2 ${mode==='total'?'on':''}" data-discmode="total">Discount is a total</button>
+    <button type="button" class="chip2 ${mode==='perplot'?'on':''}" data-discmode="perplot">Discount is per plot</button>
+  </div>`;
+}
+function bindDiscModeToggle(prefix,getMode,setMode,repaint){
+  const wrap=document.getElementById(prefix+'DiscModeChips'); if(!wrap) return;
+  wrap.querySelectorAll('[data-discmode]').forEach(b=>b.onclick=()=>{
+    setMode(b.dataset.discmode);
+    wrap.querySelectorAll('[data-discmode]').forEach(x=>x.classList.toggle('on',x.dataset.discmode===b.dataset.discmode));
+    repaint();
+  });
+}
+let ADDLEAD_DISC_MODE='total';
 function formAddLead(){
   const canEnterPayments=canManagePayments();
+  ADDLEAD_DISC_MODE='total';
   V.innerHTML=`${back('home')}<div class="pagehead"><div><div class="eyebrow">New lead</div><h2>Add to pipeline</h2><p>Saved straight into your Royal Palm pipeline.</p></div></div>
   <div class="formwrap">${fld('Lead name *','<input id="f_name" placeholder="e.g. Kwame Mensah"/>')}
   <div class="grid2">${fld('Contact *','<input id="f_contact" placeholder="0244…"/>')}${fld('Date added','<input id="f_date" type="date" value="'+today()+'"/>')}</div>
   <div class="grid2">${fld('Stage',stageSel('f_stage','1'))}${fld('Priority',sel('f_priority',['High','Medium','Low'],'Low'))}</div>
   <div class="grid2">${fld('Plot type',sel('f_plot',['Full Plot','Half Plot']))}${fld('No. of plots','<input id="f_plots" type="number" min="0" step="0.5" value="1"/>')}</div>
   <div class="grid2">${fld('Unit price (GHS)','<input id="f_unit" type="number" placeholder="auto"/>','Full '+CONFIG.fullPrice+' · Half '+CONFIG.halfPrice)}${fld('Discount (GHS)','<input id="f_disc" type="number" placeholder="auto"/>')}</div>
+  ${discModeToggleHtml('addlead',ADDLEAD_DISC_MODE)}
   <div class="grid2">${fld('Payment plan',sel('f_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}${fld('Site visit done?',sel('f_sv',['No','Yes']))}</div>
   ${fld('Deposit target (GHS)','<input id="f_deptarget" type="number" placeholder="auto = 30%"/>','only matters on an installment plan — the monthly schedule begins once this is fully paid')}
   ${canEnterPayments?fld('Amount already paid (GHS)','<input id="f_paid" type="number" placeholder="0"/>','the deposit or partial deposit, if they’ve already paid something'):''}
@@ -6684,11 +6708,12 @@ function formAddLead(){
   ${fld('Notes','<textarea id="f_notes" placeholder="Context, preferences, history…"></textarea>')}
   <div class="formactions"><button class="btn ghost" onclick="route('home')">Cancel</button><button class="btn primary" id="saveLead">Save lead</button></div></div>`;
   ['f_plot','f_plots','f_unit','f_disc','f_plan','f_paid','f_deptarget'].forEach(i=>{ const el=document.getElementById(i); if(el) el.addEventListener('input',paintCalc); });
+  bindDiscModeToggle('addlead',()=>ADDLEAD_DISC_MODE,m=>ADDLEAD_DISC_MODE=m,paintCalc);
   paintCalc(); document.getElementById('saveLead').onclick=saveNewLead;
 }
 function readLeadForm(){return {name:val('f_name').trim(),contact:val('f_contact').trim(),date:val('f_date'),stage:val('f_stage'),
   priority:val('f_priority'),plotType:val('f_plot'),noPlots:val('f_plots'),unitPrice:val('f_unit')||null,
-  discount:val('f_disc')===''?null:val('f_disc'),paymentPlan:val('f_plan'),siteVisit:val('f_sv'),
+  discount:val('f_disc')===''?null:discForMode(val('f_disc'),val('f_plots')||1,ADDLEAD_DISC_MODE),paymentPlan:val('f_plan'),siteVisit:val('f_sv'),
   depositTarget:val('f_deptarget')||null,
   amtPaid:val('f_paid')||0,nextAction:val('f_next').trim(),notes:val('f_notes').trim()};}
 function paintCalc(){ const c=computeLead(readLeadForm());
@@ -6714,7 +6739,9 @@ function pickForUpdate(){
       return `<button class="rowcard" style="text-align:left;width:100%" onclick="route('updateOne','${l.id}')"><div class="top"><div><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'')} · ${esc(l.stage||'')}</div></div><div style="text-align:right"><div class="amt">${bal>0?ghs(bal):'Paid'}</div><div class="meta">balance</div></div></div></button>`; }).join(''):emptyState(ic.update,'No leads found'); };
   document.getElementById('uq').oninput=paint; paint();
 }
+let UPD_DISC_MODE='total';
 function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('home'); return; }
+  UPD_DISC_MODE='total';
   const canEnterPayments=canManagePayments();
   const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0);
   const P=PRICING(); const expectedUnit=(P[l.plotType]||P['Full Plot']).list;
@@ -6734,6 +6761,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   <div class="sectitle"><h3>Plot &amp; pricing</h3><span class="cnt">editable — recalculates live</span></div>
   <div class="grid2">${fld('Plot type',sel('u_plottype',['Full Plot','Half Plot'],l.plotType))}${fld('No. of plots','<input id="u_noplots" type="number" step="0.5" min="0.5" value="'+num(l.noPlots)+'"/>')}</div>
   <div class="grid2">${fld('Unit price (GHS)','<input id="u_unitprice" type="number" value="'+num(l.unitPrice)+'"/>','current standard price: '+ghs(expectedUnit))}${fld('Discount given (GHS)','<input id="u_discount" type="number" value="'+num(l.discount)+'"/>')}</div>
+  ${discModeToggleHtml('upd',UPD_DISC_MODE)}
   ${fld('Payment plan',sel('u_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months'],l.paymentPlan||'Full Payment'))}
   ${onPlan?fld('Deposit target (GHS)','<input id="u_deptarget" type="number" value="'+num(myDep.target)+'"/>','default is 30% of grand total — edit if this deal has a different agreed deposit'):''}
   <div class="calcbox" id="u_calc"></div>
@@ -6784,7 +6812,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   <div class="dangerzone"><div class="dz-text"><b>Delete this client</b><br>Permanently removes ${esc(l.name)} and their record from the pipeline. This can't be undone.</div>
   <button class="btn danger" id="delLead">Delete client</button></div>`;
   const paintUCalc=()=>{
-    const tmp={...l,plotType:val('u_plottype'),noPlots:num(val('u_noplots')),unitPrice:num(val('u_unitprice')),discount:num(val('u_discount')),paymentPlan:val('u_plan')};
+    const tmp={...l,plotType:val('u_plottype'),noPlots:num(val('u_noplots')),unitPrice:num(val('u_unitprice')),discount:discForMode(val('u_discount'),val('u_noplots')||1,UPD_DISC_MODE),paymentPlan:val('u_plan')};
     const cc=computeLead(tmp);
     const paidTotal=num(val('u_paidtotal'))+num(val('u_pay'));
     const bal2=Math.max(cc.grand-paidTotal,0);
@@ -6802,6 +6830,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
     }
   };
   ['u_plottype','u_noplots','u_unitprice','u_discount','u_plan','u_paidtotal','u_pay'].forEach(id2=>document.getElementById(id2).addEventListener('input',paintUCalc));
+  bindDiscModeToggle('upd',()=>UPD_DISC_MODE,m=>UPD_DISC_MODE=m,paintUCalc);
   paintUCalc();
   document.getElementById('saveUpd').onclick=()=>handleSaveUpdateClick(id,myDep);
   document.getElementById('delLead').onclick=()=>deleteLeadConfirm(id,l.name);
@@ -6930,7 +6959,7 @@ function handleSaveUpdateClick(id,myDep){
 async function saveUpdate(id,resolvedDepositTarget){ const l=DB.leads.find(x=>x.id===id); if(!l)return;
   const name=val('u_name').trim()||l.name; const contact=val('u_contact').trim();
   const plotType=val('u_plottype'); const noPlots=num(val('u_noplots'))||1; const unitPrice=num(val('u_unitprice'));
-  const discount=num(val('u_discount')); const plan=val('u_plan'); const stage=val('u_stage');
+  const discount=discForMode(val('u_discount'),noPlots,UPD_DISC_MODE); const plan=val('u_plan'); const stage=val('u_stage');
   const oldDiscount=num(l.discount);
   const tmp={...l,plotType,noPlots,unitPrice,discount,paymentPlan:plan}; const cc=computeLead(tmp);
   const pay=num(val('u_pay')); const paidTotalInput=num(val('u_paidtotal')); const newPaid=paidTotalInput+(pay>0?pay:0);
