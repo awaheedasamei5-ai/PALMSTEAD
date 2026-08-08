@@ -6811,42 +6811,46 @@ function pdfKV(doc,x,y,label,value,valueColor){
   doc.setTextColor(20,20,20);
 }
 function pdfGreenBar(doc,y,pageW,items){
-  const barH=16; doc.setFillColor(QGREEN_DARK[0],QGREEN_DARK[1],QGREEN_DARK[2]); doc.rect(12,y,pageW-24,barH,'F');
+  const barH=13; doc.setFillColor(QGREEN_DARK[0],QGREEN_DARK[1],QGREEN_DARK[2]); doc.rect(12,y,pageW-24,barH,'F');
   const w=(pageW-24)/items.length;
   items.forEach((it,i)=>{
     const x=12+w*i+6;
-    doc.setFont('helvetica','bold'); doc.setFontSize(6.8); doc.setTextColor(220,232,224);
-    doc.text(it.label.toUpperCase(),x,y+6);
-    doc.setFont('helvetica','bold'); doc.setFontSize(10.5);
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.4); doc.setTextColor(220,232,224);
+    doc.text(it.label.toUpperCase(),x,y+5);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5);
     if(it.color) doc.setTextColor(it.color[0],it.color[1],it.color[2]); else doc.setTextColor(255,255,255);
-    doc.text(String(it.value),x,y+13);
+    doc.text(String(it.value),x,y+10.5);
   });
   doc.setTextColor(20,20,20);
-  return y+barH+8;
+  return y+barH+6;
 }
+// rowH is intentionally tight (not the 7mm used elsewhere) so a full 12-month
+// schedule -- the longest this ever needs to render -- still fits on one page
+// alongside the header/KV grid/notes/signature block below it, instead of the
+// document spilling most of its content onto an otherwise near-empty page 2.
 function pdfGreenTable(doc,y,pageW,rows){
   const usableW=pageW-24;
   const colX=[12,12+usableW*0.20,12+usableW*0.48,12+usableW*0.74];
-  const rowH=7;
+  const rowH=5.6;
   const drawHeader=(yy)=>{
     doc.setFillColor(QGREEN_DARK[0],QGREEN_DARK[1],QGREEN_DARK[2]); doc.rect(12,yy,usableW,rowH,'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(255,255,255);
-    doc.text('MONTH',colX[0]+3,yy+4.8); doc.text('OPENING BALANCE',colX[1],yy+4.8);
-    doc.text('MONTHLY PAYMENT',colX[2],yy+4.8); doc.text('CLOSING BALANCE',colX[3],yy+4.8);
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.8); doc.setTextColor(255,255,255);
+    doc.text('MONTH',colX[0]+3,yy+3.9); doc.text('OPENING BALANCE',colX[1],yy+3.9);
+    doc.text('MONTHLY PAYMENT',colX[2],yy+3.9); doc.text('CLOSING BALANCE',colX[3],yy+3.9);
   };
   drawHeader(y); y+=rowH;
-  doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.6);
   rows.forEach((r,i)=>{
-    if(y>272){ doc.addPage(); pdfQuoteBg(doc,pageW,297); y=16; drawHeader(y); y+=rowH; }
+    if(y>280){ doc.addPage(); pdfQuoteBg(doc,pageW,297); y=16; drawHeader(y); y+=rowH; }
     if(i%2===1){ doc.setFillColor(QGREEN_LIGHT[0],QGREEN_LIGHT[1],QGREEN_LIGHT[2]); doc.rect(12,y,usableW,rowH,'F'); }
     doc.setTextColor(20,20,20);
-    doc.text(String(r.month.toFixed?r.month.toFixed(2):r.month),colX[0]+3,y+4.8);
-    doc.text(ghs(r.opening),colX[1],y+4.8);
-    doc.text(ghs(r.payment),colX[2],y+4.8);
-    doc.text(ghs(r.closing),colX[3],y+4.8);
+    doc.text(String(r.month.toFixed?r.month.toFixed(2):r.month),colX[0]+3,y+3.9);
+    doc.text(ghs(r.opening),colX[1],y+3.9);
+    doc.text(ghs(r.payment),colX[2],y+3.9);
+    doc.text(ghs(r.closing),colX[3],y+3.9);
     y+=rowH;
   });
-  return y+7;
+  return y+5;
 }
 function pdfFields(doc,y,fields){
   const pageW=doc.internal.pageSize.getWidth();
@@ -7331,7 +7335,7 @@ function buildQuotationPDF(q){
   const typeLines=doc.splitTextToSize(docType,60);
   typeLines.forEach((line,i)=>doc.text(line,pageW-12,15+i*5,{align:'right'}));
 
-  let y=48;
+  let y=44;
   const leftX=14, rightX=110;
   const depositPct=q.planMonths&&q.grand>0?Math.round((q.deposit||0)/q.grand*100):Math.round(QUOTE_DEPOSIT_PCT*100);
   const leftRows=[['Customer Name',q.clientName,null],['Address',q.address||'—',null],
@@ -7341,9 +7345,9 @@ function buildQuotationPDF(q){
     ['Original Plot Price',ghs(q.listTotal/q.noPlots),null],['Discount',ghs((q.discountTotal||0)/q.noPlots),null],
     ['Interest',ghs((q.interestTotal||0)/q.noPlots),null],['Cost with Interest',ghs((q.net+q.interestTotal)/q.noPlots),null],
     ['Total',ghs(q.grand),null]];
-  leftRows.forEach((r,i)=>pdfKV(doc,leftX,y+i*7,r[0],r[1],r[2]));
-  rightRows.forEach((r,i)=>pdfKV(doc,rightX,y+i*7,r[0],r[1],r[2]));
-  y+=Math.max(leftRows.length,rightRows.length)*7+10;
+  leftRows.forEach((r,i)=>pdfKV(doc,leftX,y+i*6,r[0],r[1],r[2]));
+  rightRows.forEach((r,i)=>pdfKV(doc,rightX,y+i*6,r[0],r[1],r[2]));
+  y+=Math.max(leftRows.length,rightRows.length)*6+7;
 
   if(q.planMonths){
     y=pdfGreenBar(doc,y,pageW,[
@@ -7356,39 +7360,42 @@ function buildQuotationPDF(q){
   } else {
     y=pdfGreenBar(doc,y,pageW,[{label:'Total Due (Outright)',value:ghs(q.grand)}]);
   }
-  y+=6;
+  y+=4;
 
-  if(y>230){ doc.addPage(); pdfQuoteBg(doc,pageW,pageH); y=20; }
+  // A 12-month schedule is the longest this ever renders, and the tightened
+  // spacing above keeps it comfortably on page 1 -- these thresholds are now a
+  // safety net for unusually long Notes text, not the normal page-1 ceiling.
+  if(y>265){ doc.addPage(); pdfQuoteBg(doc,pageW,pageH); y=20; }
   const notesStartY=y;
   const notes=(CONFIG.quoteNotesText||'').split('\n').map(s=>s.trim()).filter(Boolean);
-  doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(20,20,20);
-  doc.text('Note:',14,y); y+=5;
-  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(80,90,84);
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(20,20,20);
+  doc.text('Note:',14,y); y+=4.5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(80,90,84);
   notes.forEach((n,i)=>{
     const lines=doc.splitTextToSize((i+1)+'. '+n,88);
-    doc.text(lines,14,y); y+=lines.length*3.6;
+    doc.text(lines,14,y); y+=lines.length*3.2;
   });
   const totalsX=115;
   let ty=notesStartY;
-  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(20,20,20);
+  doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(20,20,20);
   const totalsRows=[['Total Monthly Payments',ghs(q.balance)],['Advance Payment',ghs(q.deposit)],['Total Invoice Amount',ghs(q.grand)]];
   totalsRows.forEach((r,i)=>{
-    doc.text(r[0],totalsX,ty+i*10);
-    doc.text(r[1],pageW-12,ty+i*10,{align:'right'});
+    doc.text(r[0],totalsX,ty+i*7);
+    doc.text(r[1],pageW-12,ty+i*7,{align:'right'});
   });
-  y=Math.max(y,ty+totalsRows.length*10)+10;
+  y=Math.max(y,ty+totalsRows.length*7)+7;
 
-  if(y>250){ doc.addPage(); pdfQuoteBg(doc,pageW,pageH); y=20; }
-  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(20,20,20);
-  doc.text('Offer Acceptance',14,y); y+=8;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  if(y>272){ doc.addPage(); pdfQuoteBg(doc,pageW,pageH); y=20; }
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(20,20,20);
+  doc.text('Offer Acceptance',14,y); y+=6.5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
   doc.text('Name......................................................',14,y);
   doc.text('Signature............................................',95,y);
   doc.text('Date .............................',165,y);
-  y+=10;
-  doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+  y+=8;
+  doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
   const landLines=doc.splitTextToSize('Note: '+(CONFIG.quoteLandNoteText||''),pageW-24);
-  doc.text(landLines,14,y); y+=landLines.length*4.5;
+  doc.text(landLines,14,y); y+=landLines.length*4;
 
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(QGREEN_DARK[0],QGREEN_DARK[1],QGREEN_DARK[2]);
   doc.text('Thank you for your business!',pageW/2,pageH-16,{align:'center'});
