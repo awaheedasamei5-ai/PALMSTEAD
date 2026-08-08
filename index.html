@@ -1860,6 +1860,7 @@ async function apiUpdateLead(id,patch){
   if('priority' in patch) dbPatch.priority=patch.priority; if('notes' in patch) dbPatch.notes=patch.notes;
   if('date' in patch) dbPatch.date_added=patch.date; if('tags' in patch) dbPatch.tags=patch.tags;
   if('depositTarget' in patch) dbPatch.deposit_target=patch.depositTarget;
+  if('agent' in patch) dbPatch.agent_key=patch.agent;
   const {error}=await sb.from('leads').update(dbPatch).eq('id',id); if(error) throw error;
 }
 async function apiInsertEnquiry(row){
@@ -2603,6 +2604,24 @@ async function apiLoadClientDatabase(){
   CLIENTDB_LIST=mapped; CLIENTDB_LOADED=true;
   return CLIENTDB_LIST;
 }
+/* Company-sourced leads: clients who came to the company directly (office walk-in,
+   company website/social, referral not tied to one agent) rather than through a
+   specific agent's own book. Stored as ordinary leads rows with agent_key='company'
+   -- already a recognized pseudo-agent elsewhere in this app (soldByLabel/soldByOptions
+   for plot attribution) -- so RLS, payments, receipts etc. all work unmodified. They
+   live in this separate pool (never mixed into any individual agent's own pipeline)
+   until Elias/Emmanuel/Elizabeth/Management assigns one to a specific agent. */
+let COMPANY_LEADS_LOADED=false, COMPANY_LEADS_LIST=[];
+async function apiLoadCompanyLeads(){
+  if(DEMO_MODE){ COMPANY_LEADS_LIST=DB.leads.filter(l=>l.agent==='company'); COMPANY_LEADS_LOADED=true; return COMPANY_LEADS_LIST; }
+  const {data,error}=await sb.from('leads').select('*').eq('agent_key','company').order('created_at',{ascending:false});
+  if(error) throw error;
+  const mapped=(data||[]).map(mapLead);
+  const existingIds=new Set(DB.leads.map(l=>l.id));
+  mapped.forEach(l=>{ if(existingIds.has(l.id)) Object.assign(DB.leads.find(x=>x.id===l.id),l); else DB.leads.push(l); });
+  COMPANY_LEADS_LIST=mapped; COMPANY_LEADS_LOADED=true;
+  return COMPANY_LEADS_LIST;
+}
 /* Live, not "reload to see it" -- when any agent adds or updates a lead
    anywhere in the company, Elias/Management see it here immediately without
    reopening the screen, and it's already in DB.leads for anything else that
@@ -2618,6 +2637,11 @@ function ensureClientDbSubscribed(){
       const i2=DB.leads.findIndex(x=>x.id===l.id); if(i2>=0) Object.assign(DB.leads[i2],l); else DB.leads.push(l);
       const list=document.getElementById('cdbList');
       if(list){ list.innerHTML=clientDatabaseListHtml(); bindClientDbRows(document.getElementById('cdbBody')||document); }
+      const wasCompanyIdx=COMPANY_LEADS_LIST.findIndex(x=>x.id===l.id);
+      if(l.agent==='company'){ if(wasCompanyIdx>=0) COMPANY_LEADS_LIST[wasCompanyIdx]=l; else COMPANY_LEADS_LIST.push(l); }
+      else if(wasCompanyIdx>=0){ COMPANY_LEADS_LIST.splice(wasCompanyIdx,1); }
+      const clList=document.getElementById('companyLeadsList');
+      if(clList){ clList.innerHTML=companyLeadsListHtml(); bindCompanyLeadsRows(document.getElementById('companyLeadsBody')||document); }
     };
     CLIENTDB_CHANNEL=sb.channel('clientdb-live')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'leads'},payload=>upsertLocal(mapLead(payload.new)))
@@ -2697,6 +2721,92 @@ async function viewClientDatabase(){
   const body=document.getElementById('cdbBody');
   body.innerHTML=clientDatabaseBodyHtml();
   bindClientDatabaseCtrls(body);
+}
+function companyLeadsListHtml(){
+  if(!COMPANY_LEADS_LIST.length) return emptyState(ic.lead,'No company leads yet','Clients who come to the company directly -- not through a specific agent -- land here until assigned.');
+  return COMPANY_LEADS_LIST.map(l=>{
+    const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0);
+    return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'—')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''} · stage ${esc(l.stage||'')}</div></div>
+      <div style="text-align:right"><div class="amt">${ghs(g)}</div><div class="meta">${bal>0?('Bal '+ghs(bal)):'Paid in full'}</div></div></div>
+      ${l.nextAction?`<div class="note"><b>Next:</b> ${esc(l.nextAction)}</div>`:''}
+      <div class="foot" style="gap:8px"><button class="chip" data-companyedit="${esc(l.id)}">Update this lead →</button><button class="chip" data-companyassign="${esc(l.id)}">Assign to agent →</button></div></div>`;
+  }).join('');
+}
+function bindCompanyLeadsRows(container){
+  container.querySelectorAll('[data-companyedit]').forEach(b=>b.onclick=()=>route('updateOne',b.dataset.companyedit));
+  container.querySelectorAll('[data-companyassign]').forEach(b=>b.onclick=()=>{
+    const lead=COMPANY_LEADS_LIST.find(x=>x.id===b.dataset.companyassign); if(lead) openAssignCompanyLeadModal(lead);
+  });
+  const addBtn=container.querySelector('#companyLeadsAddBtn'); if(addBtn) addBtn.onclick=openAddCompanyLeadModal;
+}
+function companyLeadsBodyHtml(){
+  return `<div style="margin-bottom:14px"><button class="btn primary" id="companyLeadsAddBtn" style="width:100%">+ Add company lead</button></div>
+  <div class="list" id="companyLeadsList">${companyLeadsListHtml()}</div>`;
+}
+async function viewCompanyPipeline(){
+  V.innerHTML=`${back(PROFILE.role==='manager'?'mgr':'more')}<div class="pagehead"><div><div class="eyebrow">Company-sourced</div><h2>Company Leads</h2><p>Clients who came to the company directly -- assign each to an agent once you know who's handling them.</p></div></div>
+  <div id="companyLeadsBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  if(!COMPANY_LEADS_LOADED){ try{ await apiLoadCompanyLeads(); }catch(e){ toast('Could not load company leads: '+(e.message||e)); } }
+  const body=document.getElementById('companyLeadsBody');
+  body.innerHTML=companyLeadsBodyHtml();
+  bindCompanyLeadsRows(body);
+}
+function openAddCompanyLeadModal(){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Add company lead</div><button id="closeAddCompanyLead" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Client name *','<input id="cl_name" placeholder="Full name"/>')}
+    ${fld('Contact *','<input id="cl_contact" placeholder="0244…"/>')}
+    <div class="grid2">${fld('Plot type',sel('cl_plot',['Full Plot','Half Plot']))}${fld('No. of plots','<input id="cl_noplots" type="number" min="0.5" step="0.5" value="1"/>')}</div>
+    ${fld('Payment plan',sel('cl_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}
+    ${fld('Notes','<textarea id="cl_notes" placeholder="How this lead reached the company, etc."></textarea>','optional')}
+    <div class="formactions"><button class="btn primary" id="saveCompanyLead" style="width:100%">Save lead</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeAddCompanyLead').onclick=()=>ov.remove();
+  document.getElementById('saveCompanyLead').onclick=async()=>{
+    const name=val('cl_name').trim(), contact=val('cl_contact').trim();
+    if(!name||!contact){ toast('Name and contact are required'); return; }
+    const l={name,contact,date:today(),stage:'1',priority:'Low',plotType:val('cl_plot'),noPlots:val('cl_noplots'),
+      unitPrice:null,discount:null,paymentPlan:val('cl_plan'),siteVisit:'No',amtPaid:0,nextAction:'',notes:val('cl_notes').trim()};
+    const c=computeLead(l);
+    const btn=document.getElementById('saveCompanyLead'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const row=await apiInsertLead(l,c,'company');
+      DB.leads.push(row); COMPANY_LEADS_LIST.unshift(row);
+      toast('Company lead added'); ov.remove();
+      const body=document.getElementById('companyLeadsBody'); if(body){ body.innerHTML=companyLeadsBodyHtml(); bindCompanyLeadsRows(body); }
+    }catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save lead'; }
+  };
+}
+function openAssignCompanyLeadModal(lead){
+  const agents=STAFF_LIST.filter(s=>s.role==='agent');
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Assign ${esc(lead.name)}</div><button id="closeAssignLead" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:14px">Moves this client out of the company pool and into that agent's own pipeline. They'll be notified.</div>
+    ${fld('Assign to',`<select id="al_agent">${agents.map(a=>`<option value="${esc(a.key)}">${esc(a.name)}</option>`).join('')}</select>`)}
+    <div class="formactions"><button class="btn primary" id="saveAssignLead" style="width:100%">Assign</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeAssignLead').onclick=()=>ov.remove();
+  document.getElementById('saveAssignLead').onclick=async()=>{
+    const agentKey=val('al_agent'); if(!agentKey) return;
+    const agent=agents.find(a=>a.key===agentKey);
+    const btn=document.getElementById('saveAssignLead'); btn.disabled=true; btn.textContent='Assigning…';
+    try{
+      await apiUpdateLead(lead.id,{agent:agentKey});
+      lead.agent=agentKey;
+      COMPANY_LEADS_LIST=COMPANY_LEADS_LIST.filter(x=>x.id!==lead.id);
+      try{ const rec=await apiSendMessage(agentKey,lead.name+' (company lead) has been assigned to you — find them in your pipeline.'); if(rec) DB.messages.push(rec); }catch(e){}
+      toast('Assigned to '+(agent?agent.name:agentKey)); ov.remove();
+      const body=document.getElementById('companyLeadsBody'); if(body){ body.innerHTML=companyLeadsBodyHtml(); bindCompanyLeadsRows(body); }
+    }catch(e){ toast('Could not assign: '+(e.message||e)); btn.disabled=false; btn.textContent='Assign'; }
+  };
 }
 async function viewPlotRequests(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'more';
@@ -3539,7 +3649,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -3826,7 +3936,7 @@ function viewMore(){
       const key=b.dataset.moreapp;
       const item=items.find(a=>a.key===key);
       if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges);
-      if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else if(key==='Downloads') route('downloads'); else if(key==='Plot Requests') route('plotrequests'); else route('mgrTabView',key);
+      if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else if(key==='Downloads') route('downloads'); else if(key==='Plot Requests') route('plotrequests'); else if(key==='Company Leads') route('companyleads'); else route('mgrTabView',key);
     });
   } else {
     const items=[
@@ -3835,7 +3945,7 @@ function viewMore(){
       {key:'feedback',fic:'chat',label:'Feedback'},
       {key:'plotrequests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
       ...(canManagePlots()?[{key:'allocations',fic:'allocation',label:'Allocations'}]:[]),
-      ...(canViewClientDatabase()?[{key:'clientdb',fic:'savings',label:'Client Database'}]:[]),
+      ...(canViewClientDatabase()?[{key:'clientdb',fic:'savings',label:'Client Database'},{key:'companyleads',fic:'briefcase',label:'Company Leads'}]:[]),
       {key:'account',fic:'settings',label:'Settings'}
     ];
     grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
@@ -8354,6 +8464,7 @@ const MGR_APPS=[
   {key:'Allocations',fic:'allocation',label:'Allocations'},
   {key:'Client Database',fic:'savings',label:'Client Database'},
   {key:'Plot Requests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
+  {key:'Company Leads',fic:'briefcase',label:'Company Leads'},
   {key:'Enquiries',fic:'enquiry',label:'Enquiries',badgeKind:'enquiry'},
   {key:'Complaints',fic:'alert',label:'Complaints',badgeKind:'complaint'},
   {key:'Site visits',fic:'location',label:'Site Visits',badgeKind:'sitevisit'},
