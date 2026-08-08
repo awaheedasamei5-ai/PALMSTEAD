@@ -580,6 +580,16 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .empty .big{font-family:Inter,sans-serif;font-weight:800;font-size:17.5px;color:var(--text);margin-bottom:4px}
 body.dark .empty .bigicon{background:linear-gradient(135deg,#182541,#132038)}
 
+.successCheckWrap{width:78px;height:78px;margin:0 auto 18px}
+.successCheckCircle{width:100%;height:100%;border-radius:50%;background:linear-gradient(135deg,#84CC16,#4D7C0F);display:flex;align-items:center;justify-content:center;box-shadow:0 10px 26px rgba(77,124,15,.28);animation:successPop .45s cubic-bezier(.34,1.56,.64,1) both}
+.successCheckCircle svg{width:40px;height:40px}
+.successCheckCircle svg path{stroke-dasharray:26;stroke-dashoffset:26;animation:successDraw .35s .3s ease forwards}
+@keyframes successPop{0%{transform:scale(0);opacity:0}60%{transform:scale(1.1);opacity:1}100%{transform:scale(1)}}
+@keyframes successDraw{to{stroke-dashoffset:0}}
+.successCard{text-align:center;padding:42px 22px;margin-top:10px}
+.successTitle{font-weight:800;font-size:18px;margin-bottom:6px}
+.successSub{font-size:12.5px;color:var(--muted);line-height:1.55;max-width:300px;margin:0 auto 24px}
+
 .tabs{display:flex;gap:7px;overflow-x:auto;padding-bottom:6px;margin-bottom:15px;-webkit-overflow-scrolling:touch}
 .tabs button{white-space:nowrap;padding:9.5px 15px;border-radius:100px;border:1.5px solid var(--line);background:#fff;
   font-weight:700;font-size:13px;color:#3c433c;transition:.15s}
@@ -2664,16 +2674,13 @@ function bindClientDatabaseCtrls(container){
   if(inp) inp.oninput=e=>{ CLIENTDB_QUERY=e.target.value; container.querySelector('#cdbList').innerHTML=clientDatabaseListHtml(); bindClientDbRows(container); };
   const addBtn=container.querySelector('#cdbAddBtn');
   if(addBtn) addBtn.onclick=openAddClientDbLead;
-  const logPayBtn=container.querySelector('#cdbLogPaymentBtn');
-  if(logPayBtn) logPayBtn.onclick=openLogPaymentFlow;
   bindClientDbRows(container);
 }
 function bindClientDbRows(container){
   container.querySelectorAll('[data-cdbopen]').forEach(b=>b.onclick=()=>route('updateOne',b.dataset.cdbopen));
 }
 function clientDatabaseBodyHtml(){
-  return `${canManagePayments()?`<button class="btn gold" id="cdbLogPaymentBtn" style="width:100%;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px;padding:14px"><span style="width:18px;height:18px;display:inline-flex">${ic.doc}</span>Log a Payment</button>`:''}
-  <div style="margin-bottom:14px"><button class="btn primary" id="cdbAddBtn" style="width:100%">+ Add new client</button></div>
+  return `<div style="margin-bottom:14px"><button class="btn primary" id="cdbAddBtn" style="width:100%">+ Add new client</button></div>
   <div class="searchbar"><input id="cdbq" placeholder="Search name or contact…" value="${esc(CLIENTDB_QUERY)}"/></div>
   <div class="list" id="cdbList">${clientDatabaseListHtml()}</div>`;
 }
@@ -2741,7 +2748,7 @@ function companyLeadsBodyHtml(){
   <div class="list" id="companyLeadsList">${companyLeadsListHtml()}</div>`;
 }
 async function viewCompanyPipeline(){
-  V.innerHTML=`${back(PROFILE.role==='manager'?'mgr':'more')}<div class="pagehead"><div><div class="eyebrow">Company-sourced</div><h2>Company Leads</h2><p>Clients who came to the company directly -- assign each to an agent once you know who's handling them.</p></div></div>
+  V.innerHTML=`${back('more')}<div class="pagehead"><div><div class="eyebrow">Company-sourced</div><h2>Company Leads</h2><p>Clients who came to the company directly -- assign each to an agent once you know who's handling them.</p></div></div>
   <div id="companyLeadsBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!COMPANY_LEADS_LOADED){ try{ await apiLoadCompanyLeads(); }catch(e){ toast('Could not load company leads: '+(e.message||e)); } }
   const body=document.getElementById('companyLeadsBody');
@@ -2806,7 +2813,7 @@ function openAssignCompanyLeadModal(lead){
   };
 }
 async function viewPlotRequests(){
-  const homeRoute=PROFILE.role==='manager'?'mgr':'more';
+  const homeRoute=PROFILE.role==='manager'?'mgrPlotInv':'more';
   V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Additional plot requests</div><h2>Plot Requests</h2><p>Submitted by clients from their dashboard.</p></div></div>
   <div id="prBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   let list=[];
@@ -3646,7 +3653,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -3670,6 +3677,8 @@ function tabForRoute(name){
   }
   if(['salesdesk','addlead','update','updateOne','myDataCheck','plots','pipeline'].includes(name)) return 'salesdesk';
   if(['crm','sitevisit','enquiry','complaint'].includes(name)) return 'crm';
+  if(name==='mgrCrmTools') return 'mgrcrm';
+  if(name==='mgrPlotInv') return 'mgrplots';
   if(name==='duties'||name==='taskDetail') return 'operations';
   if(name==='chat'||name==='chatThread') return 'chat';
   if(name==='home'||name==='mgr') return 'home';
@@ -3695,10 +3704,12 @@ function renderBottomNavNow(){
   const openTasks=computeDutiesSummary((DB.tasks||[]).filter(t=>isMgr||t.assignedTo===PROFILE.key)).openCount;
   const unread=totalUnread();
   const crmBadge=unreadByKind('sitevisit')+unreadByKind('enquiry')+unreadByKind('complaint');
-  const moreBadge=isMgr?(crmBadge+unreadByKind('plotrequest')):unreadByKind('plotrequest');
+  const plotInvBadge=unreadByKind('plotrequest');
+  const moreBadge=isMgr?0:plotInvBadge;
   const tabDefs=[
     {key:'home',label:'Home',icon:ic.home,r:isMgr?'mgr':'home'},
-    ...(isMgr?[]:[{key:'salesdesk',label:'Sales Desk',icon:ic.briefcase2,r:'salesdesk'},{key:'crm',label:'CRM Tools',icon:ic.phone,r:'crm',badge:crmBadge}]),
+    ...(isMgr?[{key:'mgrcrm',label:'CRM Tools',icon:ic.phone,r:'mgrCrmTools',badge:crmBadge},{key:'mgrplots',label:'Plot Inventory',icon:ic.grid,r:'mgrPlotInv',badge:plotInvBadge}]
+      :[{key:'salesdesk',label:'Sales Desk',icon:ic.briefcase2,r:'salesdesk'},{key:'crm',label:'CRM Tools',icon:ic.phone,r:'crm',badge:crmBadge}]),
     {key:'operations',label:'Operations',icon:ic.check2,r:'duties',badge:openTasks},
     {key:'chat',label:'Chat',icon:ic.chat,r:'chat',badge:unread,badgeId:'bnChatBadge'},
     {key:'more',label:'More',icon:ic.more,r:'more',badge:moreBadge}
@@ -3922,26 +3933,54 @@ function viewCRM(){
     b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); route(b.dataset.hubroute); };
   });
 }
+// Shared by More (manager's leftover apps), the new CRM Tools tab, and the new Plot
+// Inventory tab -- one click-routing table instead of three copies drifting apart.
+function mgrAppRoute(key){
+  if(key==='Feedback') route('feedback');
+  else if(key==='Insights') route('insights');
+  else if(key==='Downloads') route('downloads');
+  else if(key==='Plot Requests') route('plotrequests');
+  else if(key==='Company Leads') route('companyleads');
+  else if(key==='Log Payment') route('logpayment');
+  else route('mgrTabView',key);
+}
+function mgrAppGridHtml(items){
+  return items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+}
+function bindMgrAppGrid(grid,items){
+  grid.querySelectorAll('[data-moreapp]').forEach(b=>{
+    const item=items.find(a=>a.key===b.dataset.moreapp);
+    b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); mgrAppRoute(b.dataset.moreapp); };
+  });
+}
+function viewMgrCrmTools(){
+  const items=MGR_APPS.filter(a=>a.section==='crm');
+  V.innerHTML=`<div class="pagehead"><div><h2>CRM Tools</h2><p>Client database, feedback, site visits &amp; enquiries</p></div></div>
+  <div class="appGrid" id="mgrCrmGrid">${mgrAppGridHtml(items)}</div>`;
+  bindMgrAppGrid(document.getElementById('mgrCrmGrid'),items);
+}
+function viewMgrPlotInv(){
+  const items=MGR_APPS.filter(a=>a.section==='plots');
+  V.innerHTML=`<div class="pagehead"><div><h2>Plot Inventory</h2><p>Plots, allocations &amp; additional-plot requests</p></div></div>
+  <div class="appGrid" id="mgrPlotGrid">${mgrAppGridHtml(items)}</div>`;
+  bindMgrAppGrid(document.getElementById('mgrPlotGrid'),items);
+}
 function viewMore(){
   V.innerHTML=`<div class="pagehead"><div><h2>More</h2><p>Additional tools and settings</p></div></div>
   <div class="appGrid" id="moreGrid"></div>`;
   const grid=document.getElementById('moreGrid');
   if(PROFILE.role==='manager'){
-    const items=MGR_APPS.filter(a=>a.key!=='Duties');
-    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
-    grid.querySelectorAll('[data-moreapp]').forEach(b=>b.onclick=()=>{
-      const key=b.dataset.moreapp;
-      const item=items.find(a=>a.key===key);
-      if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges);
-      if(key==='Feedback') route('feedback'); else if(key==='Insights') route('insights'); else if(key==='Downloads') route('downloads'); else if(key==='Plot Requests') route('plotrequests'); else if(key==='Company Leads') route('companyleads'); else route('mgrTabView',key);
-    });
+    const items=MGR_APPS.filter(a=>a.key!=='Duties' && !a.section);
+    grid.innerHTML=mgrAppGridHtml(items);
+    bindMgrAppGrid(grid,items);
   } else {
     const items=[
       {key:'insights',fic:'target',label:'Smart Insights'},
       {key:'downloads',fic:'document',label:'Download Directory'},
-      {key:'feedback',fic:'chat',label:'Feedback'},
+      {key:'feedback',fic:'chat',label:'Team Feedback'},
       {key:'plotrequests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
       ...(canManagePlots()?[{key:'allocations',fic:'allocation',label:'Allocations'}]:[]),
+      ...(canManagePayments()?[{key:'logpayment',fic:'savings',label:'Log Payment'}]:[]),
       ...(canViewClientDatabase()?[{key:'clientdb',fic:'savings',label:'Client Database'},{key:'companyleads',fic:'briefcase',label:'Company Leads'}]:[]),
       {key:'account',fic:'settings',label:'Settings'}
     ];
@@ -7052,16 +7091,22 @@ function openLogMonthPayment(lead,slotKey,expected){
   };
 }
 
-/* Dedicated payment-only flow for Client Database: search a client, pick which of
-   their purchases the payment is for (a client can hold more than one lead/plot),
-   then a screen showing ONLY what's relevant to logging a payment -- no notes,
-   stage, next-action, or any other unrelated field. Reuses the exact same save
-   path as openLogMonthPayment (insert payment, sync lead balance, allocation/target
-   checks, thank-you SMS, offer a receipt) so this never drifts from Update Pipeline's
-   own payment entry. */
-function openLogPaymentFlow(){
-  if(!canManagePayments()){ toast('Payment entry is Elias/Management only'); return; }
-  openLogPaymentSearchStep('');
+/* ================= LOG PAYMENT (standalone app, Elias/Management only) =================
+   Its own top-level app (reached from More), not nested inside Client Database: search a
+   client, pick which of their purchases the payment is for (a client can hold more than
+   one lead/plot), then a screen showing ONLY what's relevant to payments -- total price,
+   balance, a new-payment form, AND a real payment history with working Edit/Delete on
+   every past entry. Reuses the same underlying API calls as Update Pipeline's own payment
+   ledger (apiUpdatePayment/apiDeletePayment/syncLeadAfterPaymentDelta) so corrections stay
+   consistent everywhere, but re-renders in place instead of navigating away. */
+let LOGPAY_SELECTED_LEAD=null, LOGPAY_QUERY='';
+async function viewLogPaymentApp(){
+  if(!canManagePayments()){ V.innerHTML=back('more')+emptyState(ic.savings,'Elias/Management only','Payment entry is restricted to Elias and Management.'); return; }
+  LOGPAY_SELECTED_LEAD=null; LOGPAY_QUERY='';
+  V.innerHTML=`${back('more')}<div class="pagehead"><div><div class="eyebrow">Payments</div><h2>Log Payment</h2><p>Search a client, log a payment, or review and correct past entries.</p></div></div>
+  <div id="logpayBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load clients: '+(e.message||e)); } }
+  paintLogPayBody();
 }
 function logPaymentSearchResultsHtml(q){
   const query=(q||'').toLowerCase();
@@ -7074,50 +7119,49 @@ function logPaymentSearchResultsHtml(q){
       <div style="text-align:right"><div class="amt">${bal>0?ghs(bal):'Paid'}</div><div class="meta">${bal>0?'balance':'in full'}</div></div></div></button>`;
   }).join('');
 }
-function openLogPaymentSearchStep(prevQuery){
-  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
-  ov=document.createElement('div'); ov.id='announceOverlay';
-  ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Log a payment</div><button id="closeLP" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
-    <div class="mini" style="margin-bottom:10px">Search the client, then pick which purchase this payment is for.</div>
-    <div class="searchbar" style="margin-bottom:10px"><input id="lp_q" placeholder="Search name or contact…" value="${esc(prevQuery||'')}"/></div>
-    <div id="lpResults" style="max-height:340px;overflow-y:auto">${logPaymentSearchResultsHtml(prevQuery)}</div>
-  </div>`;
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
-  document.getElementById('closeLP').onclick=()=>ov.remove();
-  const inp=document.getElementById('lp_q');
-  const bindLpResultRows=()=>{
-    document.querySelectorAll('[data-lpsel]').forEach(b=>b.onclick=()=>{
-      const lead=DB.leads.find(x=>x.id===b.dataset.lpsel)||CLIENTDB_LIST.find(x=>x.id===b.dataset.lpsel);
-      if(lead) openLogPaymentFormStep(lead);
-    });
-  };
-  inp.oninput=()=>{ document.getElementById('lpResults').innerHTML=logPaymentSearchResultsHtml(inp.value); bindLpResultRows(); };
-  inp.focus();
-  bindLpResultRows();
+function paintLogPayBody(){
+  const body=document.getElementById('logpayBody'); if(!body) return;
+  if(!LOGPAY_SELECTED_LEAD){
+    body.innerHTML=`<div class="searchbar" style="margin-bottom:14px"><input id="lp_q" placeholder="Search name or contact…" value="${esc(LOGPAY_QUERY)}"/></div>
+    <div class="list" id="lpResults">${logPaymentSearchResultsHtml(LOGPAY_QUERY)}</div>`;
+    const inp=document.getElementById('lp_q');
+    const bindLpResultRows=()=>{
+      body.querySelectorAll('[data-lpsel]').forEach(b=>b.onclick=()=>{
+        const lead=DB.leads.find(x=>x.id===b.dataset.lpsel)||CLIENTDB_LIST.find(x=>x.id===b.dataset.lpsel);
+        if(lead){ LOGPAY_SELECTED_LEAD=lead; paintLogPayBody(); }
+      });
+    };
+    inp.oninput=()=>{ LOGPAY_QUERY=inp.value; document.getElementById('lpResults').innerHTML=logPaymentSearchResultsHtml(LOGPAY_QUERY); bindLpResultRows(); };
+    bindLpResultRows();
+  } else {
+    body.innerHTML=logPayDetailHtml(LOGPAY_SELECTED_LEAD);
+    bindLogPayDetailCtrls(LOGPAY_SELECTED_LEAD);
+  }
 }
-function openLogPaymentFormStep(lead){
+function logPayDetailHtml(lead){
   const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand; const bal=Math.max(grand-num(lead.amtPaid),0);
-  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
-  ov=document.createElement('div'); ov.id='announceOverlay';
-  ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><button id="lpBack" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0">‹ Search again</button><button id="closeLP2" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
-    <div style="font-weight:800;font-size:17px;margin-bottom:2px">${esc(lead.name)}</div>
-    <div class="mini" style="margin-bottom:14px">${esc(lead.contact||'')} · ${esc(lead.plotType||'')}${lead.noPlots?' ×'+esc(lead.noPlots):''}</div>
-    <div style="display:flex;gap:10px;margin-bottom:16px">
-      <div style="flex:1;background:#F4F6F8;border-radius:12px;padding:10px 12px"><div class="mini" style="margin-bottom:2px">Total price (all plots)</div><div style="font-weight:800;font-size:15px">${ghs(grand)}</div></div>
-      <div style="flex:1;background:#F4F6F8;border-radius:12px;padding:10px 12px"><div class="mini" style="margin-bottom:2px">Balance remaining</div><div style="font-weight:800;font-size:15px;color:${bal>0?'#B4472F':'#16A34A'}">${bal>0?ghs(bal):'Paid in full'}</div></div>
-    </div>
+  const entries=(DB.payments||[]).filter(p=>p.leadId===lead.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  return `<button class="linkbtn" id="lpBackToSearch" style="margin-bottom:10px">‹ Search again</button>
+  <div style="font-weight:800;font-size:17px;margin-bottom:2px">${esc(lead.name)}</div>
+  <div class="mini" style="margin-bottom:14px">${esc(lead.contact||'')} · ${esc(lead.plotType||'')}${lead.noPlots?' ×'+esc(lead.noPlots):''}</div>
+  <div style="display:flex;gap:10px;margin-bottom:18px">
+    <div style="flex:1;background:#F4F6F8;border-radius:12px;padding:10px 12px"><div class="mini" style="margin-bottom:2px">Total price (all plots)</div><div style="font-weight:800;font-size:15px">${ghs(grand)}</div></div>
+    <div style="flex:1;background:#F4F6F8;border-radius:12px;padding:10px 12px"><div class="mini" style="margin-bottom:2px">Balance remaining</div><div style="font-weight:800;font-size:15px;color:${bal>0?'#B4472F':'#16A34A'}">${bal>0?ghs(bal):'Paid in full'}</div></div>
+  </div>
+  <div class="sectitle" style="margin-top:0"><h3>Log a new payment</h3></div>
+  <div class="formwrap">
     ${fld('Mode of payment',sel('lp_method',PAYMENT_METHODS))}
     ${fld('Amount paid (GHS)','<input id="lp_amount" type="number" placeholder="0"/>')}
     ${fld('Date of payment','<input id="lp_date" type="date" value="'+today()+'" max="'+today()+'"/>')}
     <div class="formactions"><button class="btn primary" id="saveLP" style="width:100%">Log payment</button></div>
-  </div>`;
-  document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
-  document.getElementById('closeLP2').onclick=()=>ov.remove();
-  document.getElementById('lpBack').onclick=()=>openLogPaymentSearchStep('');
+  </div>
+  <div class="sectitle"><h3>Payment history</h3><span class="cnt">${entries.length}</span></div>
+  <div class="list" id="lpHistoryList">${entries.length?entries.map(p=>`<div class="rowcard" style="padding:12px 14px"><div class="top"><div><div class="nm" style="font-size:13.5px">${ghs(num(p.amount))}</div><div class="meta">${esc(p.date||'')}${p.method?(' · '+esc(p.method)):''}</div></div>
+    <div style="display:flex;gap:6px;flex:0 0 auto"><button class="chip" data-lpedit="${esc(p.id)}" style="padding:4px 9px;font-size:11px">Edit</button><button class="chip" data-lpdel="${esc(p.id)}" style="padding:4px 9px;font-size:11px;color:#B4472F">Delete</button></div>
+    </div></div>`).join(''):emptyState(ic.update,'No payments logged yet','')}</div>`;
+}
+function bindLogPayDetailCtrls(lead){
+  document.getElementById('lpBackToSearch').onclick=()=>{ LOGPAY_SELECTED_LEAD=null; paintLogPayBody(); };
   document.getElementById('saveLP').onclick=async()=>{
     const amount=num(val('lp_amount')); const date=val('lp_date'); const method=val('lp_method');
     if(amount<=0){ toast('Enter an amount'); return; }
@@ -7134,13 +7178,59 @@ function openLogPaymentFormStep(lead){
       const cdbLead=CLIENTDB_LIST.find(x=>x.id===lead.id); if(cdbLead) Object.assign(cdbLead,{amtPaid:newPaid,balance:newBal});
       await checkAllocationTrigger(lead);
       await checkTargetExceeded();
-      await addActivity(lead.name,'Payment logged',ghs(amount)+' via Client Database','','',null);
-      toast('Payment logged · '+ghs(amount));
+      await addActivity(lead.name,'Payment logged',ghs(amount)+' via Log Payment','','',null);
       if(lead.contact) apiSendSms(lead.contact,`Hi ${lead.name}, thank you for your payment of ${ghs(amount)} towards your plot at Royal Palm Enclave. - PEP Landbank`,'payment_thanks').catch(()=>{});
-      if(prec) offerSendReceipt(lead,prec); else { const ov2=document.getElementById('announceOverlay'); if(ov2) ov2.remove(); }
-      const cdbBodyEl=document.getElementById('cdbBody')||document.getElementById('mbody');
-      if(cdbBodyEl && (cdbBodyEl.id==='cdbBody' || mgrTab==='Client Database')){ cdbBodyEl.innerHTML=clientDatabaseBodyHtml(); bindClientDatabaseCtrls(cdbBodyEl); }
+      paintLogPayBody();
+      if(prec) await offerSendReceipt(lead,prec);
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Log payment'; }
+  };
+  document.querySelectorAll('[data-lpedit]').forEach(b=>b.onclick=()=>{
+    const p=(DB.payments||[]).find(x=>x.id===b.dataset.lpedit); if(p) openLogPayEditModal(p,lead);
+  });
+  document.querySelectorAll('[data-lpdel]').forEach(b=>b.onclick=async()=>{
+    const p=(DB.payments||[]).find(x=>x.id===b.dataset.lpdel); if(!p) return;
+    if(!confirm('Delete this '+ghs(num(p.amount))+' payment dated '+(p.date||'')+'? This also updates their balance, Agent of the Month, and commission.')) return;
+    try{
+      await apiDeletePayment(p.id);
+      DB.payments=(DB.payments||[]).filter(x=>x.id!==p.id);
+      await syncLeadAfterPaymentDelta(lead.id,-num(p.amount));
+      const cdbLead=CLIENTDB_LIST.find(x=>x.id===lead.id); if(cdbLead) Object.assign(cdbLead,{amtPaid:lead.amtPaid,balance:lead.balance});
+      await addActivity(lead.name,'Payment deleted',ghs(num(p.amount))+' removed ('+monthLabel((p.date||'').slice(0,7))+')','','',null);
+      toast('Payment deleted');
+      paintLogPayBody();
+    }catch(e){ toast('Failed: '+(e.message||e)); }
+  });
+}
+function openLogPayEditModal(p,lead){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Edit payment</div><button id="closeLpEdit" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:14px">Correcting this updates the payment history, Agent of the Month, and commission figures everywhere they're used.</div>
+    ${fld('Amount paid (GHS)','<input id="lpe_amount" type="number" value="'+num(p.amount)+'"/>')}
+    ${fld('Date','<input id="lpe_date" type="date" value="'+esc(p.date||'')+'"/>')}
+    ${fld('Payment method',sel('lpe_method',PAYMENT_METHODS,p.method||PAYMENT_METHODS[0]))}
+    <div class="formactions"><button class="btn primary" id="saveLpEdit" style="width:100%">Save correction</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeLpEdit').onclick=()=>ov.remove();
+  document.getElementById('saveLpEdit').onclick=async()=>{
+    const newAmount=num(val('lpe_amount')); const newDate=val('lpe_date'); const newMethod=val('lpe_method');
+    if(newAmount<=0){ toast('Enter an amount, or use Delete to remove this payment entirely'); return; }
+    if(!newDate){ toast('Pick a date'); return; }
+    const btn=document.getElementById('saveLpEdit'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const oldAmount=num(p.amount);
+      await apiUpdatePayment(p.id,newAmount,newDate,newMethod);
+      p.amount=newAmount; p.date=newDate; p.method=newMethod;
+      await syncLeadAfterPaymentDelta(lead.id,newAmount-oldAmount);
+      const cdbLead=CLIENTDB_LIST.find(x=>x.id===lead.id); if(cdbLead) Object.assign(cdbLead,{amtPaid:lead.amtPaid,balance:lead.balance});
+      await checkAllocationTrigger(lead);
+      await addActivity(lead.name,'Payment corrected',ghs(oldAmount)+' → '+ghs(newAmount)+' ('+monthLabel(newDate.slice(0,7))+')','','',null);
+      toast('Payment corrected'); ov.remove();
+      paintLogPayBody();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save correction'; }
   };
 }
 
@@ -7496,18 +7586,40 @@ function downloadClientRecordPDF(name,contact,lead,payments,totalValue,totalPaid
   }
   { const fname='Client_'+name.replace(/\s+/g,'_')+'_Record.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri); }
 }
+// Shown after any staff form submission (enquiry/feedback/site visit/etc) -- animated
+// checkmark + a genuine thank-you line, matching the same visual language used for
+// client-facing confirmations (successConfirmHtml) so "submission confirmed" always
+// looks and feels the same everywhere in the app, not a different ad-hoc screen per form.
 function showSavedScreen(kind,rec,message){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
-  V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Saved</div><h2>${esc(message)}</h2></div></div>
-  <div class="rowcard" style="text-align:center;padding:32px 20px">
-    <div class="bigicon" style="margin:0 auto 14px;background:#DCEEE4;color:#1E7A56"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8"/><path d="M8 12.5l2.5 2.5L16 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-    <div style="font-weight:700;font-size:16px;margin-bottom:4px">${esc(rec.name)}</div>
-    <div class="mini" style="margin-bottom:22px">${esc(rec.contact||'')}</div>
+  V.innerHTML=`<div class="rowcard successCard">
+    <div class="successCheckWrap"><div class="successCheckCircle"><svg viewBox="0 0 24 24" fill="none"><path d="M6 12.5l4 4L18 7.5" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+    <div class="successTitle">${esc(message)}</div>
+    <div class="successSub">${esc(rec.name)}${rec.contact?(' \u00b7 '+esc(rec.contact)):''}<br/>Thanks for logging this \u2014 it's saved and the right people have been notified.</div>
     <div style="max-width:340px;margin:0 auto"><button class="btn primary" id="dlPdfBtn" style="width:100%">\u2b07 Download PDF</button></div>
     <button class="linkbtn" style="margin-top:16px" onclick="route('${homeRoute}')">Done \u2014 back to dashboard</button>
   </div>`;
   document.getElementById('dlPdfBtn').onclick=()=>downloadRecordPDF(kind,rec);
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
+}
+// Lightweight client-portal equivalent -- a modal (not a full page, since clients stay
+// on their dashboard) with the same animated checkmark + thank-you treatment, used for
+// every client-submitted form (site visit, feedback, additional plot request).
+function showClientSuccessModal(title,thanksMsg){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal" class="successCard" style="padding:34px 22px">
+    <div class="successCheckWrap"><div class="successCheckCircle"><svg viewBox="0 0 24 24" fill="none"><path d="M6 12.5l4 4L18 7.5" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+    <div class="successTitle">${esc(title)}</div>
+    <div class="successSub">${esc(thanksMsg)}</div>
+    <button class="btn primary" id="closeClientSuccess" style="width:100%">Done</button>
+  </div>`;
+  document.body.appendChild(ov);
+  return new Promise(resolve=>{
+    const close=()=>{ ov.remove(); resolve(); };
+    ov.addEventListener('click',e=>{ if(e.target===ov) close(); });
+    document.getElementById('closeClientSuccess').onclick=close;
+  });
 }
 
 async function saveEnq(){ const name=val('e_name').trim(), contact=val('e_contact').trim();
@@ -8128,7 +8240,8 @@ function openClientPlotRequestModal(leads){
     try{
       await apiClientInsertPlotRequest({plotType:val('pr_plot'),noPlots:val('pr_noplots'),paymentPlan:val('pr_plan'),
         combineWithLeadId:val('pr_combine')||null,notes:val('pr_notes').trim()});
-      toast('Request sent — your agent and Management have been notified'); ov.remove();
+      ov.remove();
+      await showClientSuccessModal('Request sent!','Thank you — your agent and Management have been notified and will review this shortly.');
     }catch(e){ toast('Could not send request: '+(e.message||e)); btn.disabled=false; btn.textContent='Send request'; }
   };
 }
@@ -8333,13 +8446,15 @@ async function offerSendReceipt(lead,payment){
   const waTarget=channels.whatsapp||lead.contact;
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
-  ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Send receipt?</div><button id="closeSendReceipt" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
-    <div class="mini" style="margin-bottom:16px">${esc(lead.name)} · ${ghs(payment.amount)} logged just now — already added to their Palmstead payment history and notified in-system. Download it, or reach them directly:</div>
-    <div style="display:flex;flex-direction:column;gap:10px">
+  ov.innerHTML=`<div id="announceModal" class="successCard" style="padding:34px 22px;position:relative">
+    <button id="closeSendReceipt" style="position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button>
+    <div class="successCheckWrap"><div class="successCheckCircle"><svg viewBox="0 0 24 24" fill="none"><path d="M6 12.5l4 4L18 7.5" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+    <div class="successTitle">Payment logged!</div>
+    <div class="successSub">${esc(lead.name)} · ${ghs(payment.amount)}<br/>Thank you — this is already saved to their Palmstead payment history and they've been notified in-system.</div>
+    <div style="display:flex;flex-direction:column;gap:10px;text-align:left">
       <button class="btn primary" id="srDownload" style="width:100%">⬇ Download receipt PDF</button>
-      <a class="btn ghost" id="srWhatsapp" target="_blank" rel="noopener" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Open WhatsApp to ${esc(lead.name)}</a>
-      ${channels.email?`<a class="btn ghost" id="srEmail" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Open email to ${esc(lead.name)}</a>`:''}
+      <a class="btn ghost" id="srWhatsapp" target="_blank" rel="noopener" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Send via WhatsApp</a>
+      ${channels.email?`<a class="btn ghost" id="srEmail" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Send via Email</a>`:''}
     </div>
     <button class="btn ghost" id="closeSendReceipt2" style="width:100%;margin-top:14px">Not now</button>
   </div>`;
@@ -8377,8 +8492,8 @@ async function saveClientVisit(){
     accompanied:val('cv_accompanied').trim(),notes:''};
   try{
     const rec=await apiClientInsertSiteVisit(row); CLIENT_DB.sitevisits.unshift(rec);
-    toast("Visit request sent — we'll confirm the date and time shortly.");
     route('clienthome');
+    await showClientSuccessModal('Visit request sent!',"Thank you for booking a site visit — we'll confirm the date and time with you shortly.");
   }catch(e){ toast('Could not send request: '+(e.message||e)); btn.disabled=false; btn.textContent='Submit request'; }
 }
 function formClientFeedback(){
@@ -8412,8 +8527,8 @@ async function saveClientFeedback(sentiment){
     } else {
       const rec=await apiClientInsertEnquiry({details:msg}); CLIENT_DB.enquiries.unshift(rec);
     }
-    toast("Thanks — we've received your message.");
     route('clienthome');
+    await showClientSuccessModal('Message sent!',"Thanks for reaching out — we've received your message and will follow up soon.");
   }catch(e){ toast('Could not send: '+(e.message||e)); btn.disabled=false; btn.textContent='Send'; }
 }
 function formClientSettings(){
@@ -8477,29 +8592,34 @@ function formClientSettings(){
 
 /* ================= MANAGER ================= */
 let mgrTab='overview'; let cmpFilter='All'; let slYear=new Date(today()).getFullYear(); let TEAM_ROSTER=[]; let INVITE_LIST=[];
+// section tags 'crm'/'plots' route a tile into the manager's dedicated CRM Tools /
+// Plot Inventory bottom-nav tabs instead of the general More grid -- see
+// viewMgrCrmTools()/viewMgrPlotInv()/viewMore(). Untagged entries stay in More.
 const MGR_APPS=[
   {key:'Data Check',fic:'datacheck',label:'Data Check'},
   {key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'},
   {key:'Reports',fic:'analytics',label:'Reports'},
-  {key:'Plots',fic:'map',label:'Plot Inventory'},
-  {key:'Allocations',fic:'allocation',label:'Allocations'},
-  {key:'Client Database',fic:'savings',label:'Client Database'},
-  {key:'Plot Requests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
+  {key:'Plots',fic:'map',label:'Plot Inventory',section:'plots'},
+  {key:'Allocations',fic:'allocation',label:'Allocations',section:'plots'},
+  {key:'Client Database',fic:'savings',label:'Client Database',section:'crm'},
+  {key:'Plot Requests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest',section:'plots'},
   {key:'Company Leads',fic:'briefcase',label:'Company Leads'},
-  {key:'Enquiries',fic:'enquiry',label:'Enquiries',badgeKind:'enquiry'},
-  {key:'Complaints',fic:'alert',label:'Client Feedback',badgeKind:'complaint'},
-  {key:'Site visits',fic:'location',label:'Site Visits',badgeKind:'sitevisit'},
+  {key:'Enquiries',fic:'enquiry',label:'Enquiries',badgeKind:'enquiry',section:'crm'},
+  {key:'Complaints',fic:'alert',label:'Client Feedback',badgeKind:'complaint',section:'crm'},
+  {key:'Site visits',fic:'location',label:'Site Visits',badgeKind:'sitevisit',section:'crm'},
+  {key:'Log Payment',fic:'savings',label:'Log Payment'},
   {key:'News',fic:'announce',label:'News & Announcements'},
   {key:'Commission',fic:'savings',label:'Commission'},
   {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
-  {key:'Feedback',fic:'chat',label:'Feedback'},
+  {key:'Feedback',fic:'chat',label:'Team Feedback'},
   {key:'Insights',fic:'target',label:'Smart Insights'},
   {key:'Settings',fic:'settings',label:'Settings'},
-  {key:'Activity',fic:'clipboard',label:'Activity'},
   {key:'Downloads',fic:'document',label:'Download Directory'},
 ];
 async function managerView(){
-  V.innerHTML=`${mgrTab!=='overview'?back('mgr'):''}<div class="pagehead"><div><h2>${mgrTab==='overview'?'Management Dashboard':esc((MGR_APPS.find(a=>a.key===mgrTab)||{label:mgrTab}).label)}</h2><p>${mgrTab==='overview'?'Live across all agents':'Management'}</p></div>
+  const mgrAppDef=MGR_APPS.find(a=>a.key===mgrTab);
+  const mgrBackTarget=mgrAppDef&&mgrAppDef.section==='crm'?'mgrCrmTools':mgrAppDef&&mgrAppDef.section==='plots'?'mgrPlotInv':'mgr';
+  V.innerHTML=`${mgrTab!=='overview'?back(mgrBackTarget):''}<div class="pagehead"><div><h2>${mgrTab==='overview'?'Management Dashboard':esc((mgrAppDef||{label:mgrTab}).label)}</h2><p>${mgrTab==='overview'?'Live across all agents':'Management'}</p></div>
   <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
   <div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>
   <div class="footer-note">System created by Abdul Waheed (Digital Operations) © ${new Date().getFullYear()}</div>`;
@@ -8541,7 +8661,6 @@ async function managerView(){
   else if(mgrTab==='News'){ body.innerHTML=mgrNews(); bindNewsCtrls(); }
   else if(mgrTab==='Commission'){ body.innerHTML=mgrCommission(); bindCommissionCtrls(); }
   else if(mgrTab==='Settings'){ TEAM_ROSTER=await apiLoadFullRoster(); INVITE_LIST=await apiListInvites().catch(()=>[]); body.innerHTML=mgrSettings(); bindSettingsCtrls(); }
-  else if(mgrTab==='Activity') body.innerHTML=mgrList(DB.activity,'activity');
 }
 function allAgentLists(){
   const agents=DEMO_MODE? STAFF_LIST.filter(s=>s.role==='agent').map(s=>({name:s.name,key:s.key})) : DB.profiles.filter(p=>p.role==='agent').map(p=>({name:p.name,key:p.agent_key}));
