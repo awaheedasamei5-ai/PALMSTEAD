@@ -9063,7 +9063,9 @@ function paintContractAppBody(){
   const body=document.getElementById('contractAppBody'); if(!body) return;
   body.innerHTML=contractAppSettingsHtml()+`
   <div class="sectitle"><h3>Generate a contract</h3><span class="cnt">${CLIENTDB_LIST.length} client${CLIENTDB_LIST.length===1?'':'s'}</span></div>
-  <div class="searchbar" style="margin-bottom:12px"><input id="ca_q" placeholder="Search client by name or contact…" value="${esc(CONTRACTAPP_QUERY)}"/></div>
+  <p class="mini" style="margin:-2px 0 12px">Search an existing client below, or add a brand-new one first — either way you'll fill in their plot, price and payment plan before the contract downloads.</p>
+  <div class="searchbar" style="margin-bottom:10px"><input id="ca_q" placeholder="Search client by name or contact…" value="${esc(CONTRACTAPP_QUERY)}"/></div>
+  <div style="margin-bottom:14px"><button class="btn ghost" id="ca_newClient" style="width:100%">+ New client for a contract</button></div>
   <div id="ca_results">${logPaymentSearchResultsHtml(CONTRACTAPP_QUERY)}</div>`;
   bindContractAppCtrls();
 }
@@ -9071,6 +9073,8 @@ function bindContractAppCtrls(){
   const q=document.getElementById('ca_q');
   if(q) q.oninput=()=>{ CONTRACTAPP_QUERY=q.value; document.getElementById('ca_results').innerHTML=logPaymentSearchResultsHtml(CONTRACTAPP_QUERY); bindContractResultRows(); };
   bindContractResultRows();
+  const newBtn=document.getElementById('ca_newClient');
+  if(newBtn) newBtn.onclick=openContractNewClientModal;
   const saveBtn=document.getElementById('ca_saveSettings');
   if(saveBtn) saveBtn.onclick=async()=>{
     saveBtn.disabled=true; saveBtn.textContent='Saving…';
@@ -9092,6 +9096,44 @@ function bindContractResultRows(){
     b.disabled=true;
     try{ await buildContractOfSalePDF(lead); } catch(e){ toast('Could not generate: '+(e.message||e)); } finally { b.disabled=false; }
   });
+}
+// A brand-new client (not yet anywhere in the pipeline) still needs a real lead
+// record before a contract can exist for them -- this saves through the exact
+// same apiInsertLead() the Add Lead / Add Company Lead forms use, so the client
+// shows up everywhere else in the system too (Client Database, the relevant
+// pipeline, Plot Requests, etc.) instead of living only inside this PDF.
+function openContractNewClientModal(){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">New client for a contract</div><button id="ca_closeNewClient" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:14px">Saved as a real lead in the pipeline first — this is what the contract's price, deposit and monthly installment are computed from.</div>
+    ${fld('Client name *','<input id="ca_nc_name" placeholder="Full name"/>')}
+    ${fld('Contact *','<input id="ca_nc_contact" placeholder="0244…"/>')}
+    <div class="grid2">${fld('Plot type',sel('ca_nc_plot',['Full Plot','Half Plot']))}${fld('No. of plots','<input id="ca_nc_noplots" type="number" min="0.5" step="0.5" value="1"/>')}</div>
+    ${fld('Payment plan',sel('ca_nc_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}
+    ${fld('Amount already paid (GHS)','<input id="ca_nc_paid" type="number" placeholder="0"/>','optional — the deposit, if they\'ve already paid something')}
+    <div class="formactions"><button class="btn primary" id="ca_saveNewClient" style="width:100%">Save &amp; download contract</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('ca_closeNewClient').onclick=()=>ov.remove();
+  document.getElementById('ca_saveNewClient').onclick=async()=>{
+    const name=val('ca_nc_name').trim(), contact=val('ca_nc_contact').trim();
+    if(!name||!contact){ toast('Name and contact are required'); return; }
+    const l={name,contact,date:today(),stage:'1',priority:'Low',plotType:val('ca_nc_plot'),noPlots:val('ca_nc_noplots'),
+      unitPrice:null,discount:null,paymentPlan:val('ca_nc_plan'),siteVisit:'No',amtPaid:num(val('ca_nc_paid'))||0,nextAction:'',notes:''};
+    const c=computeLead(l);
+    const agentKey=PROFILE.role==='manager'?'company':PROFILE.key;
+    const btn=document.getElementById('ca_saveNewClient'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const row=await apiInsertLead(l,c,agentKey);
+      DB.leads.push(row); CLIENTDB_LIST.unshift(row);
+      toast('Client added — generating contract…'); ov.remove();
+      await buildContractOfSalePDF(row);
+      paintContractAppBody();
+    }catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save & download contract'; }
+  };
 }
 
 function buildClientReceiptPDF(payment,lead){
