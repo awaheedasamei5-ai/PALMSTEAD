@@ -698,9 +698,9 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
   <div class="card-auth" id="roleChoice">
     <div class="lbl" style="text-align:center">Sign in as</div>
     <div class="dd" id="roleDD">
-      <button class="dd-trigger" id="roleDDTrigger" type="button">
-        <span class="dd-text"><span class="dd-name" id="roleDDLabel">Choose Staff or Client</span></span>
-        <svg class="dd-chev" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <button class="dd-trigger" id="roleDDTrigger" type="button" style="justify-content:center;position:relative">
+        <span class="dd-text" style="flex:0 1 auto;text-align:center"><span class="dd-name" id="roleDDLabel">Choose Account Type</span></span>
+        <svg class="dd-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" style="position:absolute;right:13px"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <div class="dd-panel hidden" id="roleDDPanel">
         <div class="dd-item" data-role="staff" id="chooseStaffBtn">
@@ -7391,11 +7391,9 @@ function openLogPayEditModal(p,lead){
    Reproduces your real "AUTHORIZATION FORM-TSOPOLI SITE VISIT" paper form
    exactly (8-column client/visit table, then side-by-side Estimated/Actual
    cost blocks, then the two signature lines) -- one row per Mon-Fri week
-   (auto-created on first open). Costs lock the instant Friday begins
-   (weekLockInstant, defined with the other week helpers up top); Management
-   can still finalize a locked-but-unapproved week afterwards, they just can't
-   change the numbers anymore. Finalizing stamps the approver's saved
-   e-signature via apiFinalizeWeeklyVisitForm -> getStaffSignature.
+   (auto-created on first open). Costs stay editable for as long as the form is
+   Open; Finalizing is the only thing that locks the numbers, stamping the
+   approver's saved e-signature via apiFinalizeWeeklyVisitForm -> getStaffSignature.
    NOTE: the estimated side literally says "Vehicle Rentals" while the actual
    side says "Van Hiring" for the same row in your original form -- kept as-is
    on purpose, not a typo. */
@@ -7428,8 +7426,7 @@ async function paintSiteVisitAuthBody(){
   bindSiteVisitAuthCtrls();
 }
 function siteVisitAuthBodyHtml(form,visits){
-  const locked=isWeekLocked(form.weekStart);
-  const costsEditable=form.status==='Open'&&!locked;
+  const costsEditable=form.status!=='Finalized';
   const totalEst=svaCostTotal(form,'Est'), totalAct=svaCostTotal(form,'Act');
   return `
   <div class="rowcard" style="margin-bottom:16px">
@@ -7439,16 +7436,17 @@ function siteVisitAuthBodyHtml(form,visits){
         <div><div style="font-weight:800;font-size:15px">${esc(weekRangeLabel(form.weekStart))}</div><div class="mini">Week of ${esc(form.weekStart)}</div></div>
         <button class="iconbtn" id="svaNextWeek" title="Next week" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)">›</button>
       </div>
-      <span class="tag ${form.status==='Finalized'?'ok':'warnt'}">${esc(form.status)}${locked&&form.status==='Open'?' · costs locked':''}</span>
+      <span class="tag ${form.status==='Finalized'?'ok':'warnt'}">${esc(form.status)}</span>
     </div>
   </div>
 
   <div class="sectitle" style="margin-top:0"><h3>AUTHORIZATION FORM-TSOPOLI SITE VISIT</h3><span class="cnt">${visits.length} visit${visits.length===1?'':'s'} this week</span></div>
   <div style="overflow-x:auto;margin-bottom:18px;border:1px solid var(--line);border-radius:12px">
-    <table class="league-table" style="min-width:900px">
-      <thead><tr>${SVA_VISIT_COLS.map(([label])=>`<th>${esc(label)}</th>`).join('')}</tr></thead>
-      <tbody>${!visits.length?`<tr><td colspan="${SVA_VISIT_COLS.length}" style="text-align:center;color:var(--muted)">No site visits logged for this week yet.</td></tr>`:
-        visits.map(v=>`<tr>${SVA_VISIT_COLS.map(([,key])=>`<td>${esc(v[key]||'—')}</td>`).join('')}</tr>`).join('')}
+    <table class="league-table" style="min-width:960px">
+      <thead><tr>${SVA_VISIT_COLS.map(([label])=>`<th>${esc(label)}</th>`).join('')}<th></th></tr></thead>
+      <tbody>${!visits.length?`<tr><td colspan="${SVA_VISIT_COLS.length+1}" style="text-align:center;color:var(--muted)">No site visits logged for this week yet.</td></tr>`:
+        visits.map(v=>`<tr>${SVA_VISIT_COLS.map(([,key])=>`<td>${esc(v[key]||'—')}</td>`).join('')}
+          <td><button class="trashbtn" data-svadelvisit="${esc(v.id)}" title="Remove from this form"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V4h6v3m-8 0l1 13h8l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td></tr>`).join('')}
       </tbody>
     </table>
   </div>
@@ -7522,6 +7520,18 @@ function bindSiteVisitAuthCtrls(){
   };
   const dlBtn=document.getElementById('svaDownload');
   if(dlBtn) dlBtn.onclick=()=>buildWeeklyVisitAuthPDF(SVA_FORM,SVA_VISITS);
+  document.querySelectorAll('[data-svadelvisit]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.svadelvisit; const v=SVA_VISITS.find(x=>x.id===id); if(!v) return;
+    if(!confirm('Remove '+(v.name||'this client')+' from this week\'s authorization form? This deletes the site visit record entirely.')) return;
+    b.disabled=true;
+    try{
+      await apiDeleteVisit(id);
+      SVA_VISITS=SVA_VISITS.filter(x=>x.id!==id);
+      DB.sitevisits=(DB.sitevisits||[]).filter(x=>x.id!==id);
+      toast('Removed from the form');
+      await paintSiteVisitAuthBody();
+    }catch(e){ toast('Could not remove: '+(e.message||e)); b.disabled=false; }
+  });
 }
 /* Draws one bordered grid row at (x0,y), honoring per-cell colspan against
    colWidths, and returns the row height used. Mirrors an Excel/Word table
