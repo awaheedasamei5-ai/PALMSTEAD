@@ -20,6 +20,8 @@ const files = [
   'trulander-logo.png',
   'site-plan.jpg',
   'pipeline-template.xlsx',
+  'contract-cover.jpg',
+  'trulander-wordmark.png',
 ];
 
 fs.rmSync(webDir, { recursive: true, force: true });
