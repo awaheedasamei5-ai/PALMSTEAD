@@ -112,8 +112,8 @@ a{color:var(--green2)}
 .brand .sub{color:#A9BEDD;font-size:13.5px;margin-top:11px;letter-spacing:.02em}
 .card-auth{position:relative;width:100%;max-width:404px;background:rgba(255,255,255,.055);
   border:1px solid rgba(255,255,255,.14);border-radius:22px;padding:22px;backdrop-filter:blur(10px);
-  animation:fadeUp .55s .05s ease both;box-shadow:0 30px 70px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.03) inset;overflow:hidden}
-.card-auth::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  animation:fadeUp .55s .05s ease both;box-shadow:0 30px 70px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.03) inset}
+.card-auth::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:22px 22px 0 0;
   background:linear-gradient(90deg,transparent,rgba(132,204,22,.7),rgba(212,175,55,.6),transparent)}
 .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:#9DB2CC;margin:2px 2px 10px;font-weight:600}
 
@@ -1173,6 +1173,7 @@ function defaultConfig(){ return {
   quoteFooterAddress:'First Floor Alex Nerda Building. Nungua Nautical Beach Road Drive',
   receiptThanksText:'Thank you for your payment. This receipt confirms the amount above was received by us and applied to your account.',
   contractCeoName:'FRANK ADU PEPRAH',
+  contractCoverImage:'', contractWordmarkImage:'',
   contractPreamble:[
     'i. WHEREAS the Vendor is the beneficial owner of ALL THAT piece or parcel of land, containing an approximate area of {ACRES} acre more or less, situate at Royal Palm Enclave Tsopoli, Accra in the Greater Accra Region of the Republic of Ghana.',
     'ii. The Land was leased by the Dorsi Animle Family represented by the its Head and Lawful representative Numo Napoleon Tawiah Animle of the Shai Osudoku District of the Greater Accra with consent and concurrence of principal members of the family (here-in the Head Lessors) to TRULANDER JSF LIMITED represented by its CEO, Mr. FRANK ADU PEPRAH for a total land area measuring approximately 72.30 Acres (29.27 Hect) by a lease an Indenture dated 1st February, 2025 for a term of 80 years with an option to renew for a further term of 45 years with effect from 1st February, 2025.',
@@ -2348,7 +2349,9 @@ async function apiLoadConfig(){
       receiptThanksText:data.receipt_thanks_text||defaultConfig().receiptThanksText,
       contractCeoName:data.contract_ceo_name||defaultConfig().contractCeoName,
       contractPreamble:data.contract_preamble||defaultConfig().contractPreamble,
-      contractTerms:data.contract_terms||defaultConfig().contractTerms}; }
+      contractTerms:data.contract_terms||defaultConfig().contractTerms,
+      contractCoverImage:data.contract_cover_image||'',
+      contractWordmarkImage:data.contract_wordmark_image||''}; }
   }catch(e){}
   return CONFIG;
 }
@@ -2365,7 +2368,8 @@ async function apiSaveConfig(patch){
     quote_doc_type_text:CONFIG.quoteDocTypeText||'',quote_notes_text:CONFIG.quoteNotesText||'',
     quote_land_note_text:CONFIG.quoteLandNoteText||'',quote_footer_address:CONFIG.quoteFooterAddress||'',
     receipt_thanks_text:CONFIG.receiptThanksText||'',
-    contract_ceo_name:CONFIG.contractCeoName||'',contract_preamble:CONFIG.contractPreamble||'',contract_terms:CONFIG.contractTerms||''};
+    contract_ceo_name:CONFIG.contractCeoName||'',contract_preamble:CONFIG.contractPreamble||'',contract_terms:CONFIG.contractTerms||'',
+    contract_cover_image:CONFIG.contractCoverImage||null,contract_wordmark_image:CONFIG.contractWordmarkImage||null};
   const {error}=await sb.from('app_config').upsert(row); if(error) throw error;
 }
 async function apiSaveBirthday(agentKey,birthday){
@@ -3788,7 +3792,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -4078,6 +4082,7 @@ function mgrAppRoute(key){
   else if(key==='Company Leads') route('companyleads');
   else if(key==='Log Payment') route('logpayment');
   else if(key==='Site Visit Auth') route('sitevisitauth');
+  else if(key==='Contract of Sale') route('contractapp');
   else route('mgrTabView',key);
 }
 function mgrAppGridHtml(items){
@@ -4118,6 +4123,7 @@ function viewMore(){
       ...(canManagePlots()?[{key:'allocations',fic:'allocation',label:'Allocations'}]:[]),
       ...(canManagePayments()?[{key:'logpayment',fic:'savings',label:'Log Payment'}]:[]),
       ...(canViewClientDatabase()?[{key:'clientdb',fic:'savings',label:'Client Database'},{key:'companyleads',fic:'briefcase',label:'Company Leads'},{key:'sitevisitauth',fic:'clipboard',label:'Site Visit Auth'}]:[]),
+      ...(canManageContracts()?[{key:'contractapp',fic:'document',label:'Contract of Sale'}]:[]),
       {key:'account',fic:'settings',label:'Settings'}
     ];
     grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
@@ -8988,6 +8994,106 @@ async function buildContractOfSalePDF(lead){
   const fname='ContractOfSale_'+(lead.name||'client').replace(/\s+/g,'_')+'.pdf';
   const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
 }
+
+/* ================= CONTRACT OF SALE APP =================
+   Standalone app for whoever actually produces contracts (Elizabeth +
+   Management): search a client, generate their Contract of Sale PDF, and edit
+   everything the document is built from -- the cover photo, the wordmark, the
+   CEO name, and the legal text -- without touching code. Uploaded images replace
+   the file-based defaults the instant they're saved (ensureContractAssets() picks
+   them up next time, after the cache-reset below); the PDF's own pagination
+   (pdfContractBody) already keeps every border/line/footer intact no matter how
+   long the edited text runs, so nothing here needs to know about layout. */
+function canManageContracts(){ return PROFILE.role==='manager' || PROFILE.key==='elizabeth'; }
+function readImageFileAsDataUri(file,maxW){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('Could not read that file'));
+    reader.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error('Could not read that image'));
+      img.onload=()=>{
+        const scale=Math.min(1,maxW/img.width);
+        const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+        const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+let CONTRACTAPP_QUERY='';
+async function viewContractApp(){
+  if(!canManageContracts()){ V.innerHTML=back('more')+emptyState(ic.doc,'Restricted','Contract of Sale is limited to Elizabeth and Management.'); return; }
+  CONTRACTAPP_QUERY='';
+  V.innerHTML=`${back('more')}<div class="pagehead"><div><div class="eyebrow">Contracts</div><h2>Contract of Sale</h2><p>Generate a client's contract, or edit the text and images it's built from.</p></div></div>
+  <div id="contractAppBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load clients: '+(e.message||e)); } }
+  paintContractAppBody();
+}
+function contractAppSettingsHtml(){
+  return `
+  <div class="sectitle" style="margin-top:0"><h3>Contract settings</h3><span class="cnt">everything the PDF is built from</span></div>
+  <div class="rowcard" style="margin-bottom:18px">
+    <div class="grid2">
+      <div>
+        <div class="mini" style="margin-bottom:6px;font-weight:700">Cover photo</div>
+        <div style="width:100%;aspect-ratio:210/297;max-height:160px;border-radius:10px;overflow:hidden;background:#F4F6F5;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;margin-bottom:8px">
+          <img src="${CONFIG.contractCoverImage||'./contract-cover.jpg'}" style="width:100%;height:100%;object-fit:cover"/>
+        </div>
+        <input type="file" id="ca_coverFile" accept="image/png,image/jpeg"/>
+      </div>
+      <div>
+        <div class="mini" style="margin-bottom:6px;font-weight:700">Trulander wordmark</div>
+        <div style="width:100%;height:160px;border-radius:10px;overflow:hidden;background:#F4F6F5;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;margin-bottom:8px">
+          <img src="${CONFIG.contractWordmarkImage||'./trulander-wordmark.png'}" style="max-width:90%;max-height:90%;object-fit:contain"/>
+        </div>
+        <input type="file" id="ca_wordmarkFile" accept="image/png,image/jpeg"/>
+      </div>
+    </div>
+    ${fld('Vendor CEO name','<input id="ca_ceoName" value="'+esc(CONFIG.contractCeoName||'')+'"/>','shown throughout as the Vendor\'s signatory')}
+    ${fld('Preamble (the "WHEREAS" lease background)','<textarea id="ca_preamble" rows="8">'+esc(CONFIG.contractPreamble||'')+'</textarea>','one blank line between paragraphs — keep the "i. / ii. / iii." markers; {ACRES} is replaced with each client\'s land size')}
+    ${fld('Terms (sections 1-6)','<textarea id="ca_terms" rows="12">'+esc(CONFIG.contractTerms||'')+'</textarea>','"1. DEFINITIONS..." starts a bold section, "1.1 ..." a sub-heading, "1.1.1 ..." / "a. ..." a numbered item — any length reflows automatically, the page border and footer stay put')}
+    <div class="formactions"><button class="btn primary" id="ca_saveSettings" style="width:100%">Save contract settings</button></div>
+  </div>`;
+}
+function paintContractAppBody(){
+  const body=document.getElementById('contractAppBody'); if(!body) return;
+  body.innerHTML=contractAppSettingsHtml()+`
+  <div class="sectitle"><h3>Generate a contract</h3><span class="cnt">${CLIENTDB_LIST.length} client${CLIENTDB_LIST.length===1?'':'s'}</span></div>
+  <div class="searchbar" style="margin-bottom:12px"><input id="ca_q" placeholder="Search client by name or contact…" value="${esc(CONTRACTAPP_QUERY)}"/></div>
+  <div id="ca_results">${logPaymentSearchResultsHtml(CONTRACTAPP_QUERY)}</div>`;
+  bindContractAppCtrls();
+}
+function bindContractAppCtrls(){
+  const q=document.getElementById('ca_q');
+  if(q) q.oninput=()=>{ CONTRACTAPP_QUERY=q.value; document.getElementById('ca_results').innerHTML=logPaymentSearchResultsHtml(CONTRACTAPP_QUERY); bindContractResultRows(); };
+  bindContractResultRows();
+  const saveBtn=document.getElementById('ca_saveSettings');
+  if(saveBtn) saveBtn.onclick=async()=>{
+    saveBtn.disabled=true; saveBtn.textContent='Saving…';
+    try{
+      const patch={contractCeoName:val('ca_ceoName').trim(),contractPreamble:val('ca_preamble').trim(),contractTerms:val('ca_terms').trim()};
+      const coverFile=document.getElementById('ca_coverFile'), wordmarkFile=document.getElementById('ca_wordmarkFile');
+      if(coverFile.files[0]) patch.contractCoverImage=await readImageFileAsDataUri(coverFile.files[0],900);
+      if(wordmarkFile.files[0]) patch.contractWordmarkImage=await readImageFileAsDataUri(wordmarkFile.files[0],500);
+      await apiSaveConfig(patch);
+      CONTRACT_COVER_IMG=null; TRULANDER_WORDMARK_IMG=null; // force a re-fetch so the new image is used next time
+      toast('Contract settings saved');
+      paintContractAppBody();
+    }catch(e){ toast('Could not save: '+(e.message||e)); saveBtn.disabled=false; saveBtn.textContent='Save contract settings'; }
+  };
+}
+function bindContractResultRows(){
+  document.querySelectorAll('[data-lpsel]').forEach(b=>b.onclick=async()=>{
+    const lead=CLIENTDB_LIST.find(x=>x.id===b.dataset.lpsel); if(!lead) return;
+    b.disabled=true;
+    try{ await buildContractOfSalePDF(lead); } catch(e){ toast('Could not generate: '+(e.message||e)); } finally { b.disabled=false; }
+  });
+}
+
 function buildClientReceiptPDF(payment,lead){
   const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,(CLIENT_DB&&CLIENT_DB.leads)||[],CLIENT_PROFILE.name);
   const doc=buildReceiptPDF(CLIENT_PROFILE.name,payment,lead,undefined,portfolioTotal); if(!doc) return;
@@ -9261,6 +9367,7 @@ const MGR_APPS=[
   {key:'Complaints',fic:'alert',label:'Client Feedback',badgeKind:'complaint',section:'crm'},
   {key:'Site visits',fic:'location',label:'Site Visits',badgeKind:'sitevisit',section:'crm'},
   {key:'Site Visit Auth',fic:'clipboard',label:'Site Visit Auth'},
+  {key:'Contract of Sale',fic:'document',label:'Contract of Sale'},
   {key:'Log Payment',fic:'savings',label:'Log Payment'},
   {key:'News',fic:'announce',label:'News & Announcements'},
   {key:'Commission',fic:'savings',label:'Commission'},
@@ -10134,15 +10241,6 @@ function mgrSettings(){
   <div class="formactions"><button class="btn primary" id="saveQuoteText">Save text</button></div>
   </div>
 
-  <div class="sectitle"><h3>Contract of Sale text</h3><span class="cnt">printed on the Contract of Sale PDF</span></div>
-  <div class="formwrap">
-  <p class="mini" style="margin:-2px 0 14px">The transaction numbers (price, deposit, monthly installment, land size) are always computed live from the client's own pipeline record — only the legal wording below is editable.</p>
-  ${fld('Vendor CEO name','<input id="cfg_contractCeoName" value="'+esc(CONFIG.contractCeoName||'')+'"/>','shown throughout as the Vendor\'s signatory')}
-  ${fld('Preamble (the "WHEREAS" lease background)','<textarea id="cfg_contractPreamble" rows="10">'+esc(CONFIG.contractPreamble||'')+'</textarea>','one blank line between paragraphs — keep the "i. / ii. / iii." markers so each renders as a numbered item; {ACRES} is replaced with this client\'s land size')}
-  ${fld('Terms (sections 1-6: definitions, warranties, payments &amp; defaults, governing law, notices)','<textarea id="cfg_contractTerms" rows="14">'+esc(CONFIG.contractTerms||'')+'</textarea>','one blank line between paragraphs — "1. DEFINITIONS..." starts a bold section, "1.1 Definitions" a sub-heading, "1.1.1 ..." / "a. ..." a numbered item, matching the printed form exactly')}
-  <div class="formactions"><button class="btn primary" id="saveContractText">Save contract text</button></div>
-  </div>
-
   <div class="sectitle"><h3>Plot pricing</h3><span class="cnt">applies to new leads immediately</span></div>
   <div class="formwrap">
   <div class="grid2">${fld('Full Plot price (GHS)','<input id="cfg_fullPrice" type="number" value="'+CONFIG.fullPrice+'"/>')}${fld('Full Plot standard discount (GHS)','<input id="cfg_fullDiscount" type="number" value="'+CONFIG.fullDiscount+'"/>')}</div>
@@ -10246,15 +10344,6 @@ function bindSettingsCtrls(){
       toast('Text saved');
     }catch(e){ toast('Failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save text';
-  };
-  document.getElementById('saveContractText').onclick=async()=>{
-    const btn=document.getElementById('saveContractText'); btn.disabled=true; btn.textContent='Saving…';
-    try{
-      await apiSaveConfig({contractCeoName:val('cfg_contractCeoName').trim(),contractPreamble:val('cfg_contractPreamble').trim(),
-        contractTerms:val('cfg_contractTerms').trim()});
-      toast('Contract text saved');
-    }catch(e){ toast('Failed: '+(e.message||e)); }
-    btn.disabled=false; btn.textContent='Save contract text';
   };
   document.getElementById('saveCfg').onclick=async()=>{
     const btn=document.getElementById('saveCfg'); btn.disabled=true; btn.textContent='Saving…';
