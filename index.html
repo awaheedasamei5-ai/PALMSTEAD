@@ -832,6 +832,12 @@ const favicon = document.querySelector('link[rel="icon"]'); if(favicon) favicon.
 // to read synchronously even though LOGO_SRC/TRULANDER_LOGO_SRC are now external files.
 const LOGO_IMG = new Image(); LOGO_IMG.src = LOGO_SRC;
 const TRULANDER_LOGO_IMG = new Image(); TRULANDER_LOGO_IMG.src = TRULANDER_LOGO_SRC;
+// The real Contract of Sale cover photo (exact reproduction, see buildContractOfSalePDF).
+const CONTRACT_COVER_IMG = new Image(); CONTRACT_COVER_IMG.src = './contract-cover.jpg';
+// The actual "Trulander" wordmark (navy+yellow) as printed on the contract's title
+// page -- distinct from TRULANDER_LOGO_IMG, which is really the Royal Palm circular
+// icon despite its name, used elsewhere for the quotation PDF header.
+const TRULANDER_WORDMARK_IMG = new Image(); TRULANDER_WORDMARK_IMG.src = './trulander-wordmark.png';
 // jsPDF's addImage() only reliably survives a second buildDocument() pass (i.e. doc.save()
 // after doc.output()) when given a base64 data URI -- an <img> element makes the SECOND
 // pass throw deep inside jsPDF's internal PubSub/putCatalog step and silently abort the
@@ -1156,7 +1162,80 @@ function defaultConfig(){ return {
   quoteNotesText:'Kindly make all payments by cheque or transfer to Trulander JSF Ltd.\nQuotation and offer is valid for 10 days only.\nKindly ensure all payments are receipted with Trulander receipts.\nBank Details: Ecobank Account No. 1441002259946, Spintex Branch.\nKindly note all payments shall be latest by the 27th of each month.\nWe accept either post-dated cheques or standing orders for credit payment.',
   quoteLandNoteText:'We offer to deliver all Land Indentures and Certified Site plan within 3 weeks after Full payment',
   quoteFooterAddress:'First Floor Alex Nerda Building. Nungua Nautical Beach Road Drive',
-  receiptThanksText:'Thank you for your payment. This receipt confirms the amount above was received by us and applied to your account.'
+  receiptThanksText:'Thank you for your payment. This receipt confirms the amount above was received by us and applied to your account.',
+  contractCeoName:'FRANK ADU PEPRAH',
+  contractPreamble:[
+    'i. WHEREAS the Vendor is the beneficial owner of ALL THAT piece or parcel of land, containing an approximate area of {ACRES} acre more or less, situate at Royal Palm Enclave Tsopoli, Accra in the Greater Accra Region of the Republic of Ghana.',
+    'ii. The Land was leased by the Dorsi Animle Family represented by the its Head and Lawful representative Numo Napoleon Tawiah Animle of the Shai Osudoku District of the Greater Accra with consent and concurrence of principal members of the family (here-in the Head Lessors) to TRULANDER JSF LIMITED represented by its CEO, Mr. FRANK ADU PEPRAH for a total land area measuring approximately 72.30 Acres (29.27 Hect) by a lease an Indenture dated 1st February, 2025 for a term of 80 years with an option to renew for a further term of 45 years with effect from 1st February, 2025.',
+    'iii. WHEREAS the Head Lessor interest has been duly registered at the Land Title Registry of the Lands Commission with Land Title Certificate No. TD.23221.',
+    'iv. WHERAS the Deed dated 1st February, 2025 between the Trulander JSF Limited and the Head Lessor has been registered at the Lands Commission as LVDGAST97782872025A and Survey Plotted Plan No. X4114.',
+    'v. The Vendor has obtained the consent of the Head lessors to assign his unexpired interest in the lease to the purchaser herein and the Purchaser has requested to purchase the land, subject to the terms and conditions hereinafter stated.'
+  ].join('\n\n'),
+  contractTerms:[
+    '1. DEFINITIONS AND INTERPRETATION',
+    '1.1 Definitions',
+    'Unless the context otherwise requires, the following words used in this Agreement shall have the meanings ascribed to them in this Clause 1.1.',
+    '1.1.1 "Agreement" means this Contract of Sale.',
+    '1.1.2 "Encumbrance" means any mortgage, charge, pledge, lien, option, restriction, right of first refusal, third party right or interest, or other encumbrance or security interest of any kind, or another type of arrangement having similar effect, or which diminishes the value of the Property;',
+    '1.1.3 "Parties" means the Vendor and the Purchaser, and "Party" means the Vendor or the Purchaser;',
+    '1.1.4 "Land" means ALL THAT LAND in consideration of this transaction between the Vendor and the Purchaser.',
+    '1.1.5 "Purchaser" and "Vendor" shall have the meaning afore stated',
+    '1.2 Interpretation',
+    'In this Agreement, unless the context otherwise requires:',
+    '1.2.1 Sections, Clauses, Paragraphs and Headings are for ease of reference only and are not meant to be used in interpreting the provisions of this Agreement.',
+    '1.2.2 Reference to "days" means calendar days.',
+    '1.2.3 All Schedules form part of this Agreement.',
+    '2. REPRESENTATIONS AND WARRANTIES',
+    '2.1 The Vendor makes the following representations and warranties to the Purchaser:',
+    '2.1.1 It has the requisite capacity to enter into this Agreement as the beneficial owner of the Property.',
+    '2.1.2 The Property is not subject to any encumbrance which has not been disclosed to the Purchaser.',
+    '2.1.3 There is no restrictive covenant with regard to the Property as at the date of executing this Agreement which has not been disclosed to the Purchaser.',
+    '2.1.4 That it shall give full vacant possession to the Purchasers upon receipt of full payment.',
+    '2.1.5 That the Vendor shall execute a Sublease Deed in favor of the Purchaser upon full payment of the Consideration or Purchase Price within 3 weeks.',
+    '2.1.6 That the Vendor shall execute a Certified Site-plan in favor of the Vendor. Barcoded site-plan shall be at the expense of the Purchaser.',
+    '2.1.7 During the validity period of the Lease, the Vendor guarantees that the Property acquired herein will not be leased, sold or mortgaged to a third party.',
+    '2.1.8 The Purchaser shall peaceably enjoy the Property without any unlawful interference by the Vendor or anyone claiming under or through the Vendor upon full payment of consideration and execution of this Agreement.',
+    '2.1.9 Vendor shall keep plots allocated in clause (E) for Purchaser except in case of default of payment or breach of this Contract.',
+    '2.2 The Purchaser makes the following representations and warranties to the Vendor:',
+    '2.2.1 That the Purchaser has inspected the land and have dutifully done his independent due diligence to satisfy himself under the guidance of his Counsel or Solicitor.',
+    '2.2.2 That the Purchaser enters into this agreement as a result of his own satisfaction of any representation or warranty either written, oral or implied, made by or on behalf of the Vendor of anything whatsoever subject to the agreement and that this agreement contains the entire agreement between the parties.',
+    '2.2.3 That the Purchaser has the funds to pay for the Purchase Price and warrants to make such payments per the payment plan as agreed.',
+    '2.2.4 That the Purchaser shall be responsible for the cost of registering his interest in the Land at the Land Commission.',
+    '2.2.5 That the Purchaser shall be responsible to undertake all activities necessary to take possession of the land once allocation is done including but not limited to the construction of a 4feet protective or non-trespass wall.',
+    '2.2.6 The Purchaser shall develop the Property within 30 months. Development shall be defined at the least as the construction of a protective fence of about 4feets tall within the first 12months. Development is to protect buyers\' interest from any possible encroachment or trespass from neighboring Landowners.',
+    '2.2.7 The Purchaser shall retain the option to join the Palm Enclave Property-Owners Association (PEPA) to further develop the key infrastructure within the enclave for their mutual benefit.',
+    '2.2.8 The Purchaser shall be responsible for the management of the land to the satisfaction of his right to enjoyment of the land which includes his rights to own, protect, right of usage and occupation. That the right to enjoyment of his Land shall not be to the disadvantage of others.',
+    '2.2.9 The Purchaser shall peaceably enjoy the Property without any interference caused by the Vendor or anyone claiming under or through the Vendor.',
+    '2.2.10 The Purchaser shall observe and perform the covenants and conditions here-in stated and shall indemnify and keep the Vendor and his successors in title fully indemnified against all actions, proceedings, damages, costs, claims and expenses which may be suffered or incurred by the Purchaser or his successors in title in respect of any future breach or non-observance or non-performance of these covenants and conditions.',
+    '2.2.11 The Land location is designated as a Residential Land. Purchaser shall develop Standard residential property of 1-3 floors for the location above. Vendor and Purchaser shall access suitability of above location for any planned mid-to-high rise buildings.',
+    '2.2.12 The Purchaser shall pay GHS100 per plot as annual ground rent. This amount shall be due by the 31st December of every calendar year and due for renewal every 10years at not less than 10% of previous rent.',
+    '3. PARTIES HEREBY FURTHER AGREE AS FOLLOWS: PAYMENTS, DEFAULTS AND REFUND',
+    '3.1 Payments and Defaults',
+    'a. All payments shall be made to the Companies Bank Accounts and Designated Platforms',
+    'b. All Payments shall be receipted in the name and in favor of the Purchaser',
+    'c. Payment plans as agreed shall be strictly adhered to.',
+    'd. Purchaser undertakes to pay a 5% monthly penal charge on each month of default on the outstanding due payable except otherwise agreed.',
+    'e. Monthly penal charges on defaults shall be calculated on compound interest basis.',
+    'f. Monthly Penal charges shall automatically apply 5 days after the default date except explicitly expressed and agreed in writing.',
+    '3.2 A Refund shall be paid under the following conditions:',
+    'a. Monthly Penal charges shall automatically apply 5 days after the default date except explicitly expressed and agreed in writing.',
+    'b. Where Vendor cancels sales transaction or this contract due to failure of Purchaser to meet payment obligation. Vendor shall issue a Notice of Refund Letter.',
+    'c. Formal cancellation notice shall be issued where Purchaser fails to make payments due on two (2) consecutive deadlines. Refund Notice shall be issued Seven (7) days after Notice of Cancellation.',
+    'd. Where Purchaser cancels the transaction and this contract and request for a refund of consideration paid due to Personal challenges other-than breach of agreement by Vendor. Purchaser shall issue a Request for Refund Letter 7 days after issue of cancellation notice.',
+    'e. Where Purchaser cancels the transaction and this contract due to Vendors breach of this Contract. Refer 3.3 below',
+    '3.3 All Refunds shall follow the following process:',
+    'a. A request or notification of refund shall be made by a formal document written as above',
+    'b. Refunds for Installment payments shall be paid in full after 90days subject to clause 3.3(d).',
+    'c. Refund for an outright payment shall be made after 60 days.',
+    'd. Ten percent (10%) of the land value shall be deducted as administrative charge plus any commission or agency fees.',
+    'e. Where refund arises due to breach by Vendor clause 3.3(d) shall not be applicable.',
+    '4. GOVERNING LAW',
+    'This Agreement shall be governed by and construed in accordance with the laws of the Republic of Ghana. Any dispute that shall arise in respect of this agreement shall be resolved amicably between the parties within 21 working days from the date of the dispute. Failure by the parties to resolve the dispute, a Party shall reserve the right to seek redress of all matters by Arbitration under the Alternative Dispute Resolutions Act, 2010 (Act 798) of the Republic of Ghana.',
+    '5. ENTIRE UNDERSTANDING',
+    'This Contract constitutes the entire agreement and understanding between the parties hereto and supersedes any prior written or oral agreements, representation and warranties between them respecting the subject matter hereof.',
+    '6. NOTICES',
+    'Any notice to be given by any Party shall be in writing and shall be deemed duly served if delivered personally to the addressee at the registered address of that party set opposite its name below or at such other address as the party to be served may have notified in accordance with the provision of this clause for the purposes of this agreement.'
+  ].join('\n\n')
 };}
 let CONFIG=defaultConfig();
 function PRICING(){ return {'Full Plot':{list:num(CONFIG.fullPrice),disc:num(CONFIG.fullDiscount),eq:1},
@@ -2257,7 +2336,10 @@ async function apiLoadConfig(){
       quoteNotesText:data.quote_notes_text||defaultConfig().quoteNotesText,
       quoteLandNoteText:data.quote_land_note_text||defaultConfig().quoteLandNoteText,
       quoteFooterAddress:data.quote_footer_address||defaultConfig().quoteFooterAddress,
-      receiptThanksText:data.receipt_thanks_text||defaultConfig().receiptThanksText}; }
+      receiptThanksText:data.receipt_thanks_text||defaultConfig().receiptThanksText,
+      contractCeoName:data.contract_ceo_name||defaultConfig().contractCeoName,
+      contractPreamble:data.contract_preamble||defaultConfig().contractPreamble,
+      contractTerms:data.contract_terms||defaultConfig().contractTerms}; }
   }catch(e){}
   return CONFIG;
 }
@@ -2273,7 +2355,8 @@ async function apiSaveConfig(patch){
     quote_company_name:CONFIG.quoteCompanyName||'',quote_site_name:CONFIG.quoteSiteName||'',
     quote_doc_type_text:CONFIG.quoteDocTypeText||'',quote_notes_text:CONFIG.quoteNotesText||'',
     quote_land_note_text:CONFIG.quoteLandNoteText||'',quote_footer_address:CONFIG.quoteFooterAddress||'',
-    receipt_thanks_text:CONFIG.receiptThanksText||''};
+    receipt_thanks_text:CONFIG.receiptThanksText||'',
+    contract_ceo_name:CONFIG.contractCeoName||'',contract_preamble:CONFIG.contractPreamble||'',contract_terms:CONFIG.contractTerms||''};
   const {error}=await sb.from('app_config').upsert(row); if(error) throw error;
 }
 async function apiSaveBirthday(agentKey,birthday){
@@ -6808,6 +6891,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   <div style="margin-bottom:18px"><button class="chip" id="viewLedgerBtn" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.calendar}</span>Log payment for a specific month →</button></div>
   <div style="margin-bottom:18px"><button class="btn primary" id="dlUpdPdf" style="width:100%">⬇ Download this client's pipeline (PDF)</button></div>
   <div style="margin-bottom:18px"><button class="btn ghost" id="dlUpdQuote" style="width:100%">⬇ Download quotation</button></div>
+  <div style="margin-bottom:18px"><button class="btn ghost" id="dlUpdContract" style="width:100%">⬇ Download Contract of Sale</button></div>
 
   <div class="dangerzone"><div class="dz-text"><b>Delete this client</b><br>Permanently removes ${esc(l.name)} and their record from the pipeline. This can't be undone.</div>
   <button class="btn danger" id="delLead">Delete client</button></div>`;
@@ -6836,6 +6920,7 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   document.getElementById('delLead').onclick=()=>deleteLeadConfirm(id,l.name);
   document.getElementById('dlUpdPdf').onclick=()=>downloadClientRecordPDF(l.name,l.contact,l,myPayments,g,num(l.amtPaid),bal);
   document.getElementById('dlUpdQuote').onclick=()=>buildClientQuotationPDF(l);
+  document.getElementById('dlUpdContract').onclick=()=>buildContractOfSalePDF(l);
   const viewSchedBtn=document.getElementById('viewSchedBtn'); if(viewSchedBtn) viewSchedBtn.onclick=()=>route('paymentSchedule',id);
   document.getElementById('viewLedgerBtn').onclick=()=>route('paymentSchedule',id);
   const saveDocStageBtn=document.getElementById('saveDocStage');
@@ -8620,6 +8705,262 @@ function buildReceiptPDF(clientName,payment,lead,existingDoc,portfolioTotal){
 
   return doc;
 }
+/* ================= CONTRACT OF SALE =================
+   Exact reproduction of Trulander's real paper "Registration & Contract of Sale
+   Form" -- same cover photo, same double-ruled border, same navy serif type, same
+   KYC layout and clause numbering as the physical document. Only the blank
+   lines/checkboxes get filled with this lead's own data; the legal boilerplate
+   (sections 1-6, and the WHEREAS lease background) is stored in Manager > Config >
+   Contract of Sale text so it can be corrected without a code change, but the
+   numbering in that text drives the hanging-indent list styling in
+   pdfContractBody() below. */
+// ---- exact-fidelity renderer: navy serif type, double-ruled border, "pg. N" ----
+const CONTRACT_INK=[31,56,99];
+const CONTRACT_MONTH_WORDS={3:'Three',6:'Six',9:'Nine',12:'Twelve'};
+function pdfContractBorder(doc,pageW,pageH){
+  doc.setDrawColor(51,51,51); doc.setLineWidth(0.5); doc.rect(6,6,pageW-12,pageH-12);
+  doc.setLineWidth(0.3); doc.rect(7.5,7.5,pageW-15,pageH-15);
+}
+function pdfContractNewPage(doc,n){
+  doc.addPage();
+  const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
+  pdfContractBorder(doc,pageW,pageH);
+  doc.setFont('times','normal'); doc.setFontSize(9); doc.setTextColor(90,110,150);
+  doc.text('pg. '+n,14,pageH-14);
+  doc.setTextColor(...CONTRACT_INK);
+  return 26;
+}
+function pdfContractField(doc,x,y,w,label,value){
+  doc.setFont('times','normal'); doc.setFontSize(10.5); doc.setTextColor(...CONTRACT_INK);
+  const lab=label?(label+': '):''; const labW=lab?doc.getTextWidth(lab):0;
+  if(lab) doc.text(lab,x,y);
+  if(value) doc.text(String(value),x+labW+1,y);
+  doc.setDrawColor(...CONTRACT_INK); doc.setLineDashPattern([0.6,0.6],0);
+  doc.line(x+labW,y+0.8,x+w,y+0.8); doc.setLineDashPattern([],0);
+}
+function pdfContractCheckbox(doc,x,y,label,checked){
+  const s=3.6;
+  doc.setDrawColor(...CONTRACT_INK); doc.setLineWidth(0.4); doc.rect(x,y-3.1,s,s);
+  if(checked){ doc.setFont('times','bold'); doc.setFontSize(9); doc.text('X',x+0.6,y-0.3); }
+  doc.setFont('times','normal'); doc.setFontSize(10.5);
+  if(label) doc.text(label,x+s+2,y);
+  return x+s+2+(label?doc.getTextWidth(label):0)+7;
+}
+function pdfContractCheckRow(doc,x,y,pageW,options,selected){
+  let cx=x;
+  options.forEach(opt=>{
+    const w=3.6+2+doc.getTextWidth(opt)+7;
+    if(cx+w>pageW-14){ cx=x; y+=8; }
+    cx=pdfContractCheckbox(doc,cx,y,opt,!!selected&&String(selected).toLowerCase()===opt.toLowerCase());
+  });
+  return y+8;
+}
+// Renders CONFIG-editable legal text using the reference form's own clause
+// numbering: bare "N. HEADING" paragraphs become section headings, "N.N ..."
+// become bold sub-headings, and "N.N.N" / roman-numeral / lettered paragraphs
+// become hanging-indent list items -- so Management's edits keep typesetting
+// correctly without a code change.
+function pdfContractBody(doc,y,n,text){
+  const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
+  const marginR=pageW-14;
+  function ensure(need){ if(y+need>pageH-20){ n++; y=pdfContractNewPage(doc,n); } }
+  function listItem(markerX,bodyX,marker,body,boldMarker){
+    const w=marginR-bodyX, lines=doc.splitTextToSize(body,w), h=Math.max(lines.length*5.6,5.6);
+    ensure(h+3);
+    doc.setFont('times',boldMarker?'bold':'normal'); doc.setFontSize(10); doc.setTextColor(...CONTRACT_INK);
+    doc.text(marker,markerX,y);
+    doc.setFont('times','normal'); doc.setFontSize(10);
+    doc.text(body,bodyX,y,{maxWidth:w,align:'justify'});
+    y+=h+3;
+  }
+  String(text||'').split(/\n\s*\n/).forEach(raw=>{
+    const para=raw.trim(); if(!para) return;
+    doc.setTextColor(...CONTRACT_INK);
+    const isSectionHeading=/^\d+\.\s+[A-Z]/.test(para) && para===para.toUpperCase();
+    const threeLevel=!isSectionHeading && para.match(/^(\d+(?:\.\d+){2,})\s+([\s\S]+)$/);
+    const romanOrLetter=!isSectionHeading && !threeLevel && para.match(/^((?:[ivx]+|[a-z]))\.\s+([\s\S]+)$/i);
+    const twoLevel=!isSectionHeading && !threeLevel && !romanOrLetter && para.match(/^(\d+\.\d+)\s+([\s\S]+)$/);
+    if(isSectionHeading){
+      doc.setFont('times','bold'); doc.setFontSize(12.5);
+      const hLines=doc.splitTextToSize(para,marginR-14);
+      ensure(hLines.length*7+16); y+=4;
+      doc.text(hLines,14,y); y+=hLines.length*7+4;
+    } else if(threeLevel){
+      listItem(20,38,threeLevel[1],threeLevel[2],false);
+    } else if(romanOrLetter){
+      listItem(20,38,romanOrLetter[1]+'.',romanOrLetter[2],false);
+    } else if(twoLevel){
+      const bodyIsHeading=twoLevel[2]===twoLevel[2].toUpperCase() && twoLevel[2].length<40;
+      if(bodyIsHeading){
+        ensure(10);
+        doc.setFont('times','bold'); doc.setFontSize(11);
+        doc.text(twoLevel[1]+'  '+twoLevel[2],14,y); y+=8;
+      } else {
+        listItem(14,30,twoLevel[1],twoLevel[2],true);
+      }
+    } else {
+      const w=marginR-14, lines=doc.splitTextToSize(para,w), h=lines.length*5.6;
+      ensure(h+4);
+      doc.setFont('times','normal'); doc.setFontSize(10);
+      doc.text(para,14,y,{maxWidth:w,align:'justify'});
+      y+=h+4;
+    }
+  });
+  return {y,n};
+}
+// A "full plot" is 70x100ft (7,000 sqft = 0.1607 acres); a "half plot" is half that
+// -- matches the reference contract's own math (2 full plots = 0.32 acres exactly).
+function contractAcres(lead){
+  const perPlot=lead.plotType==='Half Plot'?0.0804:0.1607;
+  return Math.round(perPlot*(num(lead.noPlots)||1)*100)/100;
+}
+function buildContractOfSalePDF(lead){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
+  const t=computeLeadQuotationTotals(lead);
+  const depositPct=t.grand?Math.round((t.deposit/t.grand)*1000)/10:0;
+  const planLabel=lead.paymentPlan==='Full Payment'||!lead.paymentPlan?'Outright':lead.paymentPlan;
+  const vendorName=(CONFIG.quoteCompanyName||'Trulander JSF Limited').toUpperCase();
+  const ceo=(CONFIG.contractCeoName||'FRANK ADU PEPRAH').toUpperCase();
+  const acres=contractAcres(lead);
+  let n=1,y;
+
+  // ---- Page 1: cover -- the real marketing photo, unchanged ----
+  try{ doc.addImage(CONTRACT_COVER_IMG,'JPEG',0,0,pageW,pageH); }catch(e){}
+
+  // ---- Page 2: title page ----
+  n=2; y=pdfContractNewPage(doc,n);
+  doc.setFont('times','bold'); doc.setFontSize(14);
+  ['CONTRACT OF SALES','BETWEEN','TRULANDER JSF LTD.','AND'].forEach((line,i)=>doc.text(line,pageW/2,90+i*13,{align:'center'}));
+  doc.text(String(lead.name||'').toUpperCase(),pageW/2,90+4*13+8,{align:'center'});
+  try{ doc.addImage(TRULANDER_WORDMARK_IMG,'PNG',pageW/2-25,205,50,25); }catch(e){}
+  doc.setFont('times','normal'); doc.setFontSize(10.5);
+  doc.text('Post Office Box CO 3644',pageW/2,235,{align:'center'});
+  doc.text('Tema',pageW/2,241,{align:'center'});
+
+  // ---- Page 3: KYC I-III ----
+  n=3; y=pdfContractNewPage(doc,n);
+  doc.setFont('times','bold'); doc.setFontSize(11);
+  doc.text('KNOW YOUR CUSTOMER AND TRANSACTION DETAILS',pageW/2,y,{align:'center'}); y+=6;
+  doc.setFontSize(9.5);
+  doc.text('PLEASE READ CAREFULLY AND COMPLETE ALL RELEVANT SECTIONS.',pageW/2,y,{align:'center'}); y+=11;
+  doc.setFont('times','bold'); doc.setFontSize(11); doc.text('I. PERSONAL DETAILS',14,y); y+=9;
+  doc.setFont('times','normal'); doc.setFontSize(10.5);
+  doc.text('NAME OF CLIENT: '+String(lead.name||'').toUpperCase(),14,y); y+=10;
+  pdfContractField(doc,14,y,86,'NATIONALITY',''); pdfContractField(doc,108,y,86,'OCCUPATION',''); y+=10;
+  pdfContractField(doc,14,y,86,'DATE OF BIRTH',''); pdfContractField(doc,108,y,86,'PHONE',lead.contact||''); y+=12;
+  doc.text('ID TYPE:',14,y); pdfContractCheckRow(doc,34,y,pageW,['Voters','Passport','Ghana Card',"Driver's License"],''); y+=11;
+  pdfContractField(doc,14,y,pageW-28,'ID NO.',''); y+=10;
+  pdfContractField(doc,14,y,pageW-28,'ADDRESS',''); y+=10;
+  pdfContractField(doc,14,y,86,'EMAIL',''); pdfContractField(doc,108,y,86,'LOCATION',''); y+=13;
+
+  doc.setFont('times','bold'); doc.setFontSize(11); doc.text('II. CONTACT PERSON',14,y); y+=9;
+  doc.setFont('times','normal'); doc.setFontSize(10.5);
+  pdfContractField(doc,14,y,pageW-28,'NAME',''); y+=10;
+  pdfContractField(doc,14,y,86,'PHONE',''); pdfContractField(doc,108,y,86,'EMAIL',''); y+=10;
+  pdfContractField(doc,14,y,pageW-28,'ADDRESS',''); y+=10;
+  pdfContractField(doc,14,y,pageW-28,'RELATION TO CLIENT',''); y+=13;
+
+  doc.setFont('times','bold'); doc.setFontSize(11); doc.text('III. LAND USAGE AND DEVELOPMENT',14,y); y+=11;
+  doc.setFont('times','normal'); doc.setFontSize(10.5);
+  pdfContractCheckRow(doc,14,y,pageW,['Residential','Commercial'],'Residential'); y+=11;
+  pdfContractField(doc,14,y,pageW-28,'If commercial indicate exact usage',''); y+=16;
+  doc.text('PREFERRED PACKAGE: Carefully select a package that best suits your financial plan.',14,y); y+=10;
+  const pkgMap={'Full Payment':'1. OUTRIGHT','3 Months':'2. Three (3) Months','6 Months':'3. Six (6) Months','9 Months':'4. Nine (9) Months','12 Months':'5. Twelve (12) Months'};
+  pdfContractCheckRow(doc,14,y,pageW,['1. OUTRIGHT','2. Three (3) Months','3. Six (6) Months','4. Nine (9) Months','5. Twelve (12) Months'],pkgMap[lead.paymentPlan]||'');
+  doc.setFontSize(10);
+  doc.text("Note: Be reminded that without any payment we can't reserve your plots",14,pageH-30);
+
+  // ---- Page 4: KYC IV-VI ----
+  n=4; y=pdfContractNewPage(doc,n);
+  doc.setFont('times','bold'); doc.setFontSize(11); doc.text('IV. MODE OF PAYMENT:',14,y); y+=10;
+  doc.setFont('times','normal'); doc.setFontSize(10.5);
+  pdfContractCheckRow(doc,14,y,pageW,['1. Cheque','2. Bank deposit','3. Momo','5. Bank Transfer'],''); y+=10;
+  doc.text('All cheques should be written in the name of "'+vendorName+'"',14,y); y+=13;
+
+  doc.setFont('times','bold'); doc.setFontSize(11);
+  const hdLines=doc.splitTextToSize('V. HOW DID YOU HEAR ABOUT US? Please help us appreciate how you heard about '+(CONFIG.quoteCompanyName||'Trulander JSF Limited')+'.',pageW-28);
+  doc.text(hdLines,14,y); y+=hdLines.length*5.5+6;
+  doc.setFont('times','normal'); doc.setFontSize(10.5);
+  pdfContractCheckRow(doc,14,y,pageW,['1.Facebook','2. Instagram','3. LinkedIn','4. Google','5. TikTok','6. Website'],''); y+=10;
+  pdfContractCheckRow(doc,14,y,pageW,['7.Friends and Relatives','8. Sales Executive'],''); y+=10;
+  pdfContractField(doc,14,y,pageW-28,'Name of Sales Executive',''); y+=14;
+
+  doc.setFont('times','bold'); doc.setFontSize(11); doc.text('VI. OFFICIAL USE ONLY',14,y); y+=10;
+  doc.setFont('times','normal'); doc.setFontSize(10.5);
+  doc.text('Payment Terms: Cash',14,y); pdfContractCheckbox(doc,52,y,'',false);
+  doc.text('Credit',60,y); pdfContractCheckbox(doc,73,y,'',false);
+  pdfContractField(doc,81,y,pageW-14-81,'Number of plots',(num(lead.noPlots)||1)+' x '+(lead.plotType||'Full Plot')); y+=10;
+  pdfContractField(doc,14,y,86,'Agreed price GHS',ghs(t.grand).replace('GHS ','')); pdfContractField(doc,108,y,86,'Amount paid GHS',ghs(num(lead.amtPaid)).replace('GHS ','')); y+=10;
+  pdfContractField(doc,14,y,pageW-28,'Amount in words',''); y+=10;
+  pdfContractField(doc,14,y,pageW-28,'',''); y+=10;
+  pdfContractField(doc,14,y,86,'Final payment date',planLabel==='Outright'?'':('within '+t.planMonths+' months of deposit'));
+  pdfContractField(doc,108,y,86,'Amount due monthly: GHS',t.monthlyDue?ghs(t.monthlyDue).replace('GHS ',''):''); y+=17;
+
+  doc.setFont('times','bold'); doc.setFontSize(10.5); doc.text('MANAGER',14,y); y+=10;
+  doc.setFont('times','normal');
+  pdfContractField(doc,14,y,pageW-28,'Name',''); y+=10;
+  pdfContractField(doc,14,y,pageW-28,'Sign.',''); y+=10;
+  pdfContractField(doc,14,y,pageW-28,'Tel.',''); y+=14;
+  doc.setFontSize(9.5);
+  doc.text('Note: The above details shall be read of part of the terms of the Contract of Sale Document',14,pageH-24);
+
+  // ---- Page 5: Contract of Sale opening + WHEREAS ----
+  n=5; y=pdfContractNewPage(doc,n);
+  doc.setFont('times','bold'); doc.setFontSize(12);
+  doc.text('CONTRACT OF SALE',pageW/2,y,{align:'center'});
+  doc.setLineWidth(0.3); doc.setDrawColor(...CONTRACT_INK);
+  const tw=doc.getTextWidth('CONTRACT OF SALE');
+  doc.line(pageW/2-tw/2,y+1.2,pageW/2+tw/2,y+1.2); y+=10;
+  const openPara='THIS CONTRACT OF SALE (The Agreement) is made on this day of ………………………………. BETWEEN '+
+    vendorName+' of P.O. BOX CO3644, Tema represented by its CEO, '+ceo+' (herein called "the Vendor" which expression shall where the context so requires, include its successors or assigns) on one part. AND '+
+    String(lead.name||'').toUpperCase()+' of '+(lead.contact||'')+' herein called "the Purchaser", which expression shall, where the context so requires, include his legal heirs, successors, successors-in-interest, executors, legal representatives, and/or assigns) of the other part.';
+  ({y,n}=pdfContractBody(doc,y,n,openPara));
+  ({y,n}=pdfContractBody(doc,y,n,'The Purchaser and the Vendor shall where the context so require be referred as "the Parties" and individually as "a party"'));
+  doc.setFont('times','normal'); doc.setFontSize(10.5); doc.setTextColor(...CONTRACT_INK);
+  doc.text('WHEREAS;',14,y); y+=8;
+  ({y,n}=pdfContractBody(doc,y,n,(CONFIG.contractPreamble||'').replace('{ACRES}',acres)));
+  ({y,n}=pdfContractBody(doc,y,n,'NOW THEREFORE, in consideration of the foregoing and the terms set forth in this Agreement, the receipt and sufficiency of which is hereby acknowledged, and intending to be legally bound hereby, the Parties agree as follows:'));
+
+  // ---- Transaction (dynamic) + editable terms boilerplate ----
+  ({y,n}=pdfContractBody(doc,y,n,'IT IS NOW MUTUALLY agreed as follows:'));
+  const allocationDeposit=Math.round(t.grand*QUOTE_DEPOSIT_PCT);
+  const transactionItems=[
+    '1.3 THE TRANSACTION',
+    '1.3.1 The consideration for '+acres+' Acres of land (more or less) is hereby agreed at '+(t.discountTotal>0?'a discounted amount of ':'')+ghs(t.grand)+'.',
+    planLabel==='Outright'
+      ? '1.3.2 The Purchaser agrees to pay the full consideration of '+ghs(t.grand)+' on the execution of this contract.'
+      : '1.3.2 The Purchaser agrees to pay on the execution of this contract a deposit of '+ghs(t.deposit)+' which constitutes approximately a '+depositPct+'%. The remaining balance shall be spread over a '+(CONTRACT_MONTH_WORDS[t.planMonths]||t.planMonths)+' ('+t.planMonths+') equal monthly installment.',
+    planLabel==='Outright'?null:('1.3.3 Monthly Installment payment for '+ghs(t.monthlyDue)+' shall be done over a '+(CONTRACT_MONTH_WORDS[t.planMonths]||t.planMonths)+' ('+t.planMonths+') months extended credit period'),
+    '1.3.4 All Payments shall be made via the Companies designated payment platforms and shall be in the name '+vendorName+'. All Payment shall be duly receipted.',
+    '1.3.5 Upon initial deposit of '+ghs(allocationDeposit)+' '+(CONFIG.quoteCompanyName||'Trulander JSF Limited')+' shall allocate the said Land with reference above to the Purchaser.',
+    '1.3.6 Indentures shall be released to Purchaser after final payment unless explicitly agreed.',
+    '1.3.7 All payments shall be due on the last working day of the month.'
+  ].filter(Boolean).join('\n\n');
+  ({y,n}=pdfContractBody(doc,y,n,transactionItems));
+  ({y,n}=pdfContractBody(doc,y,n,CONFIG.contractTerms||''));
+
+  // ---- Signature page ----
+  n++; y=pdfContractNewPage(doc,n);
+  const colW=pageW/2-14;
+  doc.setFont('times','bold'); doc.setFontSize(10.5); doc.setTextColor(...CONTRACT_INK);
+  const vLines=doc.splitTextToSize('SIGNED AND DELIVERED ON BEHALF OF THE VENDOR:',colW);
+  const pLines=doc.splitTextToSize('SIGNED AND DELIVERED ON BEHALF OF THE PURCHASER:',colW);
+  doc.text(vLines,14,y); doc.text(pLines,pageW/2+4,y);
+  y+=Math.max(vLines.length,pLines.length)*5.5+10;
+  doc.text(vendorName,14,y); doc.text(String(lead.name||'').toUpperCase(),pageW/2+4,y); y+=14;
+  doc.setFont('times','normal'); doc.setFontSize(10.5);
+  const sigRows=[['Sign','…………………………………....'],['Name','…………………………………....'],['Designation','…………………………………....']];
+  sigRows.forEach(([lab,dots])=>{ doc.text(lab+' '+dots,14,y); doc.text(lab+' '+dots,pageW/2+4,y); y+=16; });
+  y+=8;
+  doc.setFont('times','bold'); doc.text('WITNESS:',14,y); doc.text('WITNESS:',pageW/2+4,y); y+=8;
+  doc.setFont('times','normal'); doc.text('In the presence of:',14,y); doc.text('In the presence of:',pageW/2+4,y); y+=10;
+  sigRows.forEach(([lab,dots])=>{ doc.text(lab+': '+dots,14,y); doc.text(lab+': '+dots,pageW/2+4,y); y+=16; });
+
+  const fname='ContractOfSale_'+(lead.name||'client').replace(/\s+/g,'_')+'.pdf';
+  const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
+}
 function buildClientReceiptPDF(payment,lead){
   const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,(CLIENT_DB&&CLIENT_DB.leads)||[],CLIENT_PROFILE.name);
   const doc=buildReceiptPDF(CLIENT_PROFILE.name,payment,lead,undefined,portfolioTotal); if(!doc) return;
@@ -9766,6 +10107,15 @@ function mgrSettings(){
   <div class="formactions"><button class="btn primary" id="saveQuoteText">Save text</button></div>
   </div>
 
+  <div class="sectitle"><h3>Contract of Sale text</h3><span class="cnt">printed on the Contract of Sale PDF</span></div>
+  <div class="formwrap">
+  <p class="mini" style="margin:-2px 0 14px">The transaction numbers (price, deposit, monthly installment, land size) are always computed live from the client's own pipeline record — only the legal wording below is editable.</p>
+  ${fld('Vendor CEO name','<input id="cfg_contractCeoName" value="'+esc(CONFIG.contractCeoName||'')+'"/>','shown throughout as the Vendor\'s signatory')}
+  ${fld('Preamble (the "WHEREAS" lease background)','<textarea id="cfg_contractPreamble" rows="10">'+esc(CONFIG.contractPreamble||'')+'</textarea>','one blank line between paragraphs — keep the "i. / ii. / iii." markers so each renders as a numbered item; {ACRES} is replaced with this client\'s land size')}
+  ${fld('Terms (sections 1-6: definitions, warranties, payments &amp; defaults, governing law, notices)','<textarea id="cfg_contractTerms" rows="14">'+esc(CONFIG.contractTerms||'')+'</textarea>','one blank line between paragraphs — "1. DEFINITIONS..." starts a bold section, "1.1 Definitions" a sub-heading, "1.1.1 ..." / "a. ..." a numbered item, matching the printed form exactly')}
+  <div class="formactions"><button class="btn primary" id="saveContractText">Save contract text</button></div>
+  </div>
+
   <div class="sectitle"><h3>Plot pricing</h3><span class="cnt">applies to new leads immediately</span></div>
   <div class="formwrap">
   <div class="grid2">${fld('Full Plot price (GHS)','<input id="cfg_fullPrice" type="number" value="'+CONFIG.fullPrice+'"/>')}${fld('Full Plot standard discount (GHS)','<input id="cfg_fullDiscount" type="number" value="'+CONFIG.fullDiscount+'"/>')}</div>
@@ -9869,6 +10219,15 @@ function bindSettingsCtrls(){
       toast('Text saved');
     }catch(e){ toast('Failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save text';
+  };
+  document.getElementById('saveContractText').onclick=async()=>{
+    const btn=document.getElementById('saveContractText'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      await apiSaveConfig({contractCeoName:val('cfg_contractCeoName').trim(),contractPreamble:val('cfg_contractPreamble').trim(),
+        contractTerms:val('cfg_contractTerms').trim()});
+      toast('Contract text saved');
+    }catch(e){ toast('Failed: '+(e.message||e)); }
+    btn.disabled=false; btn.textContent='Save contract text';
   };
   document.getElementById('saveCfg').onclick=async()=>{
     const btn=document.getElementById('saveCfg'); btn.disabled=true; btn.textContent='Saving…';
