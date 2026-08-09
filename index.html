@@ -577,7 +577,7 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .searchbar input:focus{border-color:var(--leaf)}
 .searchbar select{padding:12.5px;border:1.5px solid var(--line);border-radius:13px;background:#fff;max-width:44%}
 
-#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(24px) scale(.96);z-index:100;opacity:0;
+#toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(24px) scale(.96);z-index:400;opacity:0;
   background:var(--ink);color:#fff;padding:14px 19px;border-radius:14px;font-weight:600;font-size:14px;
   box-shadow:0 16px 36px rgba(0,0,0,.3);transition:.32s cubic-bezier(.2,.9,.3,1.2);display:flex;gap:10px;align-items:center;max-width:90vw}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
@@ -7517,7 +7517,7 @@ function bindSiteVisitAuthCtrls(){
   const next=document.getElementById('svaNextWeek'); if(next) next.onclick=()=>{ const d=new Date(SVA_WEEK_START+'T00:00:00'); d.setDate(d.getDate()+7); viewSiteVisitAuth(isoDateOnly(d)); };
   const saveBtn=document.getElementById('svaSave');
   if(saveBtn) saveBtn.onclick=async()=>{
-    const patch={}; SVA_COST_ROWS.forEach(([,estKey,actKey])=>{ [estKey,actKey].forEach(k=>{ const el=document.getElementById('sva_'+k); if(el) patch[k]=num(el.value); }); });
+    const patch={}; SVA_COST_ROWS.forEach(r=>{ [r.estKey,r.actKey].forEach(k=>{ const el=document.getElementById('sva_'+k); if(el) patch[k]=num(el.value); }); });
     saveBtn.disabled=true; saveBtn.textContent='Saving…';
     try{
       await apiSaveWeeklyVisitCosts(SVA_FORM.id,patch);
