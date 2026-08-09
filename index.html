@@ -101,15 +101,20 @@ a{color:var(--green2)}
 .brand .glyph img{width:100%;height:100%;display:block}
 .brand .wm{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;letter-spacing:.16em;color:#fff}
 .brand h1{font-family:'Space Grotesk',sans-serif;font-size:30px;line-height:1.06;letter-spacing:.03em;text-transform:uppercase;color:#fff}
-.brand-big{margin-bottom:34px}
+.brand-big{margin-bottom:34px;position:relative}
+.brand-big::before{content:'';position:absolute;top:-40px;left:50%;transform:translateX(-50%);width:220px;height:220px;
+  background:radial-gradient(circle,rgba(132,204,22,.28) 0%,rgba(132,204,22,0) 70%);pointer-events:none;z-index:0}
+.brand-big .mark{position:relative;z-index:1}
 .brand-big .glyph-big{width:104px;height:104px;border-radius:28px;box-shadow:0 16px 38px rgba(11,30,61,.5),0 0 0 1px rgba(255,255,255,.1) inset}
-.brand-big .h1-big{font-size:42px;margin-top:18px;text-shadow:0 4px 20px rgba(0,0,0,.25)}
+.brand-big .h1-big{font-size:42px;margin-top:18px;text-shadow:0 4px 20px rgba(0,0,0,.25);letter-spacing:.01em;position:relative;z-index:1}
 .iconBadge{width:36px;height:36px;flex:0 0 auto;border-radius:11px;display:flex;align-items:center;justify-content:center;background:linear-gradient(150deg,rgba(132,204,22,.22),rgba(59,130,246,.18));color:var(--gold2)}
 .dd-item{align-items:center}
 .brand .sub{color:#A9BEDD;font-size:13.5px;margin-top:11px;letter-spacing:.02em}
 .card-auth{position:relative;width:100%;max-width:404px;background:rgba(255,255,255,.055);
   border:1px solid rgba(255,255,255,.14);border-radius:22px;padding:22px;backdrop-filter:blur(10px);
-  animation:fadeUp .55s .05s ease both;box-shadow:0 30px 70px rgba(0,0,0,.35)}
+  animation:fadeUp .55s .05s ease both;box-shadow:0 30px 70px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.03) inset;overflow:hidden}
+.card-auth::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,rgba(132,204,22,.7),rgba(212,175,55,.6),transparent)}
 .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:#9DB2CC;margin:2px 2px 10px;font-weight:600}
 
 /* custom dropdown */
@@ -832,12 +837,16 @@ const favicon = document.querySelector('link[rel="icon"]'); if(favicon) favicon.
 // to read synchronously even though LOGO_SRC/TRULANDER_LOGO_SRC are now external files.
 const LOGO_IMG = new Image(); LOGO_IMG.src = LOGO_SRC;
 const TRULANDER_LOGO_IMG = new Image(); TRULANDER_LOGO_IMG.src = TRULANDER_LOGO_SRC;
-// The real Contract of Sale cover photo (exact reproduction, see buildContractOfSalePDF).
-const CONTRACT_COVER_IMG = new Image(); CONTRACT_COVER_IMG.src = './contract-cover.jpg';
-// The actual "Trulander" wordmark (navy+yellow) as printed on the contract's title
-// page -- distinct from TRULANDER_LOGO_IMG, which is really the Royal Palm circular
-// icon despite its name, used elsewhere for the quotation PDF header.
-const TRULANDER_WORDMARK_IMG = new Image(); TRULANDER_WORDMARK_IMG.src = './trulander-wordmark.png';
+// Contract of Sale's cover photo and the real "Trulander" wordmark (distinct from
+// TRULANDER_LOGO_IMG, which is really the Royal Palm circular icon despite its name)
+// are NOT preloaded here on purpose -- they're only needed deep inside
+// buildContractOfSalePDF, and eagerly fetching ~370KB of images at boot on every
+// sign-in for a rarely-used PDF was a real, measured slow-load regression. See
+// ensureContractAssets() near buildContractOfSalePDF, which lazy-loads them once.
+let CONTRACT_COVER_IMG=null, TRULANDER_WORDMARK_IMG=null;
+function loadImageAsync(src){
+  return new Promise(resolve=>{ const img=new Image(); img.onload=()=>resolve(img); img.onerror=()=>resolve(img); img.src=src; });
+}
 // jsPDF's addImage() only reliably survives a second buildDocument() pass (i.e. doc.save()
 // after doc.output()) when given a base64 data URI -- an <img> element makes the SECOND
 // pass throw deep inside jsPDF's internal PubSub/putCatalog step and silently abort the
@@ -6920,7 +6929,10 @@ function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('hom
   document.getElementById('delLead').onclick=()=>deleteLeadConfirm(id,l.name);
   document.getElementById('dlUpdPdf').onclick=()=>downloadClientRecordPDF(l.name,l.contact,l,myPayments,g,num(l.amtPaid),bal);
   document.getElementById('dlUpdQuote').onclick=()=>buildClientQuotationPDF(l);
-  document.getElementById('dlUpdContract').onclick=()=>buildContractOfSalePDF(l);
+  document.getElementById('dlUpdContract').onclick=async(e)=>{
+    const btn=e.currentTarget; const orig=btn.textContent; btn.disabled=true; btn.textContent='Generating…';
+    try{ await buildContractOfSalePDF(l); } finally { btn.disabled=false; btn.textContent=orig; }
+  };
   const viewSchedBtn=document.getElementById('viewSchedBtn'); if(viewSchedBtn) viewSchedBtn.onclick=()=>route('paymentSchedule',id);
   document.getElementById('viewLedgerBtn').onclick=()=>route('paymentSchedule',id);
   const saveDocStageBtn=document.getElementById('saveDocStage');
@@ -8824,8 +8836,13 @@ function contractAcres(lead){
   const perPlot=lead.plotType==='Half Plot'?0.0804:0.1607;
   return Math.round(perPlot*(num(lead.noPlots)||1)*100)/100;
 }
-function buildContractOfSalePDF(lead){
+async function ensureContractAssets(){
+  if(!CONTRACT_COVER_IMG) CONTRACT_COVER_IMG=await loadImageAsync(CONFIG.contractCoverImage||'./contract-cover.jpg');
+  if(!TRULANDER_WORDMARK_IMG) TRULANDER_WORDMARK_IMG=await loadImageAsync(CONFIG.contractWordmarkImage||'./trulander-wordmark.png');
+}
+async function buildContractOfSalePDF(lead){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  await ensureContractAssets();
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
   const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
   const t=computeLeadQuotationTotals(lead);
