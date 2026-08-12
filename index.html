@@ -8290,18 +8290,19 @@ async function saveAccountContact(){
 }
 /* ================= QUOTATION REQUEST (available on every dashboard) ================= */
 const QUOTE_DEPOSIT_PCT=0.3;
-function computeQuotationTotals(plotType,noPlots,period){
+function computeQuotationTotals(plotType,noPlots,period,discountOverride,depositPctOverride){
   const p=PRICING()[plotType]||PRICING()['Full Plot'];
   const listTotal=p.list*noPlots;
-  const discountTotal=p.disc*noPlots;
+  const discountTotal=(discountOverride!=null&&discountOverride!=='')?num(discountOverride):p.disc*noPlots;
   const net=Math.max(listTotal-discountTotal,0);
   const eq=p.eq*noPlots;
   const interestTotal=(INTEREST()[period]||0)*eq;
   const grand=net+interestTotal;
   const planMonths=PLAN_MONTHS[period]||0;
+  const depositPct=depositPctOverride!=null&&depositPctOverride!==''?Math.max(0,Math.min(100,num(depositPctOverride)))/100:QUOTE_DEPOSIT_PCT;
   let deposit=0,balance=grand,monthlyDue=0,schedule=[];
   if(planMonths && grand>0){
-    deposit=Math.round(grand*QUOTE_DEPOSIT_PCT);
+    deposit=Math.round(grand*depositPct);
     balance=grand-deposit;
     monthlyDue=Math.round(balance/planMonths);
     let opening=balance;
@@ -8324,6 +8325,7 @@ function openQuotationRequest(){
     ${fld('Address','<input id="q_address" placeholder="City / area"/>')}
     <div class="grid2">${fld('Plot type',sel('q_plottype',['Full Plot','Half Plot']))}${fld('No. of plots','<input id="q_noplots" type="number" min="0.5" step="0.5" value="1"/>')}</div>
     ${fld('Payment period',sel('q_period',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}
+    <div class="grid2">${fld('Discount (GHS)','<input id="q_discount" type="number" min="0" placeholder="auto"/>','leave blank for the standard discount')}${fld('Deposit %','<input id="q_depositpct" type="number" min="0" max="100" value="'+Math.round(QUOTE_DEPOSIT_PCT*100)+'"/>','e.g. 50 for a 50% deposit')}</div>
     <div id="quotePreview" class="formwrap" style="margin-top:4px"></div>
     <div class="formactions"><button class="btn primary" id="genQuoteBtn" style="width:100%">Generate quotation PDF</button></div>
   </div>`;
@@ -8332,22 +8334,23 @@ function openQuotationRequest(){
   document.getElementById('closeQuoteReq').onclick=()=>ov.remove();
   const paintPreview=()=>{
     const plotType=val('q_plottype'), noPlots=num(val('q_noplots'))||1, period=val('q_period');
-    const t=computeQuotationTotals(plotType,noPlots,period);
+    const t=computeQuotationTotals(plotType,noPlots,period,val('q_discount'),val('q_depositpct'));
+    const depositPctShown=val('q_depositpct')!==''?num(val('q_depositpct')):Math.round(QUOTE_DEPOSIT_PCT*100);
     document.getElementById('quotePreview').innerHTML=`
       <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span class="mini">List price</span><span>${ghs(t.listTotal)}</span></div>
       ${t.discountTotal?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span class="mini">Discount</span><span>-${ghs(t.discountTotal)}</span></div>`:''}
       ${t.interestTotal?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span class="mini">Interest (${esc(period)})</span><span>${ghs(t.interestTotal)}</span></div>`:''}
       <div style="display:flex;justify-content:space-between;font-weight:800;font-size:15px;padding-top:6px;margin-top:4px;border-top:1px solid var(--line)"><span>Total</span><span>${ghs(t.grand)}</span></div>
-      ${t.planMonths?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;margin-top:4px"><span class="mini">Deposit (${Math.round(QUOTE_DEPOSIT_PCT*100)}%)</span><span>${ghs(t.deposit)}</span></div>
+      ${t.planMonths?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;margin-top:4px"><span class="mini">Deposit (${depositPctShown}%)</span><span>${ghs(t.deposit)}</span></div>
       <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span class="mini">Monthly due × ${t.planMonths}</span><span>${ghs(t.monthlyDue)}</span></div>`:''}`;
   };
-  ['q_plottype','q_noplots','q_period'].forEach(id=>document.getElementById(id).addEventListener('input',paintPreview));
+  ['q_plottype','q_noplots','q_period','q_discount','q_depositpct'].forEach(id=>document.getElementById(id).addEventListener('input',paintPreview));
   paintPreview();
   document.getElementById('genQuoteBtn').onclick=async()=>{
     const clientName=val('q_name').trim(); if(!clientName){ toast("Enter the client's name"); return; }
     const plotType=val('q_plottype'), noPlots=num(val('q_noplots'))||1, period=val('q_period');
     const contact=val('q_contact').trim(), address=val('q_address').trim(), email=val('q_email').trim();
-    const t=computeQuotationTotals(plotType,noPlots,period);
+    const t=computeQuotationTotals(plotType,noPlots,period,val('q_discount'),val('q_depositpct'));
     const btn=document.getElementById('genQuoteBtn'); btn.disabled=true; btn.textContent='Generating…';
     try{
       await apiInsertQuotationRequest({clientName,clientAddress:address,clientContact:contact,clientEmail:email,plotType,noPlots,paymentPeriod:period,
