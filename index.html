@@ -3844,7 +3844,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },myCommission:viewMyCommission,
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
     clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
@@ -9520,10 +9520,16 @@ const MGR_APPS=[
   {key:'Insights',fic:'target',label:'Smart Insights'},
   {key:'Settings',fic:'settings',label:'Settings'},
   {key:'Downloads',fic:'document',label:'Download Directory'},
+  {key:'Quotation Settings',fic:'document',label:'Quotation Settings',section:'settingshub'},
+  {key:'Commission Settings',fic:'savings',label:'Commission Settings',section:'settingshub'},
+  {key:'Pricing & Targets',fic:'analytics',label:'Pricing & Targets',section:'settingshub'},
+  {key:'Staff Settings',fic:'briefcase',label:'Staff Settings',section:'settingshub'},
+  {key:'Company Settings',fic:'location',label:'Company Settings',section:'settingshub'},
+  {key:'System',fic:'settings',label:'System',section:'settingshub'},
 ];
 async function managerView(){
   const mgrAppDef=MGR_APPS.find(a=>a.key===mgrTab);
-  const mgrBackTarget=mgrAppDef&&mgrAppDef.section==='crm'?'mgrCrmTools':mgrAppDef&&mgrAppDef.section==='plots'?'mgrPlotInv':'mgr';
+  const mgrBackTarget=mgrAppDef&&mgrAppDef.section==='crm'?'mgrCrmTools':mgrAppDef&&mgrAppDef.section==='plots'?'mgrPlotInv':mgrAppDef&&mgrAppDef.section==='settingshub'?'mgrSettingsHub':'mgr';
   V.innerHTML=`${mgrTab!=='overview'?back(mgrBackTarget):''}<div class="pagehead"><div><h2>${mgrTab==='overview'?'Management Dashboard':esc((mgrAppDef||{label:mgrTab}).label)}</h2><p>${mgrTab==='overview'?'Live across all agents':'Management'}</p></div>
   <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
   <div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>
@@ -9565,7 +9571,13 @@ async function managerView(){
   else if(mgrTab==='Site visits'){ body.innerHTML=mgrVisits(); bindVisitCtrls(); }
   else if(mgrTab==='News'){ body.innerHTML=mgrNews(); bindNewsCtrls(); }
   else if(mgrTab==='Commission'){ body.innerHTML=mgrCommission(); bindCommissionCtrls(); }
-  else if(mgrTab==='Settings'){ TEAM_ROSTER=await apiLoadFullRoster(); INVITE_LIST=await apiListInvites().catch(()=>[]); body.innerHTML=mgrSettings(); bindSettingsCtrls(); }
+  else if(mgrTab==='Settings'){ body.innerHTML=mgrSettingsHubHtml(); bindMgrAppGrid(document.getElementById('mgrSettingsGrid'),SETTINGS_APPS); }
+  else if(mgrTab==='Quotation Settings'){ body.innerHTML=mgrQuotationSettingsHtml(); bindQuotationSettingsCtrls(); }
+  else if(mgrTab==='Commission Settings'){ body.innerHTML=mgrCommissionSettingsHtml(); bindCommissionSettingsCtrls(); }
+  else if(mgrTab==='Pricing & Targets'){ body.innerHTML=mgrPricingTargetsHtml(); bindPricingTargetsCtrls(); }
+  else if(mgrTab==='Staff Settings'){ TEAM_ROSTER=await apiLoadFullRoster(); INVITE_LIST=await apiListInvites().catch(()=>[]); body.innerHTML=mgrStaffSettingsHtml(); bindStaffSettingsCtrls(); }
+  else if(mgrTab==='Company Settings'){ body.innerHTML=mgrCompanySettingsHtml(); bindCompanySettingsCtrls(); }
+  else if(mgrTab==='System'){ body.innerHTML=mgrSystemHtml(); bindSystemCtrls(); }
 }
 function allAgentLists(){
   const agents=DEMO_MODE? STAFF_LIST.filter(s=>s.role==='agent').map(s=>({name:s.name,key:s.key})) : DB.profiles.filter(p=>p.role==='agent').map(p=>({name:p.name,key:p.agent_key}));
@@ -10343,42 +10355,21 @@ async function downloadCompanyExcel(){
 }
 
 /* ================= SETTINGS (pricing config + targets) ================= */
-function mgrSettings(){
-  const agentStaff=STAFF_LIST.filter(s=>s.role==='agent');
-  const roster=TEAM_ROSTER.length?TEAM_ROSTER:agentStaff.map(s=>({...s,active:true}));
-  const activeCount=roster.filter(r=>r.active).length;
-  const joinedEmails=new Set(roster.map(r=>r.email.toLowerCase()));
-  const inviteRows=INVITE_LIST.map(inv=>{
-    const joined=joinedEmails.has(inv.email.toLowerCase());
-    return `<div class="team-row"><div class="ti">
-      <div><div class="nm" style="font-weight:600;font-size:13.5px">${esc(inv.email)}</div><div class="mini">${inv.name?esc(inv.name)+' · ':''}${joined?'Joined':'Waiting to confirm & join'}</div></div></div>
-      <button class="trashbtn" data-uninvite="${esc(inv.email)}" title="Withdraw invite"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V4h6v3m-8 0l1 13h8l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>`;
-  }).join('');
-  const teamRows=roster.map(s=>`<div class="team-row"><div class="ti" style="opacity:${s.active?1:.5}">
-    <div><div class="nm" style="font-weight:600;font-size:13.5px">${esc(s.name)}${s.active?'':' <span class="mini">(deactivated)</span>'}</div><div class="mini">${esc(s.email)}</div></div></div>
-    <button class="team-toggle" data-teamkey="${s.key}" data-active="${s.active}">…</button></div>`).join('');
-  return `<div class="sectitle"><h3>Invite employees</h3><span class="cnt">${INVITE_LIST.length} invited</span></div>
+const SETTINGS_APPS=[
+  {key:'Quotation Settings',fic:'document',label:'Quotation Settings',section:'settingshub'},
+  {key:'Commission Settings',fic:'savings',label:'Commission Settings',section:'settingshub'},
+  {key:'Pricing & Targets',fic:'analytics',label:'Pricing & Targets',section:'settingshub'},
+  {key:'Staff Settings',fic:'briefcase',label:'Staff Settings',section:'settingshub'},
+  {key:'Company Settings',fic:'location',label:'Company Settings',section:'settingshub'},
+  {key:'System',fic:'settings',label:'System',section:'settingshub'}
+];
+function mgrSettingsHubHtml(){
+  return `<div class="appGrid" id="mgrSettingsGrid">${mgrAppGridHtml(SETTINGS_APPS)}</div>`;
+}
+function mgrQuotationSettingsHtml(){
+  return `<div class="sectitle" style="margin-top:0"><h3>Quotation &amp; receipt text</h3><span class="cnt">everything printed on client-facing PDFs</span></div>
   <div class="formwrap">
-  <p class="mini" style="margin:-2px 0 14px">Add each new hire's email here first. They'll then see "+ New employee — join the portal" on the sign-in screen, enter their name and choose a password, confirm the link sent to their email, and they're in — with no dashboard work from you.</p>
-  <div class="grid2">${fld('Email *','<input id="inv_email" type="email" placeholder="name@example.com"/>')}${fld('Name (optional)','<input id="inv_name" placeholder="So you recognise them in this list"/>')}</div>
-  <div class="formactions"><button class="btn primary" id="addInvite" style="flex:0 0 auto;padding-left:24px;padding-right:24px">Add to invite list</button></div>
-  <div style="margin-top:14px">${inviteRows||'<p class="mini">No one invited yet.</p>'}</div>
-  </div>
-
-  <div class="sectitle"><h3>Team</h3><span class="cnt">${activeCount} active of ${roster.length}</span></div>
-  <div class="formwrap" style="padding:6px 15px">${teamRows||'<div class="empty">No agents yet</div>'}
-  <p class="mini" style="margin-top:12px">Deactivating someone here blocks their sign-in but keeps their historical leads and stats intact everywhere, including the Sales League.</p></div>
-
-  <div class="sectitle"><h3>Company contact info</h3><span class="cnt">shown to clients company-wide</span></div>
-  <div class="formwrap">
-  <div class="grid2">${fld('Phone','<input id="cfg_companyPhone" placeholder="0244…" value="'+esc(CONFIG.companyPhone||'')+'"/>')}${fld('WhatsApp','<input id="cfg_companyWhatsapp" placeholder="0244… (if different)" value="'+esc(CONFIG.companyWhatsapp||'')+'"/>')}</div>
-  ${fld('Email','<input id="cfg_companyEmail" type="email" placeholder="info@landbankghana.com" value="'+esc(CONFIG.companyEmail||'')+'"/>')}
-  <div class="formactions"><button class="btn primary" id="saveCompanyContact">Save company contact info</button></div>
-  </div>
-
-  <div class="sectitle"><h3>Quotation &amp; receipt text</h3><span class="cnt">everything printed on client-facing PDFs</span></div>
-  <div class="formwrap">
-  <p class="mini" style="margin:-2px 0 14px">Rewrite any of this to match how you want quotations and receipts to actually read — nothing here is fixed except the numbers, which always come from the pricing below.</p>
+  <p class="mini" style="margin:-2px 0 14px">Rewrite any of this to match how you want quotations and receipts to actually read — nothing here is fixed except the numbers, which always come from Pricing &amp; Targets.</p>
   <div class="grid2">${fld('Company legal name','<input id="cfg_quoteCompanyName" value="'+esc(CONFIG.quoteCompanyName||'')+'"/>','shown next to the logo in the header')}${fld('Address line','<input id="cfg_quoteSiteName" value="'+esc(CONFIG.quoteSiteName||'')+'"/>','shown under the company name')}</div>
   ${fld('Document type label','<input id="cfg_quoteDocTypeText" value="'+esc(CONFIG.quoteDocTypeText||'')+'"/>','top-right of the quotation header')}
   ${fld('Notes (one per line)','<textarea id="cfg_quoteNotesText" rows="6">'+esc(CONFIG.quoteNotesText||'')+'</textarea>','numbered automatically — payment terms, bank details, deadlines etc.')}
@@ -10386,9 +10377,41 @@ function mgrSettings(){
   ${fld('Footer address','<input id="cfg_quoteFooterAddress" value="'+esc(CONFIG.quoteFooterAddress||'')+'"/>','bottom of every quotation')}
   ${fld('Receipt thank-you text','<textarea id="cfg_receiptThanksText" rows="2">'+esc(CONFIG.receiptThanksText||'')+'</textarea>','appears on every payment receipt')}
   <div class="formactions"><button class="btn primary" id="saveQuoteText">Save text</button></div>
-  </div>
-
-  <div class="sectitle"><h3>Plot pricing</h3><span class="cnt">applies to new leads immediately</span></div>
+  </div>`;
+}
+function bindQuotationSettingsCtrls(){
+  document.getElementById('saveQuoteText').onclick=async()=>{
+    const btn=document.getElementById('saveQuoteText'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      await apiSaveConfig({quoteCompanyName:val('cfg_quoteCompanyName').trim(),quoteSiteName:val('cfg_quoteSiteName').trim(),
+        quoteDocTypeText:val('cfg_quoteDocTypeText').trim(),quoteNotesText:val('cfg_quoteNotesText').trim(),
+        quoteLandNoteText:val('cfg_quoteLandNoteText').trim(),quoteFooterAddress:val('cfg_quoteFooterAddress').trim(),
+        receiptThanksText:val('cfg_receiptThanksText').trim()});
+      toast('Text saved');
+    }catch(e){ toast('Failed: '+(e.message||e)); }
+    btn.disabled=false; btn.textContent='Save text';
+  };
+}
+function mgrCommissionSettingsHtml(){
+  return `<div class="sectitle" style="margin-top:0"><h3>Commission engine</h3><span class="cnt">personal + monthly pool</span></div>
+  <div class="formwrap">
+  <div class="grid2">${fld('Full plot cap (GHS)','<input id="cfg_commfull" type="number" value="'+(num(CONFIG.commissionFullCap)||1000)+'"/>','per plot, personal commission')}${fld('Half plot cap (GHS)','<input id="cfg_commhalf" type="number" value="'+(num(CONFIG.commissionHalfCap)||500)+'"/>')}</div>
+  ${fld('Pool per plot sold (GHS)','<input id="cfg_commpool" type="number" value="'+(num(CONFIG.commissionPoolPerPlot)||500)+'"/>','flat amount added to the shared monthly pool for every newly-sold plot (full or half)')}
+  <div class="formactions"><button class="btn primary" id="saveCommConfig">Save commission settings</button></div>
+  </div>`;
+}
+function bindCommissionSettingsCtrls(){
+  const saveCommBtn=document.getElementById('saveCommConfig');
+  if(saveCommBtn) saveCommBtn.onclick=async()=>{
+    saveCommBtn.disabled=true; saveCommBtn.textContent='Saving…';
+    try{ await apiSaveConfig({commissionFullCap:num(val('cfg_commfull')),commissionHalfCap:num(val('cfg_commhalf')),commissionPoolPerPlot:num(val('cfg_commpool'))}); toast('Commission settings updated'); }
+    catch(e){ toast('Save failed: '+(e.message||e)); }
+    saveCommBtn.disabled=false; saveCommBtn.textContent='Save commission settings';
+  };
+}
+function mgrPricingTargetsHtml(){
+  const agentStaff=STAFF_LIST.filter(s=>s.role==='agent');
+  return `<div class="sectitle" style="margin-top:0"><h3>Plot pricing</h3><span class="cnt">applies to new leads immediately</span></div>
   <div class="formwrap">
   <div class="grid2">${fld('Full Plot price (GHS)','<input id="cfg_fullPrice" type="number" value="'+CONFIG.fullPrice+'"/>')}${fld('Full Plot standard discount (GHS)','<input id="cfg_fullDiscount" type="number" value="'+CONFIG.fullDiscount+'"/>')}</div>
   <div class="grid2">${fld('Half Plot price (GHS)','<input id="cfg_halfPrice" type="number" value="'+CONFIG.halfPrice+'"/>')}${fld('Half Plot standard discount (GHS)','<input id="cfg_halfDiscount" type="number" value="'+CONFIG.halfDiscount+'"/>')}</div>
@@ -10411,87 +10434,9 @@ function mgrSettings(){
   ${agentStaff.map(s=>fld(s.name,'<input id="tgt_'+s.key+'" type="number" value="'+(num((CONFIG.targets||{})[s.key])||0)+'"/>')).join('')}
   ${fld('Commission rate (%)','<input id="cfg_commission" type="number" step="0.1" value="'+(num(CONFIG.commissionPct)||0)+'"/>','shown to agents as an estimate on their dashboard — set to 0 to hide it')}
   <div class="formactions"><button class="btn primary" id="saveTargets">Save targets</button></div>
-  </div>
-
-  <div class="sectitle"><h3>Commission engine</h3><span class="cnt">personal + monthly pool</span></div>
-  <div class="formwrap">
-  <div class="grid2">${fld('Full plot cap (GHS)','<input id="cfg_commfull" type="number" value="'+(num(CONFIG.commissionFullCap)||1000)+'"/>','per plot, personal commission')}${fld('Half plot cap (GHS)','<input id="cfg_commhalf" type="number" value="'+(num(CONFIG.commissionHalfCap)||500)+'"/>')}</div>
-  ${fld('Pool per plot sold (GHS)','<input id="cfg_commpool" type="number" value="'+(num(CONFIG.commissionPoolPerPlot)||500)+'"/>','flat amount added to the shared monthly pool for every newly-sold plot (full or half)')}
-  <div class="formactions"><button class="btn primary" id="saveCommConfig">Save commission settings</button></div>
-  </div>
-
-  <div class="sectitle"><h3>Birthdays</h3><span class="cnt">powers the automatic birthday post &amp; message</span></div>
-  <div class="formwrap">
-  ${agentStaff.map(s=>{ const p=(DB.profiles||[]).find(x=>x.agent_key===s.key); return fld(s.name,'<input id="bday_'+s.key+'" type="date" value="'+esc((p&&p.birthday)||'')+'"/>'); }).join('')}
-  <div class="mini" style="margin-top:-6px;margin-bottom:12px">Year doesn't matter — only the month and day are used. On the day, the system posts to the news banner and sends the person a message automatically.</div>
-  <div class="formactions"><button class="btn primary" id="saveBirthdays">Save birthdays</button></div>
-  </div>
-
-  <div class="sectitle"><h3>System</h3><span class="cnt">live diagnostics</span></div>
-  <div class="formwrap" style="padding:6px 15px">
-    <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Connection</div><div class="mini">${DEMO_MODE?'Demo mode — not connected to Supabase':'Live — connected to Supabase'}</div></div></div><span class="tag ${DEMO_MODE?'warnt':'ok'}">${DEMO_MODE?'Demo':'Live'}</span></div>
-    <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Records loaded</div><div class="mini">leads ${DB.leads.length} · enquiries ${DB.enquiries.length} · complaints ${DB.complaints.length} · site visits ${DB.sitevisits.length} · plots ${DB.plots.length} · payments ${DB.payments.length}</div></div></div></div>
-    <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Signed in as</div><div class="mini">${esc(PROFILE.email)} · ${PROFILE.role}</div></div></div></div>
-  </div>
-  <div class="mini" style="text-align:center;margin:-4px 0 16px;opacity:.7">System created by Abdul Waheed (Digital Operations) ©</div>
-  <div style="margin:-6px 0 12px"><button class="chip" id="sysRefreshBtn" style="width:100%">↻ Reload all data from the database now</button></div>
-  <div style="margin:0 0 20px"><button class="chip" id="sysBackupBtn" style="width:100%"><span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Download full data backup (.json)</button></div>
-
-  <div class="footer-note">Demo mode changes are stored locally to this preview session; live mode changes apply for your whole team instantly.</div>`;
+  </div>`;
 }
-function paintTeamToggle(b,isActive){
-  b.dataset.active=isActive;
-  b.className='team-toggle '+(isActive?'active':'inactive');
-  b.textContent=isActive?'Active — tap to deactivate':'Deactivated — tap to reactivate';
-}
-function bindSettingsCtrls(){
-  document.getElementById('addInvite').onclick=async()=>{
-    const email=val('inv_email').trim(), name=val('inv_name').trim();
-    if(!email||!email.includes('@')){ toast('Enter a valid email'); return; }
-    const btn=document.getElementById('addInvite'); btn.disabled=true; btn.textContent='Adding…';
-    try{ await apiAddInvite(email,name); toast('Invited '+email); INVITE_LIST=await apiListInvites().catch(()=>INVITE_LIST); managerView(); }
-    catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Add to invite list'; }
-  };
-  V.querySelectorAll('[data-uninvite]').forEach(b=>b.onclick=async()=>{
-    const email=b.dataset.uninvite;
-    if(!confirm('Withdraw the invite for '+email+'? They will no longer be able to join unless re-invited.')) return;
-    try{ await apiRemoveInvite(email); toast('Invite withdrawn'); INVITE_LIST=await apiListInvites().catch(()=>INVITE_LIST); managerView(); }
-    catch(e){ toast('Failed: '+(e.message||e)); }
-  });
-  V.querySelectorAll('[data-teamkey]').forEach(b=>{
-    const key=b.dataset.teamkey; const isActive=b.dataset.active==='true';
-    paintTeamToggle(b,isActive);
-    b.onclick=async()=>{
-      const goingActive = !(b.dataset.active==='true');
-      const verb = goingActive?'reactivate':'deactivate';
-      if(!confirm('Are you sure you want to '+verb+' this agent?')) return;
-      b.disabled=true;
-      try{ await apiSetAgentActive(key,goingActive); paintTeamToggle(b,goingActive);
-        toast('Agent '+(goingActive?'reactivated':'deactivated'));
-        await refreshStaffList(); buildDropdown();
-      }catch(e){ toast('Failed: '+(e.message||e)); }
-      b.disabled=false;
-    };
-  });
-  document.getElementById('saveCompanyContact').onclick=async()=>{
-    const btn=document.getElementById('saveCompanyContact'); btn.disabled=true; btn.textContent='Saving…';
-    try{
-      await apiSaveConfig({companyPhone:val('cfg_companyPhone').trim(),companyWhatsapp:val('cfg_companyWhatsapp').trim(),companyEmail:val('cfg_companyEmail').trim()});
-      toast('Company contact info saved');
-    }catch(e){ toast('Failed: '+(e.message||e)); }
-    btn.disabled=false; btn.textContent='Save company contact info';
-  };
-  document.getElementById('saveQuoteText').onclick=async()=>{
-    const btn=document.getElementById('saveQuoteText'); btn.disabled=true; btn.textContent='Saving…';
-    try{
-      await apiSaveConfig({quoteCompanyName:val('cfg_quoteCompanyName').trim(),quoteSiteName:val('cfg_quoteSiteName').trim(),
-        quoteDocTypeText:val('cfg_quoteDocTypeText').trim(),quoteNotesText:val('cfg_quoteNotesText').trim(),
-        quoteLandNoteText:val('cfg_quoteLandNoteText').trim(),quoteFooterAddress:val('cfg_quoteFooterAddress').trim(),
-        receiptThanksText:val('cfg_receiptThanksText').trim()});
-      toast('Text saved');
-    }catch(e){ toast('Failed: '+(e.message||e)); }
-    btn.disabled=false; btn.textContent='Save text';
-  };
+function bindPricingTargetsCtrls(){
   document.getElementById('saveCfg').onclick=async()=>{
     const btn=document.getElementById('saveCfg'); btn.disabled=true; btn.textContent='Saving…';
     try{ await apiSaveConfig({fullPrice:num(val('cfg_fullPrice')),halfPrice:num(val('cfg_halfPrice')),
@@ -10522,13 +10467,69 @@ function bindSettingsCtrls(){
     catch(e){ toast('Save failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save targets';
   };
-  const saveCommBtn=document.getElementById('saveCommConfig');
-  if(saveCommBtn) saveCommBtn.onclick=async()=>{
-    saveCommBtn.disabled=true; saveCommBtn.textContent='Saving…';
-    try{ await apiSaveConfig({commissionFullCap:num(val('cfg_commfull')),commissionHalfCap:num(val('cfg_commhalf')),commissionPoolPerPlot:num(val('cfg_commpool'))}); toast('Commission settings updated'); }
-    catch(e){ toast('Save failed: '+(e.message||e)); }
-    saveCommBtn.disabled=false; saveCommBtn.textContent='Save commission settings';
+}
+function mgrStaffSettingsHtml(){
+  const agentStaff=STAFF_LIST.filter(s=>s.role==='agent');
+  const roster=TEAM_ROSTER.length?TEAM_ROSTER:agentStaff.map(s=>({...s,active:true}));
+  const activeCount=roster.filter(r=>r.active).length;
+  const joinedEmails=new Set(roster.map(r=>r.email.toLowerCase()));
+  const inviteRows=INVITE_LIST.map(inv=>{
+    const joined=joinedEmails.has(inv.email.toLowerCase());
+    return `<div class="team-row"><div class="ti">
+      <div><div class="nm" style="font-weight:600;font-size:13.5px">${esc(inv.email)}</div><div class="mini">${inv.name?esc(inv.name)+' · ':''}${joined?'Joined':'Waiting to confirm & join'}</div></div></div>
+      <button class="trashbtn" data-uninvite="${esc(inv.email)}" title="Withdraw invite"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V4h6v3m-8 0l1 13h8l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>`;
+  }).join('');
+  const teamRows=roster.map(s=>`<div class="team-row"><div class="ti" style="opacity:${s.active?1:.5}">
+    <div><div class="nm" style="font-weight:600;font-size:13.5px">${esc(s.name)}${s.active?'':' <span class="mini">(deactivated)</span>'}</div><div class="mini">${esc(s.email)}</div></div></div>
+    <button class="team-toggle" data-teamkey="${s.key}" data-active="${s.active}">…</button></div>`).join('');
+  return `<div class="sectitle" style="margin-top:0"><h3>Invite employees</h3><span class="cnt">${INVITE_LIST.length} invited</span></div>
+  <div class="formwrap">
+  <p class="mini" style="margin:-2px 0 14px">Add each new hire's email here first. They'll then see "+ New employee — join the portal" on the sign-in screen, enter their name and choose a password, confirm the link sent to their email, and they're in — with no dashboard work from you.</p>
+  <div class="grid2">${fld('Email *','<input id="inv_email" type="email" placeholder="name@example.com"/>')}${fld('Name (optional)','<input id="inv_name" placeholder="So you recognise them in this list"/>')}</div>
+  <div class="formactions"><button class="btn primary" id="addInvite" style="flex:0 0 auto;padding-left:24px;padding-right:24px">Add to invite list</button></div>
+  <div style="margin-top:14px">${inviteRows||'<p class="mini">No one invited yet.</p>'}</div>
+  </div>
+
+  <div class="sectitle"><h3>Team</h3><span class="cnt">${activeCount} active of ${roster.length}</span></div>
+  <div class="formwrap" style="padding:6px 15px">${teamRows||'<div class="empty">No agents yet</div>'}
+  <p class="mini" style="margin-top:12px">Deactivating someone here blocks their sign-in but keeps their historical leads and stats intact everywhere, including the Sales League.</p></div>
+
+  <div class="sectitle"><h3>Birthdays</h3><span class="cnt">powers the automatic birthday post &amp; message</span></div>
+  <div class="formwrap">
+  ${agentStaff.map(s=>{ const p=(DB.profiles||[]).find(x=>x.agent_key===s.key); return fld(s.name,'<input id="bday_'+s.key+'" type="date" value="'+esc((p&&p.birthday)||'')+'"/>'); }).join('')}
+  <div class="mini" style="margin-top:-6px;margin-bottom:12px">Year doesn't matter — only the month and day are used. On the day, the system posts to the news banner and sends the person a message automatically.</div>
+  <div class="formactions"><button class="btn primary" id="saveBirthdays">Save birthdays</button></div>
+  </div>`;
+}
+function bindStaffSettingsCtrls(){
+  document.getElementById('addInvite').onclick=async()=>{
+    const email=val('inv_email').trim(), name=val('inv_name').trim();
+    if(!email||!email.includes('@')){ toast('Enter a valid email'); return; }
+    const btn=document.getElementById('addInvite'); btn.disabled=true; btn.textContent='Adding…';
+    try{ await apiAddInvite(email,name); toast('Invited '+email); INVITE_LIST=await apiListInvites().catch(()=>INVITE_LIST); managerView(); }
+    catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Add to invite list'; }
   };
+  V.querySelectorAll('[data-uninvite]').forEach(b=>b.onclick=async()=>{
+    const email=b.dataset.uninvite;
+    if(!confirm('Withdraw the invite for '+email+'? They will no longer be able to join unless re-invited.')) return;
+    try{ await apiRemoveInvite(email); toast('Invite withdrawn'); INVITE_LIST=await apiListInvites().catch(()=>INVITE_LIST); managerView(); }
+    catch(e){ toast('Failed: '+(e.message||e)); }
+  });
+  V.querySelectorAll('[data-teamkey]').forEach(b=>{
+    const key=b.dataset.teamkey; const isActive=b.dataset.active==='true';
+    paintTeamToggle(b,isActive);
+    b.onclick=async()=>{
+      const goingActive = !(b.dataset.active==='true');
+      const verb = goingActive?'reactivate':'deactivate';
+      if(!confirm('Are you sure you want to '+verb+' this agent?')) return;
+      b.disabled=true;
+      try{ await apiSetAgentActive(key,goingActive); paintTeamToggle(b,goingActive);
+        toast('Agent '+(goingActive?'reactivated':'deactivated'));
+        await refreshStaffList(); buildDropdown();
+      }catch(e){ toast('Failed: '+(e.message||e)); }
+      b.disabled=false;
+    };
+  });
   const saveBdayBtn=document.getElementById('saveBirthdays');
   if(saveBdayBtn) saveBdayBtn.onclick=async()=>{
     saveBdayBtn.disabled=true; saveBdayBtn.textContent='Saving…';
@@ -10542,6 +10543,37 @@ function bindSettingsCtrls(){
     }catch(e){ toast('Save failed: '+(e.message||e)); }
     saveBdayBtn.disabled=false; saveBdayBtn.textContent='Save birthdays';
   };
+}
+function mgrCompanySettingsHtml(){
+  return `<div class="sectitle" style="margin-top:0"><h3>Company contact info</h3><span class="cnt">shown to clients company-wide</span></div>
+  <div class="formwrap">
+  <div class="grid2">${fld('Phone','<input id="cfg_companyPhone" placeholder="0244…" value="'+esc(CONFIG.companyPhone||'')+'"/>')}${fld('WhatsApp','<input id="cfg_companyWhatsapp" placeholder="0244… (if different)" value="'+esc(CONFIG.companyWhatsapp||'')+'"/>')}</div>
+  ${fld('Email','<input id="cfg_companyEmail" type="email" placeholder="info@landbankghana.com" value="'+esc(CONFIG.companyEmail||'')+'"/>')}
+  <div class="formactions"><button class="btn primary" id="saveCompanyContact">Save company contact info</button></div>
+  </div>`;
+}
+function bindCompanySettingsCtrls(){
+  document.getElementById('saveCompanyContact').onclick=async()=>{
+    const btn=document.getElementById('saveCompanyContact'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      await apiSaveConfig({companyPhone:val('cfg_companyPhone').trim(),companyWhatsapp:val('cfg_companyWhatsapp').trim(),companyEmail:val('cfg_companyEmail').trim()});
+      toast('Company contact info saved');
+    }catch(e){ toast('Failed: '+(e.message||e)); }
+    btn.disabled=false; btn.textContent='Save company contact info';
+  };
+}
+function mgrSystemHtml(){
+  return `<div class="formwrap" style="padding:6px 15px">
+    <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Connection</div><div class="mini">${DEMO_MODE?'Demo mode — not connected to Supabase':'Live — connected to Supabase'}</div></div></div><span class="tag ${DEMO_MODE?'warnt':'ok'}">${DEMO_MODE?'Demo':'Live'}</span></div>
+    <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Records loaded</div><div class="mini">leads ${DB.leads.length} · enquiries ${DB.enquiries.length} · complaints ${DB.complaints.length} · site visits ${DB.sitevisits.length} · plots ${DB.plots.length} · payments ${DB.payments.length}</div></div></div></div>
+    <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Signed in as</div><div class="mini">${esc(PROFILE.email)} · ${PROFILE.role}</div></div></div></div>
+  </div>
+  <div class="mini" style="text-align:center;margin:-4px 0 16px;opacity:.7">System created by Abdul Waheed (Digital Operations) ©</div>
+  <div style="margin:-6px 0 12px"><button class="chip" id="sysRefreshBtn" style="width:100%">↻ Reload all data from the database now</button></div>
+  <div style="margin:0 0 20px"><button class="chip" id="sysBackupBtn" style="width:100%"><span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Download full data backup (.json)</button></div>
+  <div class="footer-note">Demo mode changes are stored locally to this preview session; live mode changes apply for your whole team instantly.</div>`;
+}
+function bindSystemCtrls(){
   const sysRefreshBtn=document.getElementById('sysRefreshBtn');
   if(sysRefreshBtn) sysRefreshBtn.onclick=async()=>{
     sysRefreshBtn.disabled=true; sysRefreshBtn.textContent='Reloading…';
@@ -10573,6 +10605,11 @@ function bindSettingsCtrls(){
     }catch(e){ toast('Backup failed: '+(e.message||e)); }
     sysBackupBtn.disabled=false; sysBackupBtn.innerHTML=`<span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Download full data backup (.json)`;
   };
+}
+function paintTeamToggle(b,isActive){
+  b.dataset.active=isActive;
+  b.className='team-toggle '+(isActive?'active':'inactive');
+  b.textContent=isActive?'Active — tap to deactivate':'Deactivated — tap to reactivate';
 }
 function mgrNews(){
   const posted=(DB.announcements||[]).slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
