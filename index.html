@@ -2924,7 +2924,7 @@ function companyLeadsBodyHtml(){
   <div class="list" id="companyLeadsList">${companyLeadsListHtml()}</div>`;
 }
 async function viewCompanyPipeline(){
-  V.innerHTML=`${back('more')}<div class="pagehead"><div><div class="eyebrow">Company-sourced</div><h2>Company Leads</h2><p>Clients who came to the company directly -- assign each to an agent once you know who's handling them.</p></div></div>
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Company-sourced</div><h2>Company Leads</h2><p>Clients who came to the company directly -- assign each to an agent once you know who's handling them.</p></div></div>
   <div id="companyLeadsBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!COMPANY_LEADS_LOADED){ try{ await apiLoadCompanyLeads(); }catch(e){ toast('Could not load company leads: '+(e.message||e)); } }
   const body=document.getElementById('companyLeadsBody');
@@ -3846,7 +3846,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,officedesk:viewOfficeDesk,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -3872,7 +3872,7 @@ function tabForRoute(name){
   if(['crm','sitevisit','enquiry','complaint'].includes(name)) return 'crm';
   if(name==='mgrCrmTools') return 'mgrcrm';
   if(name==='mgrPlotInv') return 'mgrplots';
-  if(name==='duties'||name==='taskDetail') return 'operations';
+  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads') return 'officedesk';
   if(name==='chat'||name==='chatThread') return 'chat';
   if(name==='home'||name==='mgr') return 'home';
   return 'more';
@@ -3903,7 +3903,7 @@ function renderBottomNavNow(){
     {key:'home',label:'Home',icon:ic.home,r:isMgr?'mgr':'home'},
     ...(isMgr?[{key:'mgrcrm',label:'CRM Tools',icon:ic.phone,r:'mgrCrmTools',badge:crmBadge},{key:'mgrplots',label:'Plot Inventory',icon:ic.grid,r:'mgrPlotInv',badge:plotInvBadge}]
       :[{key:'salesdesk',label:'Sales Desk',icon:ic.briefcase2,r:'salesdesk'},{key:'crm',label:'CRM Tools',icon:ic.phone,r:'crm',badge:crmBadge}]),
-    {key:'operations',label:'Operations',icon:ic.check2,r:'duties',badge:openTasks},
+    {key:'officedesk',label:'Office Desk',icon:ic.desk,r:'officedesk',badge:openTasks},
     {key:'chat',label:'Chat',icon:ic.chat,r:'chat',badge:unread,badgeId:'bnChatBadge'},
     {key:'more',label:'More',icon:ic.more,r:'more',badge:moreBadge}
   ];
@@ -3986,7 +3986,8 @@ Object.assign(ic,{
  party:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 20l5-14 9 9-14 5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 4h.01M18 8h.01M20 4l-1 1M8 4l.5 1M4 12l1 .5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
  save:'<svg viewBox="0 0 24 24" fill="none"><path d="M5 4h11l3 3v13H5V4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 4v5h7V4M8 20v-6h8v6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
  target:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></svg>',
- medal:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="15" r="6" stroke="currentColor" stroke-width="1.8"/><path d="M9 3h6l-2 8h-2L9 3z" fill="currentColor"/></svg>'
+ medal:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="15" r="6" stroke="currentColor" stroke-width="1.8"/><path d="M9 3h6l-2 8h-2L9 3z" fill="currentColor"/></svg>',
+ desk:'<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="12.5" width="18" height="3" rx="1" stroke="currentColor" stroke-width="1.8"/><path d="M5 15.5v4M19 15.5v4M8 12.5V8a1 1 0 011-1h6a1 1 0 011 1v4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 });
 /* ---- dimensional feature-chip icons (premium, gradient) ---- */
 const FIC_DEFS='<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>'
@@ -4130,6 +4131,7 @@ function viewCRM(){
 // Inventory tab -- one click-routing table instead of three copies drifting apart.
 function mgrAppRoute(key){
   if(key==='Feedback') route('feedback');
+  else if(key==='Duties') route('duties');
   else if(key==='Insights') route('insights');
   else if(key==='Downloads') route('downloads');
   else if(key==='Plot Requests') route('plotrequests');
@@ -4160,23 +4162,35 @@ function viewMgrPlotInv(){
   <div class="appGrid" id="mgrPlotGrid">${mgrAppGridHtml(items)}</div>`;
   bindMgrAppGrid(document.getElementById('mgrPlotGrid'),items);
 }
+function viewOfficeDesk(){
+  const isMgr=PROFILE.role==='manager';
+  const showCompanyLeads=isMgr||canViewClientDatabase();
+  const items=[
+    {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
+    {key:'Feedback',fic:'chat',label:'Team Feedback'},
+    ...(isMgr?[{key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'}]:[]),
+    ...(showCompanyLeads?[{key:'Company Leads',fic:'briefcase',label:'Company Leads'}]:[])
+  ];
+  V.innerHTML=`<div class="pagehead"><div><h2>Office Desk</h2><p>Operations, feedback${isMgr?', the leaderboard':''}${showCompanyLeads?' &amp; company leads':''} — everything off to the side of your daily pipeline</p></div></div>
+  <div class="appGrid" id="officeDeskGrid">${mgrAppGridHtml(items)}</div>`;
+  bindMgrAppGrid(document.getElementById('officeDeskGrid'),items);
+}
 function viewMore(){
   V.innerHTML=`<div class="pagehead"><div><h2>More</h2><p>Additional tools and settings</p></div></div>
   <div class="appGrid" id="moreGrid"></div>`;
   const grid=document.getElementById('moreGrid');
   if(PROFILE.role==='manager'){
-    const items=MGR_APPS.filter(a=>a.key!=='Duties' && !a.section);
+    const items=MGR_APPS.filter(a=>!a.section);
     grid.innerHTML=mgrAppGridHtml(items);
     bindMgrAppGrid(grid,items);
   } else {
     const items=[
       {key:'insights',fic:'target',label:'Smart Insights'},
       {key:'downloads',fic:'document',label:'Download Directory'},
-      {key:'feedback',fic:'chat',label:'Team Feedback'},
       {key:'plotrequests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
       ...(canManagePlots()?[{key:'allocations',fic:'allocation',label:'Allocations'}]:[]),
       ...(canManagePayments()?[{key:'logpayment',fic:'savings',label:'Log Payment'}]:[]),
-      ...(canViewClientDatabase()?[{key:'clientdb',fic:'savings',label:'Client Database'},{key:'companyleads',fic:'briefcase',label:'Company Leads'},{key:'sitevisitauth',fic:'clipboard',label:'Site Visit Auth'}]:[]),
+      ...(canViewClientDatabase()?[{key:'clientdb',fic:'savings',label:'Client Database'},{key:'sitevisitauth',fic:'clipboard',label:'Site Visit Auth'}]:[]),
       ...(canManageContracts()?[{key:'contractapp',fic:'document',label:'Contract of Sale'}]:[]),
       {key:'account',fic:'settings',label:'Settings'}
     ];
@@ -6183,7 +6197,7 @@ function viewDuties(){
   const byMe=all.filter(t=>t.assignedBy===PROFILE.key&&t.assignedTo!==PROFILE.key);
   const isMgr=PROFILE.role==='manager';
   const teamSummary=computeDutiesSummary(isMgr?all:mine);
-  V.innerHTML=`<div class="pagehead"><div><h2>Operations Tracker</h2><p>${isMgr?'Every task, who owns it, and how long it’s been open':'Your tasks, and anything you’ve assigned or been escalated'}</p></div></div>
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Operations Tracker</h2><p>${isMgr?'Every task, who owns it, and how long it’s been open':'Your tasks, and anything you’ve assigned or been escalated'}</p></div></div>
   <div class="kpis">${kpi('Open',teamSummary.openCount)}${kpi('Overdue',teamSummary.overdueCount)}${kpi('Completed',teamSummary.doneCount)}${kpi('Avg days to close',teamSummary.avgDaysToClose!=null?teamSummary.avgDaysToClose:'—')}</div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><button class="chip ${dutiesFilter==='mine'?'on':''}" data-dutiesfilter="mine">Mine (${mine.length})</button><button class="chip ${dutiesFilter==='byme'?'on':''}" data-dutiesfilter="byme">Assigned by me (${byMe.length})</button>${isMgr?`<button class="chip ${dutiesFilter==='all'?'on':''}" data-dutiesfilter="all">Team (${all.length})</button>`:''}</div>
   <div class="searchbar" style="margin-bottom:10px"><input id="dutiesSearchInput" placeholder="Filter by name or title…" value="${esc(dutiesSearch)}"/>
@@ -6459,7 +6473,7 @@ function openNewTaskModal(){
 const FEEDBACK_CATEGORIES=['Bug','Suggestion','Feature Request','Other'];
 let FEEDBACK_COMMENTS_CACHE={};
 function viewFeedback(){
-  const homeRoute=PROFILE.role==='manager'?'mgr':'home';
+  const homeRoute='officedesk';
   const all=DB.feedback||[];
   const rowOf=f=>`<div class="rowcard">
     <div class="top"><div><div class="nm">${esc(f.authorName)}</div><div class="meta">${esc((f.createdAt||'').slice(0,16).replace('T',' '))}</div></div>
@@ -9500,13 +9514,13 @@ let mgrTab='overview'; let cmpFilter='All'; let slYear=new Date(today()).getFull
 // viewMgrCrmTools()/viewMgrPlotInv()/viewMore(). Untagged entries stay in More.
 const MGR_APPS=[
   {key:'Data Check',fic:'datacheck',label:'Data Check'},
-  {key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'},
+  {key:'Leaderboard',fic:'leaderboard',label:'Leaderboard',section:'officedesk'},
   {key:'Reports',fic:'analytics',label:'Reports'},
   {key:'Plots',fic:'map',label:'Plot Inventory',section:'plots'},
   {key:'Allocations',fic:'allocation',label:'Allocations',section:'plots'},
   {key:'Client Database',fic:'savings',label:'Client Database',section:'crm'},
   {key:'Plot Requests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest',section:'plots'},
-  {key:'Company Leads',fic:'briefcase',label:'Company Leads'},
+  {key:'Company Leads',fic:'briefcase',label:'Company Leads',section:'officedesk'},
   {key:'Enquiries',fic:'enquiry',label:'Enquiries',badgeKind:'enquiry',section:'crm'},
   {key:'Complaints',fic:'alert',label:'Client Feedback',badgeKind:'complaint',section:'crm'},
   {key:'Site visits',fic:'location',label:'Site Visits',badgeKind:'sitevisit',section:'crm'},
@@ -9515,8 +9529,8 @@ const MGR_APPS=[
   {key:'Log Payment',fic:'savings',label:'Log Payment'},
   {key:'News',fic:'announce',label:'News & Announcements'},
   {key:'Commission',fic:'savings',label:'Commission'},
-  {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
-  {key:'Feedback',fic:'chat',label:'Team Feedback'},
+  {key:'Duties',fic:'clipboard',label:'Operations Tracker',section:'officedesk'},
+  {key:'Feedback',fic:'chat',label:'Team Feedback',section:'officedesk'},
   {key:'Insights',fic:'target',label:'Smart Insights'},
   {key:'Settings',fic:'settings',label:'Settings'},
   {key:'Downloads',fic:'document',label:'Download Directory'},
@@ -9529,7 +9543,7 @@ const MGR_APPS=[
 ];
 async function managerView(){
   const mgrAppDef=MGR_APPS.find(a=>a.key===mgrTab);
-  const mgrBackTarget=mgrAppDef&&mgrAppDef.section==='crm'?'mgrCrmTools':mgrAppDef&&mgrAppDef.section==='plots'?'mgrPlotInv':mgrAppDef&&mgrAppDef.section==='settingshub'?'mgrSettingsHub':'mgr';
+  const mgrBackTarget=mgrAppDef&&mgrAppDef.section==='crm'?'mgrCrmTools':mgrAppDef&&mgrAppDef.section==='plots'?'mgrPlotInv':mgrAppDef&&mgrAppDef.section==='settingshub'?'mgrSettingsHub':mgrAppDef&&mgrAppDef.section==='officedesk'?'officedesk':'mgr';
   V.innerHTML=`${mgrTab!=='overview'?back(mgrBackTarget):''}<div class="pagehead"><div><h2>${mgrTab==='overview'?'Management Dashboard':esc((mgrAppDef||{label:mgrTab}).label)}</h2><p>${mgrTab==='overview'?'Live across all agents':'Management'}</p></div>
   <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
   <div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>
