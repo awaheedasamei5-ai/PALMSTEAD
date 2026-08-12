@@ -1181,7 +1181,7 @@ function defaultConfig(){ return {
     'iv. WHERAS the Deed dated 1st February, 2025 between the Trulander JSF Limited and the Head Lessor has been registered at the Lands Commission as LVDGAST97782872025A and Survey Plotted Plan No. X4114.',
     'v. The Vendor has obtained the consent of the Head lessors to assign his unexpired interest in the lease to the purchaser herein and the Purchaser has requested to purchase the land, subject to the terms and conditions hereinafter stated.'
   ].join('\n\n'),
-  contractTerms:[
+  contractDefinitions:[
     '1. DEFINITIONS AND INTERPRETATION',
     '1.1 Definitions',
     'Unless the context otherwise requires, the following words used in this Agreement shall have the meanings ascribed to them in this Clause 1.1.',
@@ -1194,7 +1194,9 @@ function defaultConfig(){ return {
     'In this Agreement, unless the context otherwise requires:',
     '1.2.1 Sections, Clauses, Paragraphs and Headings are for ease of reference only and are not meant to be used in interpreting the provisions of this Agreement.',
     '1.2.2 Reference to "days" means calendar days.',
-    '1.2.3 All Schedules form part of this Agreement.',
+    '1.2.3 All Schedules form part of this Agreement.'
+  ].join('\n\n'),
+  contractTerms:[
     '2. REPRESENTATIONS AND WARRANTIES',
     '2.1 The Vendor makes the following representations and warranties to the Purchaser:',
     '2.1.1 It has the requisite capacity to enter into this Agreement as the beneficial owner of the Property.',
@@ -2349,6 +2351,7 @@ async function apiLoadConfig(){
       receiptThanksText:data.receipt_thanks_text||defaultConfig().receiptThanksText,
       contractCeoName:data.contract_ceo_name||defaultConfig().contractCeoName,
       contractPreamble:data.contract_preamble||defaultConfig().contractPreamble,
+      contractDefinitions:data.contract_definitions||defaultConfig().contractDefinitions,
       contractTerms:data.contract_terms||defaultConfig().contractTerms,
       contractCoverImage:data.contract_cover_image||'',
       contractWordmarkImage:data.contract_wordmark_image||''}; }
@@ -2368,7 +2371,7 @@ async function apiSaveConfig(patch){
     quote_doc_type_text:CONFIG.quoteDocTypeText||'',quote_notes_text:CONFIG.quoteNotesText||'',
     quote_land_note_text:CONFIG.quoteLandNoteText||'',quote_footer_address:CONFIG.quoteFooterAddress||'',
     receipt_thanks_text:CONFIG.receiptThanksText||'',
-    contract_ceo_name:CONFIG.contractCeoName||'',contract_preamble:CONFIG.contractPreamble||'',contract_terms:CONFIG.contractTerms||'',
+    contract_ceo_name:CONFIG.contractCeoName||'',contract_preamble:CONFIG.contractPreamble||'',contract_definitions:CONFIG.contractDefinitions||'',contract_terms:CONFIG.contractTerms||'',
     contract_cover_image:CONFIG.contractCoverImage||null,contract_wordmark_image:CONFIG.contractWordmarkImage||null};
   const {error}=await sb.from('app_config').upsert(row); if(error) throw error;
 }
@@ -2796,6 +2799,21 @@ function bindClientDatabaseCtrls(container){
   if(inp) inp.oninput=e=>{ CLIENTDB_QUERY=e.target.value; container.querySelector('#cdbList').innerHTML=clientDatabaseListHtml(); bindClientDbRows(container); };
   const addBtn=container.querySelector('#cdbAddBtn');
   if(addBtn) addBtn.onclick=openAddClientDbLead;
+  const templateBtn=container.querySelector('#cdbTemplateBtn');
+  if(templateBtn) templateBtn.onclick=downloadClientDbTemplate;
+  const importBtn=container.querySelector('#cdbImportBtn');
+  const importFile=container.querySelector('#cdbImportFile');
+  if(importBtn&&importFile){
+    importBtn.onclick=()=>importFile.click();
+    importFile.onchange=e=>{
+      if(!e.target.files[0]){ return; }
+      importPipelineExcel(e.target.files[0],{companyWide:true,onDone:async()=>{
+        CLIENTDB_LOADED=false; try{ await apiLoadClientDatabase(); }catch(err){ toast('Could not refresh client list: '+(err.message||err)); }
+        const body=document.getElementById('cdbBody'); if(body){ body.innerHTML=clientDatabaseBodyHtml(); bindClientDatabaseCtrls(body); }
+      }});
+      e.target.value='';
+    };
+  }
   bindClientDbRows(container);
 }
 function bindClientDbRows(container){
@@ -2803,8 +2821,30 @@ function bindClientDbRows(container){
 }
 function clientDatabaseBodyHtml(){
   return `<div style="margin-bottom:14px"><button class="btn primary" id="cdbAddBtn" style="width:100%">+ Add new client</button></div>
+  <div class="rowcard" style="margin-bottom:14px;padding:14px 16px">
+    <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">Bulk-import historical clients</div>
+    <p class="mini" style="margin-bottom:10px">Download the blank template, fill in one row per client (same columns as your pipeline export), then upload it here. Matches by name + contact, so re-uploading the same file only updates what changed — nothing gets duplicated. To attribute rows to a specific agent, prefix that row's Notes with "[Agent Name] " (exactly as Master Pipeline exports do); unmarked rows are attributed to you.</p>
+    <div class="grid2">
+      <button class="btn ghost" id="cdbTemplateBtn">⬇ Blank template</button>
+      <button class="btn ghost" id="cdbImportBtn">⬆ Upload &amp; import</button>
+    </div>
+    <input type="file" id="cdbImportFile" accept=".xlsx" style="display:none"/>
+  </div>
   <div class="searchbar"><input id="cdbq" placeholder="Search name or contact…" value="${esc(CLIENTDB_QUERY)}"/></div>
   <div class="list" id="cdbList">${clientDatabaseListHtml()}</div>`;
+}
+async function downloadClientDbTemplate(){
+  const btn=document.getElementById('cdbTemplateBtn'); if(btn){ btn.disabled=true; btn.textContent='Building…'; }
+  try{
+    if(typeof ExcelJS==='undefined'){ toast('Template library failed to load — check your connection.'); return; }
+    const wb=await loadPipelineTemplate();
+    const buf=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url=URL.createObjectURL(blob);
+    triggerDownload(url,'Client_Import_Template.xlsx','excel',blob);
+    toast('Template downloaded');
+  }catch(e){ toast('Could not build template: '+(e.message||e)); }
+  if(btn){ btn.disabled=false; btn.textContent='⬇ Blank template'; }
 }
 function openAddClientDbLead(){
   const agents=(DB.profiles||[]).filter(p=>p.role==='agent');
@@ -8946,17 +8986,24 @@ async function buildContractOfSalePDF(lead){
   doc.setLineWidth(0.3); doc.setDrawColor(...CONTRACT_INK);
   const tw=doc.getTextWidth('CONTRACT OF SALE');
   doc.line(pageW/2-tw/2,y+1.2,pageW/2+tw/2,y+1.2); y+=10;
-  const openPara='THIS CONTRACT OF SALE (The Agreement) is made on this day of ………………………………. BETWEEN '+
-    vendorName+' of P.O. BOX CO3644, Tema represented by its CEO, '+ceo+' (herein called "the Vendor" which expression shall where the context so requires, include its successors or assigns) on one part. AND '+
-    String(lead.name||'').toUpperCase()+' of '+(lead.contact||'')+' herein called "the Purchaser", which expression shall, where the context so requires, include his legal heirs, successors, successors-in-interest, executors, legal representatives, and/or assigns) of the other part.';
-  ({y,n}=pdfContractBody(doc,y,n,openPara));
+  // Party identification -- kept as four SEPARATE blocks (opening line, BETWEEN,
+  // Vendor paragraph, AND, Purchaser paragraph) exactly as the reference lays
+  // them out, not merged into one run-on sentence.
+  ({y,n}=pdfContractBody(doc,y,n,'THIS CONTRACT OF SALE (The Agreement) is made on this day of ………………………………..'));
+  ({y,n}=pdfContractBody(doc,y,n,'BETWEEN'));
+  ({y,n}=pdfContractBody(doc,y,n,vendorName+' of P.O. BOX CO3644, Tema represented by its CEO, '+ceo+' (herein called "the Vendor" which expression shall where the context so requires, include its successors or assigns) on one part.'));
+  ({y,n}=pdfContractBody(doc,y,n,'AND'));
+  ({y,n}=pdfContractBody(doc,y,n,String(lead.name||'').toUpperCase()+' of '+(lead.contact||'')+' herein called "the Purchaser", which expression shall, where the context so requires, include his legal heirs, successors, successors-in-interest, executors, legal representatives, and/or assigns) of the other part.'));
   ({y,n}=pdfContractBody(doc,y,n,'The Purchaser and the Vendor shall where the context so require be referred as "the Parties" and individually as "a party"'));
   doc.setFont('times','normal'); doc.setFontSize(10.5); doc.setTextColor(...CONTRACT_INK);
   doc.text('WHEREAS;',14,y); y+=8;
   ({y,n}=pdfContractBody(doc,y,n,(CONFIG.contractPreamble||'').replace('{ACRES}',acres)));
   ({y,n}=pdfContractBody(doc,y,n,'NOW THEREFORE, in consideration of the foregoing and the terms set forth in this Agreement, the receipt and sufficiency of which is hereby acknowledged, and intending to be legally bound hereby, the Parties agree as follows:'));
 
-  // ---- Transaction (dynamic) + editable terms boilerplate ----
+  // ---- 1. Definitions and Interpretation (editable, static) ----
+  ({y,n}=pdfContractBody(doc,y,n,CONFIG.contractDefinitions||''));
+
+  // ---- 1.3 The Transaction (dynamic, computed from this lead) ----
   ({y,n}=pdfContractBody(doc,y,n,'IT IS NOW MUTUALLY agreed as follows:'));
   const allocationDeposit=Math.round(t.grand*QUOTE_DEPOSIT_PCT);
   const transactionItems=[
@@ -8972,6 +9019,8 @@ async function buildContractOfSalePDF(lead){
     '1.3.7 All payments shall be due on the last working day of the month.'
   ].filter(Boolean).join('\n\n');
   ({y,n}=pdfContractBody(doc,y,n,transactionItems));
+
+  // ---- 2-6: Representations, payments/defaults/refund, governing law, notices (editable, static) ----
   ({y,n}=pdfContractBody(doc,y,n,CONFIG.contractTerms||''));
 
   // ---- Signature page ----
@@ -9036,7 +9085,10 @@ async function viewContractApp(){
 function contractAppSettingsHtml(){
   return `
   <div class="sectitle" style="margin-top:0"><h3>Contract settings</h3><span class="cnt">everything the PDF is built from</span></div>
-  <div class="rowcard" style="margin-bottom:18px">
+  <p class="mini" style="margin:-2px 0 12px">Broken into segments matching the actual document — edit any of them, in any order, without breaking the layout. The party names, dates and money figures always come live from the client's own record; only the wording below is yours to change.</p>
+
+  <div class="rowcard" style="margin-bottom:14px">
+    <div class="mini" style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--muted);margin-bottom:10px">Segment 1 — Cover &amp; branding</div>
     <div class="grid2">
       <div>
         <div class="mini" style="margin-bottom:6px;font-weight:700">Cover photo</div>
@@ -9054,10 +9106,29 @@ function contractAppSettingsHtml(){
       </div>
     </div>
     ${fld('Vendor CEO name','<input id="ca_ceoName" value="'+esc(CONFIG.contractCeoName||'')+'"/>','shown throughout as the Vendor\'s signatory')}
-    ${fld('Preamble (the "WHEREAS" lease background)','<textarea id="ca_preamble" rows="8">'+esc(CONFIG.contractPreamble||'')+'</textarea>','one blank line between paragraphs — keep the "i. / ii. / iii." markers; {ACRES} is replaced with each client\'s land size')}
-    ${fld('Terms (sections 1-6)','<textarea id="ca_terms" rows="12">'+esc(CONFIG.contractTerms||'')+'</textarea>','"1. DEFINITIONS..." starts a bold section, "1.1 ..." a sub-heading, "1.1.1 ..." / "a. ..." a numbered item — any length reflows automatically, the page border and footer stay put')}
-    <div class="formactions"><button class="btn primary" id="ca_saveSettings" style="width:100%">Save contract settings</button></div>
-  </div>`;
+  </div>
+
+  <div class="rowcard" style="margin-bottom:14px">
+    <div class="mini" style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--muted);margin-bottom:10px">Segment 2 — Preamble (the "WHEREAS" lease background)</div>
+    ${fld('','<textarea id="ca_preamble" rows="8">'+esc(CONFIG.contractPreamble||'')+'</textarea>','one blank line between paragraphs — keep the "i. / ii. / iii." markers; {ACRES} is replaced with each client\'s own land size')}
+  </div>
+
+  <div class="rowcard" style="margin-bottom:14px">
+    <div class="mini" style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--muted);margin-bottom:10px">Segment 3 — Definitions &amp; Interpretation (Section 1)</div>
+    ${fld('','<textarea id="ca_definitions" rows="10">'+esc(CONFIG.contractDefinitions||'')+'</textarea>','comes right after "NOW THEREFORE..." and before the Transaction clause — matches the real document\'s own order')}
+  </div>
+
+  <div class="rowcard" style="margin-bottom:14px">
+    <div class="mini" style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--muted);margin-bottom:10px">Segment 4 — Clauses: Warranties, Payments &amp; Defaults, Governing Law, Notices (Sections 2-6)</div>
+    ${fld('','<textarea id="ca_terms" rows="12">'+esc(CONFIG.contractTerms||'')+'</textarea>','"2. REPRESENTATIONS..." starts a bold section, "2.1 ..." a sub-heading, "2.1.1 ..." / "a. ..." a numbered item — any length reflows automatically, the page border and footer stay put')}
+  </div>
+
+  <div class="rowcard" style="margin-bottom:18px">
+    <div class="mini" style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--muted);margin-bottom:6px">Segment 5 — Signature block</div>
+    <p class="mini" style="margin:0">Nothing to edit here — the Vendor/Purchaser names fill in automatically and the Sign / Name / Designation lines stay blank dotted lines for physical signing, exactly like the paper form.</p>
+  </div>
+
+  <div class="formactions"><button class="btn primary" id="ca_saveSettings" style="width:100%">Save contract settings</button></div>`;
 }
 function paintContractAppBody(){
   const body=document.getElementById('contractAppBody'); if(!body) return;
@@ -9079,7 +9150,7 @@ function bindContractAppCtrls(){
   if(saveBtn) saveBtn.onclick=async()=>{
     saveBtn.disabled=true; saveBtn.textContent='Saving…';
     try{
-      const patch={contractCeoName:val('ca_ceoName').trim(),contractPreamble:val('ca_preamble').trim(),contractTerms:val('ca_terms').trim()};
+      const patch={contractCeoName:val('ca_ceoName').trim(),contractPreamble:val('ca_preamble').trim(),contractDefinitions:val('ca_definitions').trim(),contractTerms:val('ca_terms').trim()};
       const coverFile=document.getElementById('ca_coverFile'), wordmarkFile=document.getElementById('ca_wordmarkFile');
       if(coverFile.files[0]) patch.contractCoverImage=await readImageFileAsDataUri(coverFile.files[0],900);
       if(wordmarkFile.files[0]) patch.contractWordmarkImage=await readImageFileAsDataUri(wordmarkFile.files[0],500);
@@ -10022,7 +10093,8 @@ function resolveImportColumns(ws){
   Object.keys(PL_INPUT_COLS).forEach(key=>{ if(!found[key]) found[key]=PL_INPUT_COLS[key]; });
   return found;
 }
-async function importPipelineExcel(file){
+async function importPipelineExcel(file,opts){
+  opts=opts||{};
   if(typeof ExcelJS==='undefined'){ toast('Import library failed to load — check your connection.'); return; }
   toast('Reading file…');
   try{
@@ -10038,8 +10110,10 @@ async function importPipelineExcel(file){
     // re-import: every existing row looked "new" because it wasn't found, so it got
     // inserted as a duplicate on top of the real one. Managers importing the Master
     // Pipeline (every agent combined) need the FULL company-wide set for this to work;
-    // regular agents only need their own.
-    const isManagerImport=PROFILE.role==='manager';
+    // regular agents only need their own. opts.companyWide lets a non-manager caller
+    // (Elias/Emmanuel/Elizabeth importing from Client Database, which is company-wide
+    // by definition) opt into that same full-set scoping.
+    const isManagerImport=opts.companyWide||PROFILE.role==='manager';
     const canPay=canManagePayments();
     let freshLeads;
     if(DEMO_MODE){ freshLeads=DB.leads.slice(); }
@@ -10131,7 +10205,7 @@ async function importPipelineExcel(file){
       }catch(rowErr){ errors.push('Row '+r+' ('+(name||'unnamed')+'): '+(rowErr.message||rowErr)); }
       r++;
     }
-    viewPipeline();
+    if(opts.onDone) await opts.onDone(); else viewPipeline();
     const summary=`Import done — ${added} added, ${updated} updated, ${unchanged} unchanged`+(skipped?`, ${skipped} skipped (blank name)`:'')
       +(paymentChangesIgnored?`, ${paymentChangesIgnored} payment change(s) ignored (ask Elias/Management to log those)`:'')
       +(errors.length?`, ${errors.length} failed`:'');
