@@ -7968,7 +7968,12 @@ function buildSiteVisitFormPDF(rec,asDataUri){
   y+=Math.max(h1,h2)*5+9;
 
   y=pdfSectionBar(doc,y,pageW,'2.0  INTERESTED IN BUYING');
-  y=pdfCheckRow(doc,y,pageW,['0.5 Plot (70x50)','1 Plot (70x100)','2 Plots (70x100)','3 Plots (70x100)'],rec.plot)+3;
+  const svPlotPresets=['0.5 Plot (70x50)','1 Plot (70x100)','2 Plots (70x100)','3 Plots (70x100)'];
+  y=pdfCheckRow(doc,y,pageW,svPlotPresets,rec.plot)+(svPlotPresets.includes(rec.plot)?3:0);
+  if(rec.plot && !svPlotPresets.includes(rec.plot)){
+    doc.setFont('helvetica','italic'); doc.setFontSize(9); doc.setTextColor(100,112,133);
+    doc.text('Other: '+rec.plot,12,y); y+=6; doc.setTextColor(20,20,20);
+  }
 
   y=pdfSectionBar(doc,y,pageW,'3.0  VISIT PREFERENCES');
   doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(100,112,133); doc.text('3.1 MODE OF TRANSPORTATION',12,y); y+=4.5;
@@ -7976,7 +7981,7 @@ function buildSiteVisitFormPDF(rec,asDataUri){
   doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(100,112,133); doc.text('3.2 PURPOSE OF VISIT',12,y); y+=4.5;
   y=pdfCheckRow(doc,y,pageW,['Viewing','Allocation','Picking','Others'],rec.purpose)+2;
   doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(100,112,133); doc.text('3.3 SITE VISIT DAY',12,y); y+=4.5;
-  y=pdfCheckRow(doc,y,pageW,['Tuesday 9:00am','Friday 9:00am','Sunday 12:00pm'],rec.time)+5;
+  y=pdfCheckRow(doc,y,pageW,['Tuesday 9:00am','Wednesday 9:00am','Friday 9:00am','Sunday 12:00pm'],rec.time)+5;
 
   h1=pdfLabeledPair(doc,12,y,88,'Number of client accompaniment',rec.people);
   h2=pdfLabeledPair(doc,108,y,88,'Site visit requested by',rec.agentName);
@@ -8134,11 +8139,12 @@ function formSiteVisit(){
   ${fld('1.6 Nationality','<input id="s_nat"/>')}
 
   <div class="sectitle"><h3>2.0 I am interested in buying?</h3></div>
-  ${fld('',sel('s_interest',['0.5 Plot (70x50)','1 Plot (70x100)','2 Plots (70x100)','3 Plots (70x100)']))}
+  ${fld('',sel('s_interest',['0.5 Plot (70x50)','1 Plot (70x100)','2 Plots (70x100)','3 Plots (70x100)','More — enter number of plots']))}
+  <div id="s_interestCustomWrap" class="hidden">${fld('Preferred number of plots','<input id="s_interestCustom" type="number" min="0.5" step="0.5" placeholder="e.g. 5"/>')}</div>
 
   <div class="sectitle"><h3>3.0 Visit preferences</h3></div>
   <div class="grid2">${fld('3.1 Mode of transportation',sel('s_trans',['Personal Vehicle','Company Vehicle']))}${fld('3.2 Purpose of visit',sel('s_purpose',['Viewing','Allocation','Picking','Others']))}</div>
-  ${fld('3.3 Site visit day',sel('s_day',['Tuesday 9:00am','Friday 9:00am','Sunday 12:00pm']))}
+  ${fld('3.3 Site visit day',sel('s_day',['Tuesday 9:00am','Wednesday 9:00am','Friday 9:00am','Sunday 12:00pm']))}
   ${fld('Number of client accompaniment','<input id="s_ppl" type="number" min="0" value="0"/>','if applicable')}
   <div class="rowcard" style="margin:14px 0;padding:12px 14px"><div class="mini">Site visit requested by</div><div style="font-weight:700">${esc(PROFILE.name)}</div></div>
 
@@ -8147,12 +8153,17 @@ function formSiteVisit(){
   <div class="grid2">${fld('Feedback after site visit','<textarea id="s_feedback"></textarea>')}${fld('Key next steps','<textarea id="s_next"></textarea>')}</div>
 
   <div class="formactions"><button class="btn ghost" onclick="route('home')">Cancel</button><button class="btn gold" id="saveSV">Submit request</button></div></div>`;
+  document.getElementById('s_interest').onchange=e=>{ document.getElementById('s_interestCustomWrap').classList.toggle('hidden',e.target.value!=='More — enter number of plots'); };
   document.getElementById('saveSV').onclick=saveSV;
+}
+function siteVisitPlotValue(selectVal,customVal){
+  if(selectVal!=='More — enter number of plots') return selectVal;
+  const n=num(customVal); return n>0?(n+' Plot'+(n===1?'':'s')+' (custom)'):selectVal;
 }
 async function saveSV(){ const name=val('s_name').trim();
   if(!name||!val('s_contact').trim()){ toast('Client name and contact are required'); return; }
   const btn=document.getElementById('saveSV'); btn.disabled=true; btn.textContent='Sending…';
-  const row={name,contact:val('s_contact').trim(),plot:val('s_interest'),site:'Royal Palm Enclave, Tsopoli',date:today(),
+  const row={name,contact:val('s_contact').trim(),plot:siteVisitPlotValue(val('s_interest'),val('s_interestCustom')),site:'Royal Palm Enclave, Tsopoli',date:today(),
     time:val('s_day'),people:num(val('s_ppl')),transport:val('s_trans'),pickup:val('s_pickup').trim(),notes:'',
     placeOfWork:val('s_work').trim(),position:val('s_position').trim(),nationality:val('s_nat').trim(),purpose:val('s_purpose'),
     discussion:val('s_disc').trim(),understanding:val('s_understand').trim(),feedback:val('s_feedback').trim(),nextSteps:val('s_next').trim()};
@@ -9362,19 +9373,21 @@ async function offerSendReceipt(lead,payment){
 function formClientSiteVisit(){
   V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">Tsopoli site visit request</div><h2>Book a visit</h2><p>Goes to Management for confirmation.</p></div></div>
   <div class="formwrap">
-    ${fld('Interested in',sel('cv_interest',['0.5 Plot (70x50)','1 Plot (70x100)','2 Plots (70x100)','3 Plots (70x100)']))}
+    ${fld('Interested in',sel('cv_interest',['0.5 Plot (70x50)','1 Plot (70x100)','2 Plots (70x100)','3 Plots (70x100)','More — enter number of plots']))}
+    <div id="cv_interestCustomWrap" class="hidden">${fld('Preferred number of plots','<input id="cv_interestCustom" type="number" min="0.5" step="0.5" placeholder="e.g. 5"/>')}</div>
     <div class="grid2">${fld('Mode of transportation',sel('cv_trans',['Personal Vehicle','Company Vehicle']))}${fld('Purpose of visit',sel('cv_purpose',['Viewing','Allocation','Picking','Others']))}</div>
-    ${fld('Preferred day',sel('cv_day',['Tuesday 9:00am','Friday 9:00am','Sunday 12:00pm']))}
+    ${fld('Preferred day',sel('cv_day',['Tuesday 9:00am','Wednesday 9:00am','Friday 9:00am','Sunday 12:00pm']))}
     ${fld('Pick-up location','<input id="cv_pickup"/>','optional')}
     ${fld('Number of people accompanying you','<input id="cv_ppl" type="number" min="0" value="0"/>')}
     ${fld('Who is accompanying you?','<input id="cv_accompanied" placeholder="e.g. Spouse, Relative — leave blank if none"/>','optional')}
     <div class="formactions"><button class="btn gold" id="saveCV">Submit request</button></div>
   </div>`;
+  document.getElementById('cv_interest').onchange=e=>{ document.getElementById('cv_interestCustomWrap').classList.toggle('hidden',e.target.value!=='More — enter number of plots'); };
   document.getElementById('saveCV').onclick=saveClientVisit;
 }
 async function saveClientVisit(){
   const btn=document.getElementById('saveCV'); btn.disabled=true; btn.textContent='Sending…';
-  const row={plot:val('cv_interest'),site:'Royal Palm Enclave, Tsopoli',date:today(),time:val('cv_day'),
+  const row={plot:siteVisitPlotValue(val('cv_interest'),val('cv_interestCustom')),site:'Royal Palm Enclave, Tsopoli',date:today(),time:val('cv_day'),
     people:num(val('cv_ppl')),transport:val('cv_trans'),purpose:val('cv_purpose'),pickup:val('cv_pickup').trim(),
     accompanied:val('cv_accompanied').trim(),notes:''};
   try{
