@@ -2288,8 +2288,17 @@ async function apiDeletePayment(id){
    is a running total on the lead; payments is the itemized ledger everything else -- payment
    history, Agent of the Month, commission -- actually reads from), and letting them drift
    apart is what let a deleted test payment keep feeding real financial figures. */
+// Client Database / Company Leads let Elias/Emmanuel/Elizabeth/Management open and
+// edit ANY client, but that client's own lead does NOT live in the viewer's own
+// DB.leads (which stays scoped to just their own pipeline -- see the note on
+// apiLoadClientDatabase() explaining why it no longer merges into DB.leads).
+// Anything that resolves a lead by a bare id needs to check here, or a lead opened
+// from Client Database silently fails to load, save, or sync correctly.
+function findLeadById(id){
+  return DB.leads.find(x=>x.id===id) || CLIENTDB_LIST.find(x=>x.id===id) || COMPANY_LEADS_LIST.find(x=>x.id===id);
+}
 async function syncLeadAfterPaymentDelta(leadId,delta){
-  const lead=DB.leads.find(x=>x.id===leadId); if(!lead) return;
+  const lead=findLeadById(leadId); if(!lead) return;
   const newPaid=Math.max(0,num(lead.amtPaid)+delta);
   const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand;
   const bal=Math.max(grand-newPaid,0);
@@ -2718,22 +2727,25 @@ async function setupPushNotifications(){
 }
 /* ================= CLIENT DATABASE (Elias + Management only) =================
    Company-wide client search, independent of the "my own pipeline" scoping the
-   rest of the app uses. Rather than duplicate formUpdate/viewPaymentSchedule for
-   other agents' clients, this merges the fetched rows straight into DB.leads/
-   DB.payments (RLS already allows Elias/managers to read them) so every existing
-   screen just works unchanged when opened from here. */
+   rest of the app uses. This used to merge every fetched row straight into
+   DB.leads/DB.payments so formUpdate/viewPaymentSchedule could be reused
+   unmodified -- but DB.leads IS an agent's own personal pipeline view, so that
+   silently leaked every other agent's clients into it the moment anyone with
+   Client Database access opened this screen. CLIENTDB_LIST/DB.payments stay
+   separate now; findLeadById() is what lets formUpdate etc. still resolve a
+   lead that lives here instead of in the viewer's own DB.leads. Payments still
+   merge into DB.payments (a company-wide read for Elias/Management already,
+   not per-agent-scoped, so no equivalent leak there). */
 let CLIENTDB_LOADED=false, CLIENTDB_LIST=[], CLIENTDB_QUERY='';
 async function apiLoadClientDatabase(){
   if(DEMO_MODE){ CLIENTDB_LIST=DB.leads.slice(); CLIENTDB_LOADED=true; return CLIENTDB_LIST; }
   const {data:leadsData,error:le}=await sb.from('leads').select('*').order('name'); if(le) throw le;
   const {data:paymentsData,error:pe}=await sb.from('payments').select('*').order('payment_date',{ascending:false}); if(pe) throw pe;
-  const mapped=(leadsData||[]).map(mapLead);
-  const existingIds=new Set(DB.leads.map(l=>l.id));
-  mapped.forEach(l=>{ if(existingIds.has(l.id)) Object.assign(DB.leads.find(x=>x.id===l.id),l); else DB.leads.push(l); });
+  CLIENTDB_LIST=(leadsData||[]).map(mapLead);
   const mappedPay=(paymentsData||[]).map(r=>({id:r.id,leadId:r.lead_id,agentKey:r.agent_key,clientName:r.client_name,amount:r.amount,date:r.payment_date,method:r.payment_method||'',createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
   const existingPayIds=new Set(DB.payments.map(p=>p.id));
   mappedPay.forEach(p=>{ if(!existingPayIds.has(p.id)) DB.payments.push(p); });
-  CLIENTDB_LIST=mapped; CLIENTDB_LOADED=true;
+  CLIENTDB_LOADED=true;
   return CLIENTDB_LIST;
 }
 /* Company-sourced leads: clients who came to the company directly (office walk-in,
@@ -2748,10 +2760,7 @@ async function apiLoadCompanyLeads(){
   if(DEMO_MODE){ COMPANY_LEADS_LIST=DB.leads.filter(l=>l.agent==='company'); COMPANY_LEADS_LOADED=true; return COMPANY_LEADS_LIST; }
   const {data,error}=await sb.from('leads').select('*').eq('agent_key','company').order('created_at',{ascending:false});
   if(error) throw error;
-  const mapped=(data||[]).map(mapLead);
-  const existingIds=new Set(DB.leads.map(l=>l.id));
-  mapped.forEach(l=>{ if(existingIds.has(l.id)) Object.assign(DB.leads.find(x=>x.id===l.id),l); else DB.leads.push(l); });
-  COMPANY_LEADS_LIST=mapped; COMPANY_LEADS_LOADED=true;
+  COMPANY_LEADS_LIST=(data||[]).map(mapLead); COMPANY_LEADS_LOADED=true;
   return COMPANY_LEADS_LIST;
 }
 /* Live, not "reload to see it" -- when any agent adds or updates a lead
@@ -2766,7 +2775,12 @@ function ensureClientDbSubscribed(){
   try{
     const upsertLocal=(l)=>{
       const i1=CLIENTDB_LIST.findIndex(x=>x.id===l.id); if(i1>=0) CLIENTDB_LIST[i1]=l; else CLIENTDB_LIST.push(l);
-      const i2=DB.leads.findIndex(x=>x.id===l.id); if(i2>=0) Object.assign(DB.leads[i2],l); else DB.leads.push(l);
+      // Only fold this into the viewer's own DB.leads if it's actually theirs --
+      // otherwise a live update to some OTHER agent's client would leak into this
+      // viewer's personal pipeline exactly like the old unconditional merge did.
+      const i2=DB.leads.findIndex(x=>x.id===l.id);
+      if(i2>=0) Object.assign(DB.leads[i2],l);
+      else if(l.agent===PROFILE.agent_key) DB.leads.push(l);
       const list=document.getElementById('cdbList');
       if(list){ list.innerHTML=clientDatabaseListHtml(); bindClientDbRows(document.getElementById('cdbBody')||document); }
       const wasCompanyIdx=COMPANY_LEADS_LIST.findIndex(x=>x.id===l.id);
@@ -2874,7 +2888,7 @@ function openAddClientDbLead(){
     const btn=document.getElementById('saveCdbLead'); btn.disabled=true; btn.textContent='Saving…';
     try{
       const row=await apiInsertLead(l,c,agentKey);
-      DB.leads.push(row); CLIENTDB_LIST.push(row);
+      CLIENTDB_LIST.push(row); if(agentKey===PROFILE.agent_key) DB.leads.push(row);
       toast('Client added'); ov.remove();
       const body=document.getElementById('cdbBody'); if(body){ body.innerHTML=clientDatabaseBodyHtml(); bindClientDatabaseCtrls(body); }
     }catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save client'; }
@@ -2941,7 +2955,7 @@ function openAddCompanyLeadModal(){
     const btn=document.getElementById('saveCompanyLead'); btn.disabled=true; btn.textContent='Saving…';
     try{
       const row=await apiInsertLead(l,c,'company');
-      DB.leads.push(row); COMPANY_LEADS_LIST.unshift(row);
+      COMPANY_LEADS_LIST.unshift(row); if(PROFILE.agent_key==='company') DB.leads.push(row);
       toast('Company lead added'); ov.remove();
       const body=document.getElementById('companyLeadsBody'); if(body){ body.innerHTML=companyLeadsBodyHtml(); bindCompanyLeadsRows(body); }
     }catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save lead'; }
@@ -6654,7 +6668,7 @@ function bindAllocationAwaitingCtrls(a,wrap){
       await apiResolveAllocation(a.id,plot,'Approved via signed authorization form');
       const nowStr=today()+' '+nowTime();
       Object.assign(a,{status:'Allocated',plotNumber:plot,note:'Approved via signed authorization form',allocatedBy:PROFILE.name,resolvedAt:nowStr});
-      { const leadRec=DB.leads.find(x=>x.id===a.leadId); if(leadRec) notifyClient(leadRec,'Plot allocated','Plot '+plot+' has been allocated to you. Log in to view the details and download your allocation confirmation.').catch(()=>{}); }
+      { const leadRec=findLeadById(a.leadId); if(leadRec) notifyClient(leadRec,'Plot allocated','Plot '+plot+' has been allocated to you. Log in to view the details and download your allocation confirmation.').catch(()=>{}); }
       if(canManagePlots()){
         if(existingPlot){
           await apiUpdatePlot(existingPlot.id,{status:'Allocated',clientName:a.clientName,agentKey:a.agentKey});
@@ -6722,7 +6736,7 @@ function openEditAllocatedPlotModal(a){
           price:null,clientName:a.clientName,clientContact:'',agentKey:a.agentKey,notes:'Reassigned from Plot '+(oldPlotNumber||'—')}); DB.plots.unshift(newPlotRec); }
       }
       Object.assign(a,{plotNumber:newPlot});
-      { const leadRec=DB.leads.find(x=>x.id===a.leadId); if(leadRec) notifyClient(leadRec,'Plot allocation updated','Your allocated plot is now '+newPlot+'. Log in to view the details.').catch(()=>{}); }
+      { const leadRec=findLeadById(a.leadId); if(leadRec) notifyClient(leadRec,'Plot allocation updated','Your allocated plot is now '+newPlot+'. Log in to view the details.').catch(()=>{}); }
       toast('Allocation updated — now Plot '+newPlot); ov.remove();
       PROFILE.role==='manager'?managerView():viewAllocations();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save change'; }
@@ -6878,7 +6892,7 @@ function pickForUpdate(){
   document.getElementById('uq').oninput=paint; paint();
 }
 let UPD_DISC_MODE='total';
-function formUpdate(id){ const l=DB.leads.find(x=>x.id===id); if(!l){ route('home'); return; }
+function formUpdate(id){ const l=findLeadById(id); if(!l){ route('home'); return; }
   UPD_DISC_MODE='total';
   const canEnterPayments=canManagePayments();
   const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0);
@@ -7031,7 +7045,7 @@ function openDepositOverpayModal(myDep,payAmount,onDone){
   });
 }
 function deleteLeadConfirm(id,name){
-  const l=DB.leads.find(x=>x.id===id);
+  const l=findLeadById(id);
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
@@ -7084,7 +7098,8 @@ function deleteLeadConfirm(id,name){
           }
         }
       }
-      await apiDeleteLead(id,PROFILE.key); DB.leads=DB.leads.filter(x=>x.id!==id);
+      await apiDeleteLead(id,PROFILE.key);
+      DB.leads=DB.leads.filter(x=>x.id!==id); CLIENTDB_LIST=CLIENTDB_LIST.filter(x=>x.id!==id); COMPANY_LEADS_LIST=COMPANY_LEADS_LIST.filter(x=>x.id!==id);
       ov.remove(); toast(name+' deleted'); route('pipeline');
     }catch(e){ toast('Delete failed: '+(e.message||e)); b.disabled=false; b.textContent='Retry'; }
   });
@@ -7099,7 +7114,7 @@ function handleSaveUpdateClick(id,myDep){
   }
   saveUpdate(id);
 }
-async function saveUpdate(id,resolvedDepositTarget){ const l=DB.leads.find(x=>x.id===id); if(!l)return;
+async function saveUpdate(id,resolvedDepositTarget){ const l=findLeadById(id); if(!l)return;
   const name=val('u_name').trim()||l.name; const contact=val('u_contact').trim();
   const plotType=val('u_plottype'); const noPlots=num(val('u_noplots'))||1; const unitPrice=num(val('u_unitprice'));
   const discount=discForMode(val('u_discount'),noPlots,UPD_DISC_MODE); const plan=val('u_plan'); const stage=val('u_stage');
@@ -7172,7 +7187,7 @@ function bindPaymentEntryCtrls(l,allEntries){
   });
 }
 function viewPaymentSchedule(id){
-  const l=DB.leads.find(x=>x.id===id); if(!l){ route('home'); return; }
+  const l=findLeadById(id); if(!l){ route('home'); return; }
   const canEnterPayments=canManagePayments();
   const logBtnHtml=(slotKey,expected)=>canEnterPayments?`<div class="foot"><button class="chip" data-logmonth="${slotKey}" data-expected="${expected}">Log payment for this month →</button></div>`:'';
   const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -7338,7 +7353,7 @@ function paintLogPayBody(){
     const inp=document.getElementById('lp_q');
     const bindLpResultRows=()=>{
       body.querySelectorAll('[data-lpsel]').forEach(b=>b.onclick=()=>{
-        const lead=DB.leads.find(x=>x.id===b.dataset.lpsel)||CLIENTDB_LIST.find(x=>x.id===b.dataset.lpsel);
+        const lead=findLeadById(b.dataset.lpsel);
         if(lead){ LOGPAY_SELECTED_LEAD=lead; paintLogPayBody(); }
       });
     };
@@ -9199,7 +9214,7 @@ function openContractNewClientModal(){
     const btn=document.getElementById('ca_saveNewClient'); btn.disabled=true; btn.textContent='Saving…';
     try{
       const row=await apiInsertLead(l,c,agentKey);
-      DB.leads.push(row); CLIENTDB_LIST.unshift(row);
+      CLIENTDB_LIST.unshift(row); if(agentKey===PROFILE.agent_key) DB.leads.push(row);
       toast('Client added — generating contract…'); ov.remove();
       await buildContractOfSalePDF(row);
       paintContractAppBody();
