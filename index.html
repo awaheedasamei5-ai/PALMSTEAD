@@ -881,7 +881,7 @@ urlToDataUri(TRULANDER_LOGO_SRC).then(u=>TRULANDER_LOGO_DATA_URI=u).catch(()=>{}
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
-let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[],leaveRequests:[],memos:[],banners:[]};
+let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],pendingPayments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[],leaveRequests:[],memos:[],banners:[]};
 /* ---- display preferences (font size / family), applied via CSS custom
    properties so they take effect instantly with no per-page rework ---- */
 const DISPLAY_FONT_FAMILIES={
@@ -1932,7 +1932,9 @@ async function apiLoadAll(){
     DB.sitevisits=d.sitevisits.slice(); DB.activity=d.activity.slice();
     DB.plots=(d.plots||[]).slice();
     DB.myPlots=DB.plots.filter(p=>p.agentKey===PROFILE.key);
-    DB.payments=(PROFILE.role==='manager'?(d.payments||[]):(d.payments||[]).filter(p=>p.agentKey===PROFILE.key)).slice();
+    { const scoped=(PROFILE.role==='manager'?(d.payments||[]):(d.payments||[]).filter(p=>p.agentKey===PROFILE.key)).slice();
+      DB.payments=scoped.filter(p=>(p.status||'approved')!=='pending');
+      DB.pendingPayments=scoped.filter(p=>p.status==='pending'); }
     DB.announcements=(d.announcements||[]).slice();
     DB.profiles=STAFF_LIST.filter(s=>s.role==='agent').map(s=>({name:s.name,role:'agent',agent_key:s.key,birthday:(d.profileBirthdays||{})[s.key]||null}));
     DB.agentMonthStats=await apiLoadAgentMonthStats();
@@ -1951,8 +1953,13 @@ async function apiLoadAll(){
       let pq=sb.from('payments').select('*').order('payment_date',{ascending:false});
       if(PROFILE.role!=='manager') pq=pq.eq('agent_key',PROFILE.agent_key);
       const {data:pd,error:pErr}=await pq; if(pErr) throw pErr;
-      DB.payments=(pd||[]).map(r=>({id:r.id,leadId:r.lead_id,agentKey:r.agent_key,clientName:r.client_name,amount:r.amount,date:r.payment_date,method:r.payment_method||'',createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
-    }catch(e){ DB.payments=[]; } // payments table not set up yet — Monthly Collected just shows empty
+      const mapped=(pd||[]).map(r=>({id:r.id,leadId:r.lead_id,agentKey:r.agent_key,clientName:r.client_name,amount:r.amount,date:r.payment_date,method:r.payment_method||'',status:r.status||'approved',decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedAt:r.decided_at,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
+      // DB.payments stays "approved money only" -- everything else (commission,
+      // leaderboard, Monthly Collected, dashboards) reads it directly and must never
+      // count a payment Management hasn't confirmed yet.
+      DB.payments=mapped.filter(p=>p.status!=='pending');
+      DB.pendingPayments=mapped.filter(p=>p.status==='pending');
+    }catch(e){ DB.payments=[]; DB.pendingPayments=[]; } // payments table not set up yet — Monthly Collected just shows empty
   };
   const loadPlots=async()=>{
     try{
@@ -2283,10 +2290,14 @@ async function apiInsertActivity(row){
   const {data,error}=await sb.from('activity_log').insert(dbrow).select().single(); if(error) throw error; return mapAct(data);
 }
 const PAYMENT_METHODS=['Ecobank','Stanbic Bank','MTN MoMo','Vodafone Cash','Hubtel','Cash','Other'];
-async function apiInsertPayment(leadId,clientName,amount,paymentDate,paymentMethod){
-  const pdate=paymentDate||today();
+// status defaults to 'approved' for historical/bulk-import callers (unchanged
+// behavior); live payment-entry surfaces pass 'pending' for a non-manager logger
+// so the money can't reach the client until Management approves it -- see
+// logNewPayment() below, the single place that decides which status to use.
+async function apiInsertPayment(leadId,clientName,amount,paymentDate,paymentMethod,status){
+  const pdate=paymentDate||today(); const st=status||'approved';
   if(DEMO_MODE){ const d=await demoLoad(); d.payments=d.payments||[];
-    const rec={id:uid(),leadId,agentKey:PROFILE.key,clientName,amount,date:pdate,method:paymentMethod||'',createdAt:today()+' '+nowTime()};
+    const rec={id:uid(),leadId,agentKey:PROFILE.key,clientName,amount,date:pdate,method:paymentMethod||'',status:st,createdAt:today()+' '+nowTime()};
     d.payments.unshift(rec); await demoSave(); return rec; }
   // Payments are always attributed to the lead's own assigned agent, never to whoever is
   // physically logging them (payment entry is Elias/Management-only, but visibility for the
@@ -2294,10 +2305,17 @@ async function apiInsertPayment(leadId,clientName,amount,paymentDate,paymentMeth
   // possibly-stale in-memory lead, and enforced again at the database level either way.
   let leadAgentKey=PROFILE.agent_key;
   try{ const {data:leadRow}=await sb.from('leads').select('agent_key').eq('id',leadId).maybeSingle(); if(leadRow) leadAgentKey=leadRow.agent_key; }catch(e){}
-  const dbrow={lead_id:leadId,agent_key:leadAgentKey,client_name:clientName,amount,payment_date:pdate,payment_method:paymentMethod||null};
+  const dbrow={lead_id:leadId,agent_key:leadAgentKey,client_name:clientName,amount,payment_date:pdate,payment_method:paymentMethod||null,status:st};
   try{ const {data,error}=await sb.from('payments').insert(dbrow).select().single(); if(error) throw error;
-    return {id:data.id,leadId:data.lead_id,agentKey:data.agent_key,clientName:data.client_name,amount:data.amount,date:data.payment_date,method:data.payment_method||'',createdAt:(data.created_at||'').slice(0,16).replace('T',' ')};
+    return {id:data.id,leadId:data.lead_id,agentKey:data.agent_key,clientName:data.client_name,amount:data.amount,date:data.payment_date,method:data.payment_method||'',status:data.status||'approved',createdAt:(data.created_at||'').slice(0,16).replace('T',' ')};
   }catch(e){ return null; } // payments table not set up yet — pipeline still saves fine, just no ledger entry
+}
+async function apiDecidePayment(id,approve){
+  const patch={status:approve?'approved':'declined',decided_by:PROFILE.key,decided_by_name:PROFILE.name,decided_at:new Date().toISOString()};
+  if(DEMO_MODE){ const d=await demoLoad(); const p=(d.payments||[]).find(x=>x.id===id); if(p) Object.assign(p,{status:patch.status,decidedBy:patch.decided_by,decidedByName:patch.decided_by_name,decidedAt:patch.decided_at}); await demoSave(); return p; }
+  const {data,error}=await sb.from('payments').update(patch).eq('id',id).select().single();
+  if(error) throw error;
+  return {id:data.id,leadId:data.lead_id,agentKey:data.agent_key,clientName:data.client_name,amount:data.amount,date:data.payment_date,method:data.payment_method||'',status:data.status,decidedBy:data.decided_by,decidedByName:data.decided_by_name,decidedAt:data.decided_at,createdAt:(data.created_at||'').slice(0,16).replace('T',' ')};
 }
 async function apiUpdatePayment(id,amount,paymentDate,paymentMethod){
   if(DEMO_MODE){ const d=await demoLoad(); const p=(d.payments||[]).find(x=>x.id===id); if(p){ p.amount=amount; p.date=paymentDate; if(paymentMethod!==undefined) p.method=paymentMethod; } await demoSave(); return; }
@@ -2329,6 +2347,44 @@ async function syncLeadAfterPaymentDelta(leadId,delta){
   const bal=Math.max(grand-newPaid,0);
   await apiUpdateLead(lead.id,{amtPaid:newPaid,balance:bal});
   Object.assign(lead,{amtPaid:newPaid,balance:bal});
+}
+// Applies an APPROVED payment's amount to the lead's running balance, fires the
+// allocation/target checks, and sends the client's thank-you SMS -- shared by
+// logNewPayment() (when the logger is Management, who auto-approves their own
+// entry) and the Pending Approvals review screen (when Management approves
+// someone else's submission after the fact).
+async function applyApprovedPaymentToLead(lead,prec){
+  const newPaid=num(lead.amtPaid)+num(prec.amount);
+  const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand;
+  const bal=Math.max(grand-newPaid,0);
+  await apiUpdateLead(lead.id,{amtPaid:newPaid,balance:bal});
+  Object.assign(lead,{amtPaid:newPaid,balance:bal});
+  const cdbLead=findLeadById(lead.id); if(cdbLead&&cdbLead!==lead) Object.assign(cdbLead,{amtPaid:newPaid,balance:bal});
+  await checkAllocationTrigger(lead);
+  await checkTargetExceeded();
+  if(lead.contact) apiSendSms(lead.contact,`Hi ${lead.name}, thank you for your payment of ${ghs(prec.amount)} towards your plot at Royal Palm Enclave. - PEP Landbank`,'payment_thanks').catch(()=>{});
+}
+// Central "a new payment just happened" handler for every live payment-entry surface
+// (Update Pipeline, Log Payment app, Monthly Closed's log-for-month modal). A
+// non-manager logger's entry goes to Pending and does NOT touch the lead's balance,
+// generate a receipt, or send an SMS until Management approves it -- money must
+// never reach the client before that approval. Management logging it themselves
+// auto-approves (no self-approval step needed).
+async function logNewPayment(lead,amount,date,method,activityDetail){
+  const status=PROFILE.role==='manager'?'approved':'pending';
+  const prec=await apiInsertPayment(lead.id,lead.name,amount,date,method,status);
+  if(!prec) return {payment:null,status,offerReceipt:false};
+  if(status==='approved'){
+    DB.payments.unshift(prec);
+    await applyApprovedPaymentToLead(lead,prec);
+    await addActivity(lead.name,'Payment logged',activityDetail,'','',null);
+  } else {
+    DB.pendingPayments=DB.pendingPayments||[]; DB.pendingPayments.unshift(prec);
+    await addActivity(lead.name,'Payment submitted for approval',activityDetail,'','',null);
+    try{ await apiSendMessage('manager','New payment pending approval: '+lead.name+' — '+ghs(amount)+' logged by '+PROFILE.name+'. Open Office Desk › Log Payment › Pending Approvals to review.'); }catch(e){}
+    toast('Payment submitted — awaiting Management approval before the receipt is sent to '+lead.name+'.');
+  }
+  return {payment:prec,status,offerReceipt:status==='approved'};
 }
 async function apiInsertQuotationRequest(row){
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),requestedBy:PROFILE.key,requestedByName:PROFILE.name,...row,createdAt:new Date().toISOString()};
@@ -7233,20 +7289,25 @@ async function saveUpdate(id,resolvedDepositTarget){ const l=findLeadById(id); i
   const discount=discForMode(val('u_discount'),noPlots,UPD_DISC_MODE); const plan=val('u_plan'); const stage=val('u_stage');
   const oldDiscount=num(l.discount);
   const tmp={...l,plotType,noPlots,unitPrice,discount,paymentPlan:plan}; const cc=computeLead(tmp);
-  const pay=num(val('u_pay')); const paidTotalInput=num(val('u_paidtotal')); const newPaid=paidTotalInput+(pay>0?pay:0);
+  const pay=num(val('u_pay')); const paidTotalInput=num(val('u_paidtotal'));
   const ledgerSum=(DB.payments||[]).filter(p=>p.leadId===l.id).reduce((s,p)=>s+num(p.amount),0);
   if(paidTotalInput<ledgerSum-0.5){
     toast("Total paid can't be set below "+ghs(ledgerSum)+" — that's already itemized in the payment ledger. Edit or delete the specific entry there instead (Payment schedule, below).");
     return;
   }
   const next=val('u_next').trim()||l.nextAction; const notes=val('u_notes').trim(); const tags=val('u_tags').trim();
-  const sv=val('u_sv')==='Mark as visited'?'Yes':l.siteVisit; const bal=Math.max(cc.grand-newPaid,0);
+  const sv=val('u_sv')==='Mark as visited'?'Yes':l.siteVisit;
+  // The new payment (if any) is applied separately below via logNewPayment(), which
+  // only touches amtPaid/balance once Management has approved it -- this patch only
+  // ever reflects the pre-existing/corrected total (paidTotalInput), never the new
+  // pay amount, so a pending payment can never leak into the lead's running balance.
+  const bal=Math.max(cc.grand-paidTotalInput,0);
   const deptargetEl=document.getElementById('u_deptarget');
   const depositTarget=resolvedDepositTarget!=null?resolvedDepositTarget:(deptargetEl?num(deptargetEl.value):undefined);
   const btn=document.getElementById('saveUpd'); btn.disabled=true; btn.textContent='Saving…';
   const oldName=l.name, oldContact=l.contact;
   try{
-    const patch={name,contact,plotType,noPlots,unitPrice,amtPaid:newPaid,stage,nextAction:next,notes,tags,siteVisit:sv,balance:bal,discount,paymentPlan:plan,netTotal:cc.net,grandTotal:cc.grand};
+    const patch={name,contact,plotType,noPlots,unitPrice,amtPaid:paidTotalInput,stage,nextAction:next,notes,tags,siteVisit:sv,balance:bal,discount,paymentPlan:plan,netTotal:cc.net,grandTotal:cc.grand};
     if(depositTarget!=null) patch.depositTarget=depositTarget;
     await apiUpdateLead(id,patch);
     Object.assign(l,patch);
@@ -7255,16 +7316,13 @@ async function saveUpdate(id,resolvedDepositTarget){ const l=findLeadById(id); i
     if(name!==oldName || contact!==oldContact){
       notifyClient({...l,name,contact},'Account details updated','Your details on file were updated by your agent. Log in to review them.').catch(()=>{});
     }
-    let loggedPayment=null;
-    if(pay>0){ const methodEl=document.getElementById('u_paymethod'); const prec=await apiInsertPayment(id,name,pay,undefined,methodEl?methodEl.value:undefined); if(prec){ DB.payments.unshift(prec); loggedPayment=prec; } }
-    await checkAllocationTrigger(l);
-    await checkTargetExceeded();
-    const parts=[]; if(pay>0)parts.push('Payment '+ghs(pay)); parts.push('Stage: '+stage); if(discount!==oldDiscount)parts.push('Discount now '+ghs(discount));
+    let paymentResult=null;
+    if(pay>0){ const methodEl=document.getElementById('u_paymethod'); paymentResult=await logNewPayment(l,pay,undefined,methodEl?methodEl.value:undefined,'Pipeline update · '+ghs(pay)); }
+    const parts=[]; if(pay>0)parts.push(paymentResult&&paymentResult.status==='pending'?('Payment '+ghs(pay)+' (pending approval)'):('Payment '+ghs(pay))); parts.push('Stage: '+stage); if(discount!==oldDiscount)parts.push('Discount now '+ghs(discount));
     await addActivity(name,'Pipeline update',parts.join(' · '),val('u_disc').trim(),val('u_method'),val('u_follow'));
-    toast(pay>0?('Payment recorded · '+ghs(pay)):'Pipeline updated'); route('updateOne',id,true);
-    if(loggedPayment && canManagePayments()){
-      if(contact) apiSendSms(contact,`Hi ${name}, thank you for your payment of ${ghs(pay)} towards your plot at Royal Palm Enclave. - PEP Landbank`,'payment_thanks');
-      offerSendReceipt({...l,name,contact},loggedPayment);
+    toast(pay>0?(paymentResult&&paymentResult.status==='pending'?'Pipeline updated · payment awaiting approval':('Payment recorded · '+ghs(pay))):'Pipeline updated'); route('updateOne',id,true);
+    if(paymentResult&&paymentResult.offerReceipt){
+      offerSendReceipt({...l,name,contact},paymentResult.payment);
     }
   }catch(e){ toast('Update failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save update'; }
 }
@@ -7410,22 +7468,11 @@ function openLogMonthPayment(lead,slotKey,expected){
     if(!date||date.slice(0,7)!==slotKey){ toast('Date must fall within '+monthLabel(slotKey)); return; }
     const btn=document.getElementById('saveLogMonth'); btn.disabled=true; btn.textContent='Saving…';
     try{
-      const prec=await apiInsertPayment(lead.id,lead.name,amount,date,method);
-      if(prec) DB.payments.unshift(prec);
-      const newPaid=num(lead.amtPaid)+amount;
-      const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand;
-      const bal=Math.max(grand-newPaid,0);
-      await apiUpdateLead(lead.id,{amtPaid:newPaid,balance:bal});
-      Object.assign(lead,{amtPaid:newPaid,balance:bal});
-      await checkAllocationTrigger(lead);
-      await checkTargetExceeded();
-      await addActivity(lead.name,'Payment logged',ghs(amount)+' for '+monthLabel(slotKey),'','',null);
-      toast('Payment logged · '+ghs(amount)); ov.remove();
+      const result=await logNewPayment(lead,amount,date,method,ghs(amount)+' for '+monthLabel(slotKey));
+      if(result.status==='approved') toast('Payment logged · '+ghs(amount));
+      ov.remove();
       route('paymentSchedule',lead.id);
-      if(prec && canManagePayments()){
-        if(lead.contact) apiSendSms(lead.contact,`Hi ${lead.name}, thank you for your payment of ${ghs(amount)} towards your plot at Royal Palm Enclave. - PEP Landbank`,'payment_thanks');
-        offerSendReceipt(lead,prec);
-      }
+      if(result.offerReceipt) offerSendReceipt(lead,result.payment);
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save payment'; }
   };
 }
@@ -7438,14 +7485,66 @@ function openLogMonthPayment(lead,slotKey,expected){
    every past entry. Reuses the same underlying API calls as Update Pipeline's own payment
    ledger (apiUpdatePayment/apiDeletePayment/syncLeadAfterPaymentDelta) so corrections stay
    consistent everywhere, but re-renders in place instead of navigating away. */
-let LOGPAY_SELECTED_LEAD=null, LOGPAY_QUERY='';
+let LOGPAY_SELECTED_LEAD=null, LOGPAY_QUERY='', logPayTab='search';
 async function viewLogPaymentApp(){
   if(!canManagePayments()){ V.innerHTML=back('officedesk')+emptyState(ic.savings,'Elias/Management only','Payment entry is restricted to Elias and Management.'); return; }
   LOGPAY_SELECTED_LEAD=null; LOGPAY_QUERY='';
+  const isMgr=PROFILE.role==='manager';
+  const pendingCount=(DB.pendingPayments||[]).length;
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Payments</div><h2>Log Payment</h2><p>Search a client, log a payment, or review and correct past entries.</p></div></div>
+  ${isMgr?`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <button class="chip ${logPayTab==='search'?'on':''}" data-logpaytab="search">Log Payment</button>
+    <button class="chip ${logPayTab==='pending'?'on':''}" data-logpaytab="pending">Pending Approvals${pendingCount?' ('+pendingCount+')':''}</button>
+  </div>`:''}
   <div id="logpayBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load clients: '+(e.message||e)); } }
+  if(isMgr) document.querySelectorAll('[data-logpaytab]').forEach(b=>b.onclick=()=>{ logPayTab=b.dataset.logpaytab; viewLogPaymentApp(); });
   paintLogPayBody();
+}
+function findPaymentById(id){ return (DB.payments||[]).find(x=>x.id===id) || (DB.pendingPayments||[]).find(x=>x.id===id); }
+function pendingPaymentsHtml(){
+  const pending=(DB.pendingPayments||[]).slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  return `<div class="sectitle" style="margin-top:0"><h3>Pending approval</h3><span class="cnt">${pending.length}</span></div>
+  <p class="mini" style="margin:-4px 0 14px">These payments have been logged but not yet applied to the client's balance — the receipt and SMS only go out once you approve.</p>
+  <div class="list">${pending.length?pending.map(p=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(p.clientName)} · ${ghs(num(p.amount))}</div><div class="meta">${esc(p.date||'')}${p.method?(' · '+esc(p.method)):''} · logged by ${esc(soldByLabel(p.agentKey)||p.agentKey||'—')}</div></div></div>
+  <div class="foot" style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px">
+    <button class="chip" data-paydecline="${esc(p.id)}" style="color:var(--danger)">Decline</button>
+    <button class="btn primary" data-payapprove="${esc(p.id)}" style="padding:8px 18px;font-size:12.5px">Approve &amp; send receipt</button>
+  </div></div>`).join(''):emptyState(ic.savings,'Nothing pending','New payments logged by staff will show up here for approval.')}</div>`;
+}
+function bindPendingPaymentsCtrls(){
+  document.querySelectorAll('[data-payapprove]').forEach(b=>b.onclick=async()=>{
+    const p=(DB.pendingPayments||[]).find(x=>x.id===b.dataset.payapprove); if(!p) return;
+    const lead=findLeadById(p.leadId);
+    if(!lead){ toast('Could not find the linked client record'); return; }
+    b.disabled=true; b.textContent='Approving…';
+    try{
+      const updated=await apiDecidePayment(p.id,true);
+      DB.pendingPayments=(DB.pendingPayments||[]).filter(x=>x.id!==p.id);
+      const approvedRec={...p,status:'approved',decidedBy:updated.decidedBy,decidedByName:updated.decidedByName,decidedAt:updated.decidedAt};
+      DB.payments.unshift(approvedRec);
+      await applyApprovedPaymentToLead(lead,approvedRec);
+      await addActivity(lead.name,'Payment approved',ghs(num(p.amount))+' approved by '+PROFILE.name,'','',null);
+      try{ await apiSendMessage(p.agentKey,'Your payment of '+ghs(num(p.amount))+' for '+lead.name+' was approved and the receipt has been sent.'); }catch(e){}
+      toast('Approved · receipt ready to send');
+      paintLogPayBody();
+      offerSendReceipt(lead,approvedRec);
+    }catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; b.textContent='Approve & send receipt'; }
+  });
+  document.querySelectorAll('[data-paydecline]').forEach(b=>b.onclick=async()=>{
+    const p=(DB.pendingPayments||[]).find(x=>x.id===b.dataset.paydecline); if(!p) return;
+    if(!confirm("Decline this "+ghs(num(p.amount))+" payment? It will NOT be applied to the client's balance.")) return;
+    b.disabled=true;
+    try{
+      await apiDecidePayment(p.id,false);
+      DB.pendingPayments=(DB.pendingPayments||[]).filter(x=>x.id!==p.id);
+      const lead=findLeadById(p.leadId);
+      await addActivity((lead&&lead.name)||p.clientName,'Payment declined',ghs(num(p.amount))+' declined by '+PROFILE.name,'','',null);
+      try{ await apiSendMessage(p.agentKey,'Your payment of '+ghs(num(p.amount))+' for '+p.clientName+' was declined by Management. Please check the details and re-submit if needed.'); }catch(e){}
+      toast('Declined');
+      paintLogPayBody();
+    }catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
+  });
 }
 function logPaymentSearchResultsHtml(q){
   const query=(q||'').toLowerCase();
@@ -7460,6 +7559,11 @@ function logPaymentSearchResultsHtml(q){
 }
 function paintLogPayBody(){
   const body=document.getElementById('logpayBody'); if(!body) return;
+  if(logPayTab==='pending'&&PROFILE.role==='manager'){
+    body.innerHTML=pendingPaymentsHtml();
+    bindPendingPaymentsCtrls();
+    return;
+  }
   if(!LOGPAY_SELECTED_LEAD){
     body.innerHTML=`<div class="searchbar" style="margin-bottom:14px"><input id="lp_q" placeholder="Search name or contact…" value="${esc(LOGPAY_QUERY)}"/></div>
     <div class="list" id="lpResults">${logPaymentSearchResultsHtml(LOGPAY_QUERY)}</div>`;
@@ -7479,7 +7583,7 @@ function paintLogPayBody(){
 }
 function logPayDetailHtml(lead){
   const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand; const bal=Math.max(grand-num(lead.amtPaid),0);
-  const entries=(DB.payments||[]).filter(p=>p.leadId===lead.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const entries=[...(DB.payments||[]),...(DB.pendingPayments||[])].filter(p=>p.leadId===lead.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   return `<button class="linkbtn" id="lpBackToSearch" style="margin-bottom:10px">‹ Search again</button>
   <div style="font-weight:800;font-size:17px;margin-bottom:2px">${esc(lead.name)}</div>
   <div class="mini" style="margin-bottom:14px">${esc(lead.contact||'')} · ${esc(lead.plotType||'')}${lead.noPlots?' ×'+esc(lead.noPlots):''}</div>
@@ -7495,7 +7599,7 @@ function logPayDetailHtml(lead){
     <div class="formactions"><button class="btn primary" id="saveLP" style="width:100%">Log payment</button></div>
   </div>
   <div class="sectitle"><h3>Payment history</h3><span class="cnt">${entries.length}</span></div>
-  <div class="list" id="lpHistoryList">${entries.length?entries.map(p=>`<div class="rowcard" style="padding:12px 14px"><div class="top"><div><div class="nm" style="font-size:13.5px">${ghs(num(p.amount))}</div><div class="meta">${esc(p.date||'')}${p.method?(' · '+esc(p.method)):''}</div></div>
+  <div class="list" id="lpHistoryList">${entries.length?entries.map(p=>`<div class="rowcard" style="padding:12px 14px"><div class="top"><div><div class="nm" style="font-size:13.5px">${ghs(num(p.amount))}${p.status==='pending'?' <span class="tag warnt">Pending approval</span>':p.status==='declined'?' <span class="tag dgr">Declined</span>':''}</div><div class="meta">${esc(p.date||'')}${p.method?(' · '+esc(p.method)):''}</div></div>
     <div style="display:flex;gap:6px;flex:0 0 auto"><button class="chip" data-lpedit="${esc(p.id)}" style="padding:4px 9px;font-size:11px">Edit</button><button class="chip" data-lpdel="${esc(p.id)}" style="padding:4px 9px;font-size:11px;color:#B4472F">Delete</button></div>
     </div></div>`).join(''):emptyState(ic.update,'No payments logged yet','')}</div>`;
 }
@@ -7507,33 +7611,29 @@ function bindLogPayDetailCtrls(lead){
     if(!date){ toast('Pick a date'); return; }
     const btn=document.getElementById('saveLP'); btn.disabled=true; btn.textContent='Saving…';
     try{
-      const prec=await apiInsertPayment(lead.id,lead.name,amount,date,method);
-      if(prec) DB.payments.unshift(prec);
-      const newPaid=num(lead.amtPaid)+amount;
-      const grand2=lead.grandTotal!=null?num(lead.grandTotal):computeLead(lead).grand;
-      const newBal=Math.max(grand2-newPaid,0);
-      await apiUpdateLead(lead.id,{amtPaid:newPaid,balance:newBal});
-      Object.assign(lead,{amtPaid:newPaid,balance:newBal});
-      const cdbLead=CLIENTDB_LIST.find(x=>x.id===lead.id); if(cdbLead) Object.assign(cdbLead,{amtPaid:newPaid,balance:newBal});
-      await checkAllocationTrigger(lead);
-      await checkTargetExceeded();
-      await addActivity(lead.name,'Payment logged',ghs(amount)+' via Log Payment','','',null);
-      if(lead.contact) apiSendSms(lead.contact,`Hi ${lead.name}, thank you for your payment of ${ghs(amount)} towards your plot at Royal Palm Enclave. - PEP Landbank`,'payment_thanks').catch(()=>{});
+      const result=await logNewPayment(lead,amount,date,method,ghs(amount)+' via Log Payment');
+      const cdbLead=CLIENTDB_LIST.find(x=>x.id===lead.id); if(cdbLead) Object.assign(cdbLead,{amtPaid:lead.amtPaid,balance:lead.balance});
+      if(result.status==='approved') toast('Payment logged · '+ghs(amount));
       paintLogPayBody();
-      if(prec) await offerSendReceipt(lead,prec);
+      if(result.offerReceipt) await offerSendReceipt(lead,result.payment);
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Log payment'; }
   };
   document.querySelectorAll('[data-lpedit]').forEach(b=>b.onclick=()=>{
-    const p=(DB.payments||[]).find(x=>x.id===b.dataset.lpedit); if(p) openLogPayEditModal(p,lead);
+    const p=findPaymentById(b.dataset.lpedit); if(p) openLogPayEditModal(p,lead);
   });
   document.querySelectorAll('[data-lpdel]').forEach(b=>b.onclick=async()=>{
-    const p=(DB.payments||[]).find(x=>x.id===b.dataset.lpdel); if(!p) return;
-    if(!confirm('Delete this '+ghs(num(p.amount))+' payment dated '+(p.date||'')+'? This also updates their balance, Agent of the Month, and commission.')) return;
+    const p=findPaymentById(b.dataset.lpdel); if(!p) return;
+    const isPending=p.status==='pending';
+    if(!confirm('Delete this '+ghs(num(p.amount))+' payment dated '+(p.date||'')+'?'+(isPending?' It is still pending approval and was never applied to their balance.':' This also updates their balance, Agent of the Month, and commission.'))) return;
     try{
       await apiDeletePayment(p.id);
-      DB.payments=(DB.payments||[]).filter(x=>x.id!==p.id);
-      await syncLeadAfterPaymentDelta(lead.id,-num(p.amount));
-      const cdbLead=CLIENTDB_LIST.find(x=>x.id===lead.id); if(cdbLead) Object.assign(cdbLead,{amtPaid:lead.amtPaid,balance:lead.balance});
+      if(isPending){
+        DB.pendingPayments=(DB.pendingPayments||[]).filter(x=>x.id!==p.id);
+      } else {
+        DB.payments=(DB.payments||[]).filter(x=>x.id!==p.id);
+        await syncLeadAfterPaymentDelta(lead.id,-num(p.amount));
+        const cdbLead=CLIENTDB_LIST.find(x=>x.id===lead.id); if(cdbLead) Object.assign(cdbLead,{amtPaid:lead.amtPaid,balance:lead.balance});
+      }
       await addActivity(lead.name,'Payment deleted',ghs(num(p.amount))+' removed ('+monthLabel((p.date||'').slice(0,7))+')','','',null);
       toast('Payment deleted');
       paintLogPayBody();
@@ -7563,9 +7663,11 @@ function openLogPayEditModal(p,lead){
       const oldAmount=num(p.amount);
       await apiUpdatePayment(p.id,newAmount,newDate,newMethod);
       p.amount=newAmount; p.date=newDate; p.method=newMethod;
-      await syncLeadAfterPaymentDelta(lead.id,newAmount-oldAmount);
-      const cdbLead=CLIENTDB_LIST.find(x=>x.id===lead.id); if(cdbLead) Object.assign(cdbLead,{amtPaid:lead.amtPaid,balance:lead.balance});
-      await checkAllocationTrigger(lead);
+      if(p.status!=='pending'){
+        await syncLeadAfterPaymentDelta(lead.id,newAmount-oldAmount);
+        const cdbLead=CLIENTDB_LIST.find(x=>x.id===lead.id); if(cdbLead) Object.assign(cdbLead,{amtPaid:lead.amtPaid,balance:lead.balance});
+        await checkAllocationTrigger(lead);
+      }
       await addActivity(lead.name,'Payment corrected',ghs(oldAmount)+' → '+ghs(newAmount)+' ('+monthLabel(newDate.slice(0,7))+')','','',null);
       toast('Payment corrected'); ov.remove();
       paintLogPayBody();
