@@ -556,6 +556,12 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .lvCalCell.taken{background:var(--paper);color:var(--muted);cursor:not-allowed;text-decoration:line-through}
 .lvCalCell.today{border-color:var(--gold)}
 .lvCalCell.sel{background:var(--ink);color:#fff;border-color:var(--ink)}
+.memoToolbar{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:0;padding:8px;background:var(--paper);border:1.5px solid var(--line);border-bottom:none;border-radius:14px 14px 0 0}
+.memoToolbar select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font-size:12px}
+.memoToolbar button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;color:var(--text);min-width:32px}
+.memoToolbar button:hover{background:var(--ink);color:#fff}
+.memoEditor{min-height:280px;border:1.5px solid var(--line);border-radius:0 0 14px 14px;padding:16px;background:#fff;color:#111;line-height:1.6;outline:none;font-size:14px}
+.memoEditor:focus{box-shadow:var(--glow-blue)}
 .chip2.on{background:var(--ink);color:#fff;border-color:var(--ink);transform:scale(1.03)}
 .calcbox{background:linear-gradient(135deg,#F3F7F4,#EEF6F1);border:1.5px dashed var(--leaf);border-radius:14px;padding:13px 14px;margin:4px 0 15px;
   display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -868,7 +874,7 @@ urlToDataUri(TRULANDER_LOGO_SRC).then(u=>TRULANDER_LOGO_DATA_URI=u).catch(()=>{}
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
-let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[],leaveRequests:[]};
+let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[],leaveRequests:[],memos:[]};
 /* ---- display preferences (font size / family), applied via CSS custom
    properties so they take effect instantly with no per-page rework ---- */
 const DISPLAY_FONT_FAMILIES={
@@ -1181,6 +1187,7 @@ function defaultConfig(){ return {
   quoteFooterAddress:'First Floor Alex Nerda Building. Nungua Nautical Beach Road Drive',
   receiptThanksText:'Thank you for your payment. This receipt confirms the amount above was received by us and applied to your account.',
   companyTin:'',
+  companyAddress:'',
   leaveTotalDays:20,
   contractCeoName:'FRANK ADU PEPRAH',
   contractCoverImage:'', contractWordmarkImage:'',
@@ -2360,7 +2367,7 @@ async function apiLoadConfig(){
       commissionPoolPerPlot:data.commission_pool_per_plot!=null?num(data.commission_pool_per_plot):500,
       lastCommissionMonth:data.last_commission_month||'',
       targetPlotsPerMonth:data.target_plots_per_month!=null?num(data.target_plots_per_month):2, note:data.note||'',
-      companyPhone:data.company_phone||'',companyWhatsapp:data.company_whatsapp||'',companyEmail:data.company_email||'',companyTin:data.company_tin||'',
+      companyPhone:data.company_phone||'',companyWhatsapp:data.company_whatsapp||'',companyEmail:data.company_email||'',companyTin:data.company_tin||'',companyAddress:data.company_address||'',
       leaveTotalDays:data.leave_total_days!=null?num(data.leave_total_days):20,
       quoteCompanyName:data.quote_company_name||defaultConfig().quoteCompanyName,
       quoteSiteName:data.quote_site_name||defaultConfig().quoteSiteName,
@@ -2386,7 +2393,7 @@ async function apiSaveConfig(patch){
     targets:CONFIG.targets,commission_pct:CONFIG.commissionPct,target_plots_per_month:CONFIG.targetPlotsPerMonth,note:CONFIG.note||'',
     commission_full_cap:CONFIG.commissionFullCap,commission_half_cap:CONFIG.commissionHalfCap,
     commission_pool_per_plot:CONFIG.commissionPoolPerPlot,last_commission_month:CONFIG.lastCommissionMonth||'',
-    company_phone:CONFIG.companyPhone||'',company_whatsapp:CONFIG.companyWhatsapp||'',company_email:CONFIG.companyEmail||'',company_tin:CONFIG.companyTin||'',
+    company_phone:CONFIG.companyPhone||'',company_whatsapp:CONFIG.companyWhatsapp||'',company_email:CONFIG.companyEmail||'',company_tin:CONFIG.companyTin||'',company_address:CONFIG.companyAddress||'',
     leave_total_days:num(CONFIG.leaveTotalDays)||20,
     quote_company_name:CONFIG.quoteCompanyName||'',quote_site_name:CONFIG.quoteSiteName||'',
     quote_doc_type_text:CONFIG.quoteDocTypeText||'',quote_notes_text:CONFIG.quoteNotesText||'',
@@ -2649,6 +2656,24 @@ async function apiDecideLeaveRequest(id,approve){
 async function apiDeleteLeaveRequest(id){
   if(DEMO_MODE){ const d=await demoLoad(); d.leaveRequests=(d.leaveRequests||[]).filter(x=>x.id!==id); await demoSave(); return; }
   const {error}=await sb.from('leave_requests').delete().eq('id',id); if(error) throw error;
+}
+/* ---- memoranda ---- */
+const mapMemo=r=>({id:r.id,fromKey:r.from_key,fromName:r.from_name,toKey:r.to_key,toName:r.to_name,subject:r.subject,bodyHtml:r.body_html,parentId:r.parent_id,kind:r.kind,createdAt:r.created_at,read:r.read});
+async function apiLoadMemos(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.memos||[]).slice(); }
+  try{ const {data,error}=await sb.from('memos').select('*').order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapMemo); }
+  catch(e){ return []; }
+}
+async function apiInsertMemo(toKey,toName,subject,bodyHtml,parentId,kind){
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),fromKey:PROFILE.key,fromName:PROFILE.name,toKey,toName,subject,bodyHtml,parentId:parentId||null,kind:kind||'memo',createdAt:new Date().toISOString(),read:false};
+    d.memos=d.memos||[]; d.memos.unshift(rec); await demoSave(); return rec; }
+  const {data,error}=await sb.from('memos').insert({from_key:PROFILE.key,from_name:PROFILE.name,to_key:toKey,to_name:toName,subject,body_html:bodyHtml,parent_id:parentId||null,kind:kind||'memo'}).select().single();
+  if(error) throw error; return mapMemo(data);
+}
+async function apiMarkMemoRead(id){
+  if(DEMO_MODE){ const d=await demoLoad(); const m=(d.memos||[]).find(x=>x.id===id); if(m) m.read=true; await demoSave(); return; }
+  try{ await sb.from('memos').update({read:true}).eq('id',id); }catch(e){}
 }
 /* ---- download directory ---- */
 const mapDownload=r=>({id:r.id,userKey:r.user_key,userName:r.user_name,filename:r.filename,kind:r.kind,fileData:r.file_data,createdAt:r.created_at});
@@ -3886,7 +3911,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -3912,7 +3937,7 @@ function tabForRoute(name){
   if(['crm','sitevisit','enquiry','complaint'].includes(name)) return 'crm';
   if(name==='mgrCrmTools') return 'mgrcrm';
   if(name==='mgrPlotInv') return 'mgrplots';
-  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp') return 'officedesk';
+  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp') return 'officedesk';
   if(name==='chat'||name==='chatThread') return 'chat';
   if(name==='home'||name==='mgr') return 'home';
   return 'more';
@@ -4173,6 +4198,7 @@ function mgrAppRoute(key){
   if(key==='Feedback') route('feedback');
   else if(key==='Duties') route('duties');
   else if(key==='Leave Schedules') route('leaveapp');
+  else if(key==='Memorandum') route('memoapp');
   else if(key==='Insights') route('insights');
   else if(key==='Downloads') route('downloads');
   else if(key==='Plot Requests') route('plotrequests');
@@ -4210,6 +4236,7 @@ function viewOfficeDesk(){
     {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
     {key:'Feedback',fic:'chat',label:'Team Feedback'},
     {key:'Leave Schedules',fic:'calendar',label:'Leave Schedules'},
+    {key:'Memorandum',fic:'document',label:'Memorandum'},
     ...(isMgr?[{key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'}]:[]),
     ...(showCompanyLeads?[{key:'Company Leads',fic:'briefcase',label:'Company Leads'}]:[])
   ];
@@ -10683,6 +10710,7 @@ function mgrCompanySettingsHtml(){
   <div class="grid2">${fld('Phone','<input id="cfg_companyPhone" placeholder="0244…" value="'+esc(CONFIG.companyPhone||'')+'"/>')}${fld('WhatsApp','<input id="cfg_companyWhatsapp" placeholder="0244… (if different)" value="'+esc(CONFIG.companyWhatsapp||'')+'"/>')}</div>
   ${fld('Email','<input id="cfg_companyEmail" type="email" placeholder="info@landbankghana.com" value="'+esc(CONFIG.companyEmail||'')+'"/>')}
   ${fld('Tax ID / TIN','<input id="cfg_companyTin" placeholder="e.g. C0012345678" value="'+esc(CONFIG.companyTin||'')+'"/>','shown on payment receipts — leave blank to hide it')}
+  ${fld('Company address','<textarea id="cfg_companyAddress" rows="2">'+esc(CONFIG.companyAddress||'')+'</textarea>','used on memo letterheads and other formal correspondence')}
   <div class="formactions"><button class="btn primary" id="saveCompanyContact">Save company contact info</button></div>
   </div>`;
 }
@@ -10690,7 +10718,7 @@ function bindCompanySettingsCtrls(){
   document.getElementById('saveCompanyContact').onclick=async()=>{
     const btn=document.getElementById('saveCompanyContact'); btn.disabled=true; btn.textContent='Saving…';
     try{
-      await apiSaveConfig({companyPhone:val('cfg_companyPhone').trim(),companyWhatsapp:val('cfg_companyWhatsapp').trim(),companyEmail:val('cfg_companyEmail').trim(),companyTin:val('cfg_companyTin').trim()});
+      await apiSaveConfig({companyPhone:val('cfg_companyPhone').trim(),companyWhatsapp:val('cfg_companyWhatsapp').trim(),companyEmail:val('cfg_companyEmail').trim(),companyTin:val('cfg_companyTin').trim(),companyAddress:val('cfg_companyAddress').trim()});
       toast('Company contact info saved');
     }catch(e){ toast('Failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save company contact info';
@@ -11170,6 +11198,253 @@ function bindLeaveSettingsCtrls(){
     try{ await apiSaveConfig({leaveTotalDays:num(val('lv_totaldays'))||20}); toast('Leave policy updated'); }
     catch(e){ toast('Save failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save';
+  };
+}
+/* ================= MEMORANDUM =================
+   A lightweight Word-like memo composer (contentEditable + execCommand) --
+   fonts, sizes, bold/italic/underline, alignment, lists. Sending drops a
+   copy in the recipient's Inbox (RLS-visible via to_key/from_key) and pings
+   them in-app chat; they can reply or escalate to someone else, which just
+   re-opens Compose pre-addressed and pre-quoted. buildMemoPDF renders the
+   rich body faithfully -- per-word bold/italic/underline and per-paragraph
+   alignment are preserved via memoHtmlToRuns' DOM walk, word-wrapped run by
+   run in pdfRenderMemoBlocks (font-family/size/colour are not, to keep the
+   PDF renderer tractable). */
+let MEMOS_LOADED=false;
+let memoAppTab='compose';
+let memoComposeSeed=null;
+function memoHtmlToRuns(html){
+  const div=document.createElement('div'); div.innerHTML=html||'';
+  const blockTags=new Set(['P','DIV','LI','H1','H2','H3','BLOCKQUOTE']);
+  function textAlignOf(el){ let e=el; while(e&&e!==div){ const a=(e.style&&e.style.textAlign)||(e.getAttribute&&e.getAttribute('align')); if(a) return a; e=e.parentElement; } return 'left'; }
+  function collectRuns(node,style,runs){
+    style=style||{bold:false,italic:false,underline:false};
+    if(node.nodeType===3){ if(node.textContent) runs.push({text:node.textContent,...style}); return; }
+    if(node.nodeType!==1) return;
+    const tag=node.tagName;
+    if(tag==='BR'){ runs.push({brk:true}); return; }
+    const s={...style};
+    if(tag==='B'||tag==='STRONG') s.bold=true;
+    if(tag==='I'||tag==='EM') s.italic=true;
+    if(tag==='U') s.underline=true;
+    if(node.style){
+      const fw=node.style.fontWeight; if(fw&&(fw==='bold'||parseInt(fw)>=600)) s.bold=true;
+      if(node.style.fontStyle==='italic') s.italic=true;
+      if(node.style.textDecoration&&node.style.textDecoration.includes('underline')) s.underline=true;
+    }
+    node.childNodes.forEach(c=>collectRuns(c,s,runs));
+  }
+  const blocks=[];
+  const children=[...div.childNodes];
+  const hasBlockChild=children.some(c=>c.nodeType===1&&blockTags.has(c.tagName));
+  if(hasBlockChild){
+    children.forEach(c=>{
+      if(c.nodeType===1&&blockTags.has(c.tagName)){
+        const runs=[]; collectRuns(c,null,runs);
+        blocks.push({align:textAlignOf(c),runs});
+      } else if(c.nodeType===3&&c.textContent.trim()){
+        blocks.push({align:'left',runs:[{text:c.textContent}]});
+      }
+    });
+  } else {
+    const runs=[]; collectRuns(div,null,runs);
+    let cur=[];
+    runs.forEach(r=>{ if(r.brk){ blocks.push({align:'left',runs:cur}); cur=[]; } else cur.push(r); });
+    blocks.push({align:'left',runs:cur});
+  }
+  return blocks;
+}
+function pdfRenderMemoBlocks(doc,blocks,marginL,marginR,startY){
+  let y=startY; const lineH=6, maxW=marginR-marginL;
+  function setFont(w){ doc.setFont('times',w.bold&&w.italic?'bolditalic':w.bold?'bold':w.italic?'italic':'normal'); }
+  blocks.forEach(block=>{
+    const words=[];
+    block.runs.forEach(run=>{
+      if(!run.text) return;
+      run.text.split(/(\s+)/).forEach(p=>{ if(p!=='') words.push({text:p,bold:run.bold,italic:run.italic,underline:run.underline}); });
+    });
+    if(!words.length){ y+=lineH; return; }
+    let line=[], lineWidth=0;
+    function flushLine(){
+      if(y>270){ doc.addPage(); y=20; }
+      let totalW=0; line.forEach(w=>{ setFont(w); totalW+=doc.getTextWidth(w.text); });
+      let x=marginL;
+      if(block.align==='center') x=marginL+(maxW-totalW)/2;
+      else if(block.align==='right') x=marginR-totalW;
+      line.forEach(w=>{
+        setFont(w); doc.text(w.text,x,y);
+        const ww=doc.getTextWidth(w.text);
+        if(w.underline) doc.line(x,y+0.8,x+ww,y+0.8);
+        x+=ww;
+      });
+      y+=lineH; line=[]; lineWidth=0;
+    }
+    words.forEach(w=>{
+      setFont(w); const ww=doc.getTextWidth(w.text);
+      if(lineWidth+ww>maxW && line.length) flushLine();
+      line.push(w); lineWidth+=ww;
+    });
+    if(line.length) flushLine();
+    y+=2;
+  });
+  doc.setFont('times','normal');
+  return y;
+}
+function buildMemoPDF(m){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return null; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  let y=pdfHeader(doc,'MEMORANDUM');
+  const marginL=14, marginR=pageW-14;
+  const contactLine=[CONFIG.companyAddress,CONFIG.companyPhone,CONFIG.companyEmail].filter(Boolean).join('  ·  ');
+  if(contactLine){ doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(90,98,110); doc.text(contactLine,marginL,y); doc.setTextColor(20,20,20); y+=7; } else y+=2;
+  doc.setFont('times','normal'); doc.setFontSize(10.5);
+  doc.text('Date: '+fmtLongDate(today()),marginR,y,{align:'right'}); y+=9;
+  doc.setFont('times','bold'); doc.setFontSize(11); doc.text('TO:',marginL,y); doc.setFont('times','normal'); doc.text(m.toName,marginL+18,y); y+=6.5;
+  doc.setFont('times','bold'); doc.text('FROM:',marginL,y); doc.setFont('times','normal'); doc.text(m.fromName,marginL+18,y); y+=6.5;
+  doc.setFont('times','bold'); doc.text('SUBJECT:',marginL,y); doc.setFont('times','normal'); doc.text(m.subject,marginL+24,y); y+=9;
+  doc.setDrawColor(20,20,20); doc.setLineWidth(0.5); doc.line(marginL,y,marginR,y); y+=8;
+  const blocks=memoHtmlToRuns(m.bodyHtml);
+  pdfRenderMemoBlocks(doc,blocks,marginL,marginR,y);
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(140,140,140);
+  doc.text('Generated '+new Date().toLocaleDateString('en-GB'),marginR,290,{align:'right'});
+  return doc;
+}
+async function viewMemoApp(){
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Memorandum</h2><p>Write and receive company memos</p></div></div>
+  <div id="memoBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  if(!MEMOS_LOADED){ try{ DB.memos=await apiLoadMemos(); MEMOS_LOADED=true; }catch(e){ toast('Could not load memos'); } }
+  if(memoComposeSeed) memoAppTab='compose';
+  paintMemoApp();
+}
+function paintMemoApp(){
+  const body=document.getElementById('memoBody'); if(!body) return;
+  const unread=DB.memos.filter(m=>m.toKey===PROFILE.key&&!m.read).length;
+  const tabs=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <button class="chip ${memoAppTab==='compose'?'on':''}" data-memotab="compose">Compose</button>
+    <button class="chip ${memoAppTab==='inbox'?'on':''}" data-memotab="inbox">Inbox${unread?' ('+unread+')':''}</button>
+    <button class="chip ${memoAppTab==='sent'?'on':''}" data-memotab="sent">Sent</button>
+  </div>`;
+  let content;
+  if(memoAppTab==='inbox') content=memoInboxHtml();
+  else if(memoAppTab==='sent') content=memoSentHtml();
+  else content=memoComposeHtml();
+  body.innerHTML=tabs+content;
+  body.querySelectorAll('[data-memotab]').forEach(b=>b.onclick=()=>{ memoAppTab=b.dataset.memotab; paintMemoApp(); });
+  if(memoAppTab==='inbox'||memoAppTab==='sent') bindMemoListCtrls();
+  else bindMemoComposeCtrls();
+}
+function memoComposeHtml(){
+  const others=STAFF_LIST.filter(s=>s.key!==PROFILE.key);
+  return `<div class="formwrap">
+  <div class="grid2">${fld('To',sel('memo_to',others.map(s=>s.name)))}${fld('Subject','<input id="memo_subject" placeholder="Subject" value="'+esc((memoComposeSeed&&memoComposeSeed.subject)||'')+'"/>')}</div>
+  <p class="mini" style="margin:-4px 0 10px">Letterhead, date, and the recipient's name are added automatically when this is downloaded or printed.</p>
+  <div class="memoToolbar" id="memoToolbar">
+    <select id="memo_font" title="Font"><option value="Helvetica, Arial, sans-serif">Helvetica</option><option value="Georgia, serif">Georgia</option><option value="'Times New Roman', serif">Times New Roman</option><option value="'Courier New', monospace">Courier New</option><option value="Arial, sans-serif">Arial</option></select>
+    <select id="memo_size" title="Size"><option value="2">10pt</option><option value="3" selected>12pt</option><option value="4">14pt</option><option value="5">18pt</option><option value="6">24pt</option></select>
+    <button type="button" data-memocmd="bold" title="Bold"><b>B</b></button>
+    <button type="button" data-memocmd="italic" title="Italic"><i>I</i></button>
+    <button type="button" data-memocmd="underline" title="Underline"><u>U</u></button>
+    <button type="button" data-memocmd="justifyLeft" title="Align left">⟸</button>
+    <button type="button" data-memocmd="justifyCenter" title="Align center">⟺</button>
+    <button type="button" data-memocmd="justifyRight" title="Align right">⟹</button>
+    <button type="button" data-memocmd="insertUnorderedList" title="Bullet list">• List</button>
+    <button type="button" data-memocmd="insertOrderedList" title="Numbered list">1. List</button>
+    <button type="button" data-memocmd="removeFormat" title="Clear formatting">Clear</button>
+  </div>
+  <div id="memoEditor" class="memoEditor" contenteditable="true">${memoComposeSeed?memoComposeSeed.bodyHtml:''}</div>
+  <div class="formactions"><button class="btn primary" id="memoSendBtn" style="width:100%">Send memo</button></div>
+  </div>`;
+}
+function bindMemoComposeCtrls(){
+  const editor=document.getElementById('memoEditor');
+  if(memoComposeSeed&&memoComposeSeed.toKey){
+    const toStaff=STAFF_LIST.find(s=>s.key===memoComposeSeed.toKey);
+    if(toStaff) document.getElementById('memo_to').value=toStaff.name;
+  }
+  const seed=memoComposeSeed; memoComposeSeed=null;
+  document.querySelectorAll('[data-memocmd]').forEach(b=>b.onclick=()=>{ editor.focus(); document.execCommand(b.dataset.memocmd,false,null); });
+  document.getElementById('memo_font').onchange=e=>{ editor.focus(); document.execCommand('fontName',false,e.target.value); };
+  document.getElementById('memo_size').onchange=e=>{ editor.focus(); document.execCommand('fontSize',false,e.target.value); };
+  document.getElementById('memoSendBtn').onclick=async()=>{
+    const others=STAFF_LIST.filter(s=>s.key!==PROFILE.key);
+    const toName=val('memo_to'); const recipient=others.find(s=>s.name===toName);
+    const subject=val('memo_subject').trim();
+    const bodyHtml=editor.innerHTML.trim();
+    if(!recipient){ toast('Choose a recipient'); return; }
+    if(!subject){ toast('Add a subject'); return; }
+    if(!bodyHtml||bodyHtml==='<br>'){ toast('Write something first'); return; }
+    const btn=document.getElementById('memoSendBtn'); btn.disabled=true; btn.textContent='Sending…';
+    try{
+      const rec=await apiInsertMemo(recipient.key,recipient.name,subject,bodyHtml,seed&&seed.parentId||null,seed&&seed.kind||'memo');
+      DB.memos.unshift(rec);
+      try{ await apiSendMessage(recipient.key,'New memo from '+PROFILE.name+': "'+subject+'" — open Office Desk › Memorandum to read it.'); }catch(e){}
+      toast('Memo sent to '+recipient.name);
+      memoAppTab='sent'; paintMemoApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Send memo'; }
+  };
+}
+function memoRowHtml(m){
+  const kindTag=m.kind==='reply'?'<span class="tag ghost">Reply</span>':m.kind==='escalation'?'<span class="tag warnt">Escalated</span>':'';
+  return `<button class="rowcard" style="text-align:left;width:100%" data-memoopen="${m.id}"><div class="top"><div><div class="nm">${esc(m.subject)}${(m.toKey===PROFILE.key&&!m.read)?' <span class="tag gold">New</span>':''}</div><div class="meta">${m.fromKey===PROFILE.key?'To '+esc(m.toName):'From '+esc(m.fromName)} · ${esc((m.createdAt||'').slice(0,16).replace('T',' '))}</div></div>${kindTag}</div></button>`;
+}
+function memoInboxHtml(){
+  const inbox=DB.memos.filter(m=>m.toKey===PROFILE.key).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  return `<div class="sectitle" style="margin-top:0"><h3>Inbox</h3><span class="cnt">${inbox.length}</span></div>
+  <div class="list">${inbox.length?inbox.map(memoRowHtml).join(''):emptyState(ic.mail,'Nothing yet','Memos sent to you will show up here.')}</div>`;
+}
+function memoSentHtml(){
+  const sent=DB.memos.filter(m=>m.fromKey===PROFILE.key).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  return `<div class="sectitle" style="margin-top:0"><h3>Sent</h3><span class="cnt">${sent.length}</span></div>
+  <div class="list">${sent.length?sent.map(memoRowHtml).join(''):emptyState(ic.mail,'Nothing sent yet','')}</div>`;
+}
+function bindMemoListCtrls(){
+  document.querySelectorAll('[data-memoopen]').forEach(b=>b.onclick=()=>openMemoView(b.dataset.memoopen));
+}
+function openMemoView(id){
+  const m=DB.memos.find(x=>x.id===id); if(!m) return;
+  if(m.toKey===PROFILE.key&&!m.read){ m.read=true; apiMarkMemoRead(m.id).catch(()=>{}); }
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  const isRecipient=m.toKey===PROFILE.key;
+  ov.innerHTML=`<div id="announceModal" style="max-width:600px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(m.subject)}</div><button id="closeMemoView" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:10px">From ${esc(m.fromName)} to ${esc(m.toName)} · ${esc((m.createdAt||'').slice(0,16).replace('T',' '))}</div>
+    <div class="formwrap" style="max-height:50vh;overflow:auto;color:#111;background:#fff">${m.bodyHtml}</div>
+    <div class="formactions" style="margin-top:14px;flex-wrap:wrap">
+      <button class="chip" id="memoDownloadBtn">⬇ Download PDF</button>
+      ${isRecipient?`<button class="chip" id="memoReplyBtn">↩ Reply</button><button class="chip" id="memoEscalateBtn">⤴ Escalate to…</button>`:''}
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeMemoView').onclick=()=>{ ov.remove(); paintMemoApp(); };
+  document.getElementById('memoDownloadBtn').onclick=()=>{ const doc=buildMemoPDF(m); if(doc) doc.save('Memo_'+m.subject.replace(/\s+/g,'_')+'.pdf'); };
+  if(isRecipient){
+    document.getElementById('memoReplyBtn').onclick=()=>{
+      memoComposeSeed={ toKey:m.fromKey, subject:(m.subject.startsWith('Re: ')?m.subject:'Re: '+m.subject), bodyHtml:'<p><br></p><p>—— Original message ——</p>'+m.bodyHtml, kind:'reply', parentId:m.id };
+      ov.remove(); memoAppTab='compose'; paintMemoApp();
+    };
+    document.getElementById('memoEscalateBtn').onclick=()=>{ ov.remove(); openMemoEscalatePicker(m); };
+  }
+}
+function openMemoEscalatePicker(m){
+  const others=STAFF_LIST.filter(s=>s.key!==PROFILE.key&&s.key!==m.fromKey);
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Escalate to…</div><button id="closeEscalatePick" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Escalate to',sel('esc_to',others.map(s=>s.name)))}
+    <div class="formactions"><button class="btn primary" id="escSendBtn" style="width:100%">Escalate</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeEscalatePick').onclick=()=>ov.remove();
+  document.getElementById('escSendBtn').onclick=()=>{
+    const toName=val('esc_to'); const recipient=others.find(s=>s.name===toName); if(!recipient) return;
+    memoComposeSeed={ toKey:recipient.key, subject:'Escalated: '+m.subject, bodyHtml:'<p>Escalating the memo below from '+esc(m.fromName)+':</p><p><br></p>'+m.bodyHtml, kind:'escalation', parentId:m.id };
+    ov.remove();
+    memoAppTab='compose'; paintMemoApp();
   };
 }
 /* ================= COMMISSION ENGINE ================= */
