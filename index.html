@@ -554,8 +554,15 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .lvCalCell.empty{border:none;background:transparent;cursor:default}
 .lvCalCell.past:not(.taken){opacity:.35;cursor:not-allowed}
 .lvCalCell.taken{background:var(--paper);color:var(--muted);cursor:not-allowed;text-decoration:line-through}
+.lvCalCell.weekend:not(.taken):not(.holiday){background:var(--paper);color:var(--muted);opacity:.55;cursor:not-allowed}
+.lvCalCell.holiday{background:#F6EBD3;color:#8A6E12;cursor:not-allowed;border-color:#F0DDAA}
 .lvCalCell.today{border-color:var(--gold)}
 .lvCalCell.sel{background:var(--ink);color:#fff;border-color:var(--ink)}
+.lvCalLegend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--muted)}
+.lvCalLegend span{display:inline-flex;align-items:center;gap:5px}
+.lvCalLegend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.lvEidRow{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:600;color:var(--text)}
+.lvEidRow input{width:16px;height:16px;accent-color:var(--ink)}
 .memoToolbar{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:0;padding:8px;background:var(--paper);border:1.5px solid var(--line);border-bottom:none;border-radius:14px 14px 0 0}
 .memoToolbar select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font-size:12px}
 .memoToolbar button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;color:var(--text);min-width:32px}
@@ -1189,6 +1196,7 @@ function defaultConfig(){ return {
   companyTin:'',
   companyAddress:'',
   leaveTotalDays:20,
+  eidObservingStaff:[],
   contractCeoName:'FRANK ADU PEPRAH',
   contractCoverImage:'', contractWordmarkImage:'',
   contractPreamble:[
@@ -2369,6 +2377,7 @@ async function apiLoadConfig(){
       targetPlotsPerMonth:data.target_plots_per_month!=null?num(data.target_plots_per_month):2, note:data.note||'',
       companyPhone:data.company_phone||'',companyWhatsapp:data.company_whatsapp||'',companyEmail:data.company_email||'',companyTin:data.company_tin||'',companyAddress:data.company_address||'',
       leaveTotalDays:data.leave_total_days!=null?num(data.leave_total_days):20,
+      eidObservingStaff:data.eid_observing_staff||[],
       quoteCompanyName:data.quote_company_name||defaultConfig().quoteCompanyName,
       quoteSiteName:data.quote_site_name||defaultConfig().quoteSiteName,
       quoteDocTypeText:data.quote_doc_type_text||defaultConfig().quoteDocTypeText,
@@ -2395,6 +2404,7 @@ async function apiSaveConfig(patch){
     commission_pool_per_plot:CONFIG.commissionPoolPerPlot,last_commission_month:CONFIG.lastCommissionMonth||'',
     company_phone:CONFIG.companyPhone||'',company_whatsapp:CONFIG.companyWhatsapp||'',company_email:CONFIG.companyEmail||'',company_tin:CONFIG.companyTin||'',company_address:CONFIG.companyAddress||'',
     leave_total_days:num(CONFIG.leaveTotalDays)||20,
+    eid_observing_staff:CONFIG.eidObservingStaff||[],
     quote_company_name:CONFIG.quoteCompanyName||'',quote_site_name:CONFIG.quoteSiteName||'',
     quote_doc_type_text:CONFIG.quoteDocTypeText||'',quote_notes_text:CONFIG.quoteNotesText||'',
     quote_land_note_text:CONFIG.quoteLandNoteText||'',quote_footer_address:CONFIG.quoteFooterAddress||'',
@@ -10878,6 +10888,89 @@ const LEAVE_MONTH_NAMES=['January','February','March','April','May','June','July
 function fmtLongDate(iso){ if(!iso) return ''; return new Date(iso+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}); }
 function leaveDaysInMonth(year,month){ return new Date(year,month+1,0).getDate(); }
 function leaveISO(year,month,day){ return year+'-'+String(month+1).padStart(2,'0')+'-'+String(day).padStart(2,'0'); }
+/* ---- calendar math for holiday/weekend/Eid-aware leave scheduling ----
+   Standard Julian-Day-Number based conversions (Meeus/Jones/Butcher for Easter,
+   the tabular "Kuwaiti algorithm" civil Islamic calendar for Hijri dates) --
+   deterministic, well-established formulas, no external library needed. Hijri
+   dates from a tabular calendar are an ALGORITHMIC APPROXIMATION of the real
+   moon-sighting-based Islamic calendar and can be off by a day either way --
+   per instruction, Eid is therefore blocked as a short window/range around the
+   computed date, not a single pinpoint day. */
+function gregorianToJDN(y,m,d){
+  const a=Math.floor((14-m)/12), y2=y+4800-a, m2=m+12*a-3;
+  return d+Math.floor((153*m2+2)/5)+365*y2+Math.floor(y2/4)-Math.floor(y2/100)+Math.floor(y2/400)-32045;
+}
+function jdnToGregorian(jdn){
+  const a=jdn+32044, b=Math.floor((4*a+3)/146097), c=a-Math.floor((146097*b)/4);
+  const d=Math.floor((4*c+3)/1461), e=c-Math.floor((1461*d)/4), m=Math.floor((5*e+2)/153);
+  const day=e-Math.floor((153*m+2)/5)+1, month=m+3-12*Math.floor(m/10), year=100*b+d-4800+Math.floor(m/10);
+  return {year,month,day};
+}
+function islamicToJDN(y,m,d){ return Math.floor((11*y+3)/30)+354*y+30*m-Math.floor((m-1)/2)+d+1948440-385; }
+function jdnToIsoDate(jdn){ const g=jdnToGregorian(jdn); return g.year+'-'+String(g.month).padStart(2,'0')+'-'+String(g.day).padStart(2,'0'); }
+function easterSundayForYear(year){
+  const a=year%19, b=Math.floor(year/100), c=year%100, d=Math.floor(b/4), e=b%4;
+  const f=Math.floor((b+8)/25), g=Math.floor((b-f+1)/3), h=(19*a+b-d-g+15)%30;
+  const i=Math.floor(c/4), k=c%4, l=(32+2*e+2*i-h-k)%7;
+  const mm=Math.floor((a+11*h+22*l)/451);
+  const month=Math.floor((h+l-7*mm+114)/31), day=((h+l-7*mm+114)%31)+1;
+  return year+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+}
+function isoPlusDays(iso,n){ const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+// Eid al-Fitr = 1 Shawwal (month 10); Eid al-Adha = 10 Dhu al-Hijjah (month 12).
+// A given Gregorian year can only ever contain the tail/head of 1-2 Hijri years,
+// so we probe a small range around the estimate and keep whichever land in-year.
+function hijriEidWindowsForGregorianYear(gYear){
+  const results=[];
+  const estH=Math.floor((gYear-622)*33/32);
+  for(let hy=estH-1; hy<=estH+1; hy++){
+    const fitr=jdnToGregorian(islamicToJDN(hy,10,1));
+    if(fitr.year===gYear){ const iso=gYear+'-'+String(fitr.month).padStart(2,'0')+'-'+String(fitr.day).padStart(2,'0'); results.push({name:'Eid al-Fitr',centerIso:iso}); }
+    const adha=jdnToGregorian(islamicToJDN(hy,12,10));
+    if(adha.year===gYear){ const iso=gYear+'-'+String(adha.month).padStart(2,'0')+'-'+String(adha.day).padStart(2,'0'); results.push({name:'Eid al-Adha',centerIso:iso}); }
+  }
+  // window: 1 day either side of the computed date, to absorb typical moon-sighting variance
+  return results.map(r=>({name:r.name,dates:[isoPlusDays(r.centerIso,-1),r.centerIso,isoPlusDays(r.centerIso,1)]}));
+}
+function isWeekendIso(iso){ const dow=new Date(iso+'T00:00:00').getDay(); return dow===0||dow===6; }
+function isWorkingDayIso(iso){ return !isWeekendIso(iso); }
+function nextWorkingDayIso(iso){ let d=isoPlusDays(iso,1); while(isWeekendIso(d)) d=isoPlusDays(d,1); return d; }
+function prevWorkingDayIso(iso){ let d=isoPlusDays(iso,-1); while(isWeekendIso(d)) d=isoPlusDays(d,-1); return d; }
+// Fixed-date + Easter-derived + algorithmic-Eid Ghana public holidays. Management
+// can't edit this list yet (kept simple on purpose) -- if a specific year's
+// government proclamation shifts a date, handle that one as a Management-approved
+// leave-conflict override rather than a code change.
+function ghanaHolidaysForYear(year){
+  const list=[
+    {date:year+'-01-01',name:"New Year's Day"},
+    {date:year+'-03-06',name:'Independence Day'},
+    {date:year+'-05-01',name:'May Day'},
+    {date:year+'-08-04',name:"Founders' Day"},
+    {date:year+'-09-21',name:'Kwame Nkrumah Memorial Day'},
+    {date:year+'-12-25',name:'Christmas Day'},
+    {date:year+'-12-26',name:'Boxing Day'}
+  ];
+  const easter=easterSundayForYear(year);
+  list.push({date:isoPlusDays(easter,-2),name:'Good Friday'});
+  list.push({date:isoPlusDays(easter,1),name:'Easter Monday'});
+  hijriEidWindowsForGregorianYear(year).forEach(w=>w.dates.forEach(d=>list.push({date:d,name:w.name,isEid:true})));
+  return list;
+}
+function leaveHolidayMapForYear(year){
+  const map=new Map();
+  ghanaHolidaysForYear(year).forEach(h=>{ if(!map.has(h.date)) map.set(h.date,h); });
+  return map;
+}
+// Every OTHER staff member's pending/approved leave date, plus the working day
+// immediately before/after each, so nobody can pick a day that's adjacent to a
+// colleague's leave either.
+function leaveConflictDatesFromOthers(agentKey){
+  const blocked=new Set();
+  DB.leaveRequests.filter(r=>r.agentKey!==agentKey&&r.status!=='declined').forEach(r=>{
+    (r.dates||[]).forEach(d=>{ blocked.add(d); blocked.add(nextWorkingDayIso(d)); blocked.add(prevWorkingDayIso(d)); });
+  });
+  return blocked;
+}
 function leaveDaysUsed(agentKey,year){ return DB.leaveRequests.filter(r=>r.agentKey===agentKey&&r.year===year&&r.status!=='declined').reduce((s,r)=>s+(r.daysCount||0),0); }
 function leaveDaysRemaining(agentKey,year){ return Math.max(0,(num(CONFIG.leaveTotalDays)||20)-leaveDaysUsed(agentKey,year)); }
 function leaveUpcomingSoonList(){
@@ -11003,6 +11096,7 @@ function leaveMineHtml(){
   <div class="formwrap">
   <div class="grid2">${fld('Year',sel('lv_year',[String(year-1),String(year),String(year+1)],String(year)))}${fld('Month',sel('lv_month',LEAVE_MONTH_NAMES,LEAVE_MONTH_NAMES[leaveCalMonth]))}</div>
   <div id="lvCalGrid" class="lvCalGrid"></div>
+  <div class="lvCalLegend"><span><i style="background:var(--ink)"></i>Selected</span><span><i style="background:var(--paper);opacity:.55"></i>Weekend</span><span><i style="background:#F6EBD3"></i>Public holiday</span><span><i style="background:var(--paper)"></i>Already taken / colleague's leave</span></div>
   <div class="mini" style="margin:12px 0 6px">Selected: <span id="lvSelSummary">${leaveSelDates.length?leaveSelDates.length+' day(s) selected':'none yet'}</span></div>
   <div class="chips" id="lvSelChips"></div>
   <div class="formactions">
@@ -11026,7 +11120,10 @@ function paintLeaveCalendar(){
   const year=leaveCalYear, month=leaveCalMonth;
   const nDays=leaveDaysInMonth(year,month);
   const firstDow=new Date(year,month,1).getDay();
-  const alreadyTaken=new Set(DB.leaveRequests.filter(r=>r.agentKey===PROFILE.key&&r.status!=='declined').flatMap(r=>r.dates||[]));
+  const myTaken=new Set(DB.leaveRequests.filter(r=>r.agentKey===PROFILE.key&&r.status!=='declined').flatMap(r=>r.dates||[]));
+  const otherConflicts=leaveConflictDatesFromOthers(PROFILE.key);
+  const holidays=leaveHolidayMapForYear(year);
+  const observesEid=(CONFIG.eidObservingStaff||[]).includes(PROFILE.key);
   const wdHtml=['S','M','T','W','T','F','S'].map(w=>`<div class="lvCalWd">${w}</div>`).join('');
   let cells='';
   for(let i=0;i<firstDow;i++) cells+=`<div class="lvCalCell empty"></div>`;
@@ -11034,9 +11131,19 @@ function paintLeaveCalendar(){
     const iso=leaveISO(year,month,d);
     const isToday=iso===today();
     const isSel=leaveSelDates.includes(iso);
-    const isTaken=alreadyTaken.has(iso)&&!isSel;
     const isPast=iso<today();
-    cells+=`<button class="lvCalCell${isSel?' sel':''}${isTaken?' taken':''}${isToday?' today':''}${isPast?' past':''}" data-lviso="${iso}" ${isTaken||isPast?'disabled':''} title="${isTaken?'Already requested':''}">${d}</button>`;
+    const isWeekend=isWeekendIso(iso);
+    const holiday=holidays.get(iso);
+    const isHoliday=!!holiday&&!(holiday.isEid&&observesEid);
+    const isTaken=myTaken.has(iso)&&!isSel;
+    const isConflict=otherConflicts.has(iso)&&!isSel;
+    const disabled=isPast||isWeekend||isHoliday||isTaken||isConflict;
+    let reason='';
+    if(isTaken) reason='Already requested';
+    else if(isConflict) reason="Conflicts with a colleague's leave";
+    else if(isHoliday) reason=holiday.name;
+    else if(isWeekend) reason='Weekend';
+    cells+=`<button class="lvCalCell${isSel?' sel':''}${(isTaken||isConflict)?' taken':''}${isHoliday?' holiday':''}${isWeekend?' weekend':''}${isToday?' today':''}${isPast?' past':''}" data-lviso="${iso}" ${disabled?'disabled':''} title="${esc(reason)}">${d}</button>`;
   }
   grid.innerHTML=wdHtml+cells;
   grid.querySelectorAll('[data-lviso]').forEach(b=>b.onclick=()=>{
@@ -11063,10 +11170,26 @@ function bindLeaveMineCtrls(){
   document.querySelectorAll('[data-leavepreview]').forEach(b=>b.onclick=()=>previewLeaveLetter(b.dataset.leavepreview));
   document.querySelectorAll('[data-leavedownload]').forEach(b=>b.onclick=()=>downloadLeaveLetter(b.dataset.leavedownload));
 }
+// Re-checked both when the letter modal opens and again right before the insert,
+// since time can pass between the two (a colleague's request could land in between).
+function leaveDatesConflictReason(dates,agentKey){
+  const holidays=leaveHolidayMapForYear(leaveCalYear);
+  const observesEid=(CONFIG.eidObservingStaff||[]).includes(agentKey);
+  const otherConflicts=leaveConflictDatesFromOthers(agentKey);
+  for(const d of dates){
+    if(isWeekendIso(d)) return d+' is a weekend — leave can only be taken Monday to Friday.';
+    const h=holidays.get(d);
+    if(h&&!(h.isEid&&observesEid)) return d+' is a public holiday ('+h.name+').';
+    if(otherConflicts.has(d)) return d+" conflicts with a colleague's leave (same or adjacent working day).";
+  }
+  return null;
+}
 function openLeaveApplyModal(){
   if(!leaveSelDates.length){ toast('Pick at least one date first'); return; }
   const remaining=leaveDaysRemaining(PROFILE.key,leaveCalYear);
   if(leaveSelDates.length>remaining){ toast("That's "+leaveSelDates.length+' day(s), but you only have '+remaining+' left for '+leaveCalYear+'.'); return; }
+  const conflict=leaveDatesConflictReason(leaveSelDates,PROFILE.key);
+  if(conflict){ toast(conflict+' Please adjust your selection.'); leaveSelDates=leaveSelDates.filter(d=>d!==conflict.split(' ')[0]); paintLeaveCalendar(); paintLeaveSelSummary(); return; }
   const letterText=buildLeaveLetterText(PROFILE.name,leaveSelDates.slice(),leaveCalYear);
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
@@ -11084,6 +11207,9 @@ function openLeaveApplyModal(){
     try{
       const text=document.getElementById('lv_lettertext').value.trim();
       if(!text){ toast('The letter is empty'); btn.disabled=false; btn.textContent='Send to Management'; return; }
+      try{ DB.leaveRequests=await apiLoadLeaveRequests(); }catch(e){}
+      const raceConflict=leaveDatesConflictReason(leaveSelDates,PROFILE.key);
+      if(raceConflict){ toast('A colleague just booked a conflicting date — '+raceConflict+' Please review your selection and try again.'); ov.remove(); paintLeaveApp(); return; }
       const rec=await apiInsertLeaveRequest(leaveSelDates.slice().sort(),text,leaveCalYear);
       DB.leaveRequests.unshift(rec);
       leaveSelDates=[];
@@ -11206,16 +11332,24 @@ function openLeaveReviewModal(id){
   }
 }
 function leaveSettingsHtml(){
+  const agentStaff=STAFF_LIST.filter(s=>s.role==='agent');
+  const observing=CONFIG.eidObservingStaff||[];
+  const eidRows=agentStaff.map(s=>`<label class="lvEidRow"><input type="checkbox" data-eidstaff="${esc(s.key)}" ${observing.includes(s.key)?'checked':''}/> ${esc(s.name)}</label>`).join('');
   return `<div class="sectitle" style="margin-top:0"><h3>Leave policy</h3><span class="cnt">applies company-wide</span></div>
   <div class="formwrap">
   ${fld('Total leave days per year','<input id="lv_totaldays" type="number" min="0" value="'+(num(CONFIG.leaveTotalDays)||20)+'"/>','every staff member gets this many days per calendar year')}
+  <div class="mini" style="margin:-2px 0 14px">Leave only falls on working days (Mon–Fri) and is automatically blocked on weekends, Ghana public holidays, and around Eid al-Fitr/Eid al-Adha (calculated automatically, ±1 day either side to allow for moon-sighting). No two staff can take leave on the same day or an adjacent working day.</div>
+  <div class="sectitle" style="margin-top:6px"><h3 style="font-size:14px">Observes Eid holidays</h3></div>
+  <p class="mini" style="margin:-2px 0 10px">Checked staff can take leave during the Eid windows above; everyone else is blocked from those dates.</p>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">${eidRows||'<div class="mini">No agents yet</div>'}</div>
   <div class="formactions"><button class="btn primary" id="lvSaveSettings">Save</button></div>
   </div>`;
 }
 function bindLeaveSettingsCtrls(){
   document.getElementById('lvSaveSettings').onclick=async()=>{
     const btn=document.getElementById('lvSaveSettings'); btn.disabled=true; btn.textContent='Saving…';
-    try{ await apiSaveConfig({leaveTotalDays:num(val('lv_totaldays'))||20}); toast('Leave policy updated'); }
+    const eidObservingStaff=[...document.querySelectorAll('[data-eidstaff]:checked')].map(el=>el.dataset.eidstaff);
+    try{ await apiSaveConfig({leaveTotalDays:num(val('lv_totaldays'))||20,eidObservingStaff}); toast('Leave policy updated'); }
     catch(e){ toast('Save failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save';
   };
