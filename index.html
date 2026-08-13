@@ -548,6 +548,14 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip2{border:1.5px solid var(--line);background:var(--card);border-radius:100px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--text);transition:.15s}
+.lvCalGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:12px}
+.lvCalWd{text-align:center;font-size:11px;font-weight:700;color:var(--muted);padding:3px 0}
+.lvCalCell{aspect-ratio:1;border:1.5px solid var(--line);background:var(--card);border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--text);transition:.12s}
+.lvCalCell.empty{border:none;background:transparent;cursor:default}
+.lvCalCell.past:not(.taken){opacity:.35;cursor:not-allowed}
+.lvCalCell.taken{background:var(--paper);color:var(--muted);cursor:not-allowed;text-decoration:line-through}
+.lvCalCell.today{border-color:var(--gold)}
+.lvCalCell.sel{background:var(--ink);color:#fff;border-color:var(--ink)}
 .chip2.on{background:var(--ink);color:#fff;border-color:var(--ink);transform:scale(1.03)}
 .calcbox{background:linear-gradient(135deg,#F3F7F4,#EEF6F1);border:1.5px dashed var(--leaf);border-radius:14px;padding:13px 14px;margin:4px 0 15px;
   display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -860,7 +868,7 @@ urlToDataUri(TRULANDER_LOGO_SRC).then(u=>TRULANDER_LOGO_DATA_URI=u).catch(()=>{}
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
-let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[]};
+let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[],leaveRequests:[]};
 /* ---- display preferences (font size / family), applied via CSS custom
    properties so they take effect instantly with no per-page rework ---- */
 const DISPLAY_FONT_FAMILIES={
@@ -1173,6 +1181,7 @@ function defaultConfig(){ return {
   quoteFooterAddress:'First Floor Alex Nerda Building. Nungua Nautical Beach Road Drive',
   receiptThanksText:'Thank you for your payment. This receipt confirms the amount above was received by us and applied to your account.',
   companyTin:'',
+  leaveTotalDays:20,
   contractCeoName:'FRANK ADU PEPRAH',
   contractCoverImage:'', contractWordmarkImage:'',
   contractPreamble:[
@@ -2352,6 +2361,7 @@ async function apiLoadConfig(){
       lastCommissionMonth:data.last_commission_month||'',
       targetPlotsPerMonth:data.target_plots_per_month!=null?num(data.target_plots_per_month):2, note:data.note||'',
       companyPhone:data.company_phone||'',companyWhatsapp:data.company_whatsapp||'',companyEmail:data.company_email||'',companyTin:data.company_tin||'',
+      leaveTotalDays:data.leave_total_days!=null?num(data.leave_total_days):20,
       quoteCompanyName:data.quote_company_name||defaultConfig().quoteCompanyName,
       quoteSiteName:data.quote_site_name||defaultConfig().quoteSiteName,
       quoteDocTypeText:data.quote_doc_type_text||defaultConfig().quoteDocTypeText,
@@ -2377,6 +2387,7 @@ async function apiSaveConfig(patch){
     commission_full_cap:CONFIG.commissionFullCap,commission_half_cap:CONFIG.commissionHalfCap,
     commission_pool_per_plot:CONFIG.commissionPoolPerPlot,last_commission_month:CONFIG.lastCommissionMonth||'',
     company_phone:CONFIG.companyPhone||'',company_whatsapp:CONFIG.companyWhatsapp||'',company_email:CONFIG.companyEmail||'',company_tin:CONFIG.companyTin||'',
+    leave_total_days:num(CONFIG.leaveTotalDays)||20,
     quote_company_name:CONFIG.quoteCompanyName||'',quote_site_name:CONFIG.quoteSiteName||'',
     quote_doc_type_text:CONFIG.quoteDocTypeText||'',quote_notes_text:CONFIG.quoteNotesText||'',
     quote_land_note_text:CONFIG.quoteLandNoteText||'',quote_footer_address:CONFIG.quoteFooterAddress||'',
@@ -2610,6 +2621,34 @@ async function apiInsertFeedback(category,body){
 async function apiDeleteFeedback(id){
   if(DEMO_MODE){ const d=await demoLoad(); d.feedback=(d.feedback||[]).filter(x=>x.id!==id); await demoSave(); return; }
   const {error}=await sb.from('feedback').delete().eq('id',id); if(error) throw error;
+}
+/* ---- leave requests ---- */
+const mapLeaveRequest=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,year:r.year,dates:r.dates||[],daysCount:r.days_count,letterText:r.letter_text,status:r.status,createdAt:r.created_at,decidedAt:r.decided_at,decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedSignature:r.decided_signature});
+async function apiLoadLeaveRequests(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.leaveRequests||[]).slice(); }
+  try{ const {data,error}=await sb.from('leave_requests').select('*').order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapLeaveRequest); }
+  catch(e){ return []; }
+}
+async function apiInsertLeaveRequest(dates,letterText,year){
+  const daysCount=dates.length;
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),agentKey:PROFILE.key,agentName:PROFILE.name,year,dates,daysCount,letterText,status:'pending',createdAt:new Date().toISOString(),decidedAt:null,decidedBy:null,decidedByName:null,decidedSignature:null};
+    d.leaveRequests=d.leaveRequests||[]; d.leaveRequests.unshift(rec); await demoSave(); return rec; }
+  const {data,error}=await sb.from('leave_requests').insert({agent_key:PROFILE.key,agent_name:PROFILE.name,year,dates,days_count:daysCount,letter_text:letterText,status:'pending'}).select().single();
+  if(error) throw error; return mapLeaveRequest(data);
+}
+async function apiDecideLeaveRequest(id,approve){
+  const sig=approve?getStaffSignature(PROFILE.key):null;
+  const patch={status:approve?'approved':'declined',decided_at:new Date().toISOString(),decided_by:PROFILE.key,decided_by_name:PROFILE.name,decided_signature:sig};
+  if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.leaveRequests||[]).find(x=>x.id===id);
+    if(rec) Object.assign(rec,{status:patch.status,decidedAt:patch.decided_at,decidedBy:patch.decided_by,decidedByName:patch.decided_by_name,decidedSignature:patch.decided_signature});
+    await demoSave(); return rec; }
+  const {data,error}=await sb.from('leave_requests').update(patch).eq('id',id).select().single();
+  if(error) throw error; return mapLeaveRequest(data);
+}
+async function apiDeleteLeaveRequest(id){
+  if(DEMO_MODE){ const d=await demoLoad(); d.leaveRequests=(d.leaveRequests||[]).filter(x=>x.id!==id); await demoSave(); return; }
+  const {error}=await sb.from('leave_requests').delete().eq('id',id); if(error) throw error;
 }
 /* ---- download directory ---- */
 const mapDownload=r=>({id:r.id,userKey:r.user_key,userName:r.user_name,filename:r.filename,kind:r.kind,fileData:r.file_data,createdAt:r.created_at});
@@ -3847,7 +3886,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,officedesk:viewOfficeDesk,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -3873,7 +3912,7 @@ function tabForRoute(name){
   if(['crm','sitevisit','enquiry','complaint'].includes(name)) return 'crm';
   if(name==='mgrCrmTools') return 'mgrcrm';
   if(name==='mgrPlotInv') return 'mgrplots';
-  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads') return 'officedesk';
+  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp') return 'officedesk';
   if(name==='chat'||name==='chatThread') return 'chat';
   if(name==='home'||name==='mgr') return 'home';
   return 'more';
@@ -4133,6 +4172,7 @@ function viewCRM(){
 function mgrAppRoute(key){
   if(key==='Feedback') route('feedback');
   else if(key==='Duties') route('duties');
+  else if(key==='Leave Schedules') route('leaveapp');
   else if(key==='Insights') route('insights');
   else if(key==='Downloads') route('downloads');
   else if(key==='Plot Requests') route('plotrequests');
@@ -4169,6 +4209,7 @@ function viewOfficeDesk(){
   const items=[
     {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
     {key:'Feedback',fic:'chat',label:'Team Feedback'},
+    {key:'Leave Schedules',fic:'calendar',label:'Leave Schedules'},
     ...(isMgr?[{key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'}]:[]),
     ...(showCompanyLeads?[{key:'Company Leads',fic:'briefcase',label:'Company Leads'}]:[])
   ];
@@ -10772,6 +10813,365 @@ function bindNewsCtrls(){
   });
 }
 
+/* ================= LEAVE SCHEDULES =================
+   Staff pick individual leave days off a per-year calendar (capped by
+   CONFIG.leaveTotalDays), review/edit an auto-generated professional leave
+   letter, then send it -- landing as "Pending" in Management's Leave
+   Requests queue. Approving stamps the manager's own saved signature
+   (getStaffSignature -- the same mechanism as Site Visit Auth) and notifies
+   the requester in-app; the staff member can then re-download the signed
+   letter. */
+let LEAVE_REQUESTS_LOADED=false;
+let leaveAppTab='mine';
+let leaveCalYear=new Date(today()).getFullYear();
+let leaveCalMonth=new Date(today()).getMonth();
+let leaveSelDates=[];
+const LEAVE_MONTH_NAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function fmtLongDate(iso){ if(!iso) return ''; return new Date(iso+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}); }
+function leaveDaysInMonth(year,month){ return new Date(year,month+1,0).getDate(); }
+function leaveISO(year,month,day){ return year+'-'+String(month+1).padStart(2,'0')+'-'+String(day).padStart(2,'0'); }
+function leaveDaysUsed(agentKey,year){ return DB.leaveRequests.filter(r=>r.agentKey===agentKey&&r.year===year&&r.status!=='declined').reduce((s,r)=>s+(r.daysCount||0),0); }
+function leaveDaysRemaining(agentKey,year){ return Math.max(0,(num(CONFIG.leaveTotalDays)||20)-leaveDaysUsed(agentKey,year)); }
+function leaveUpcomingSoonList(){
+  const soon=today(); const in7=new Date(); in7.setDate(in7.getDate()+7); const in7s=in7.toISOString().slice(0,10);
+  return DB.leaveRequests.filter(r=>r.agentKey===PROFILE.key&&r.status==='approved').flatMap(r=>(r.dates||[]).filter(d=>d>=soon&&d<=in7s)).sort();
+}
+function leavePendingCountForMgr(){ return DB.leaveRequests.filter(r=>r.status==='pending').length; }
+function buildLeaveLetterText(agentName,dates,year){
+  const sorted=dates.slice().sort();
+  const dateLines=sorted.map(d=>'- '+fmtLongDate(d)).join('\n');
+  const n=dates.length;
+  return [
+    'Date: '+fmtLongDate(today()),
+    '',
+    'The Management',
+    (CONFIG.quoteCompanyName||'Trulander JSF Limited'),
+    '',
+    'Dear Sir/Madam,',
+    '',
+    'REQUEST FOR LEAVE',
+    '',
+    'I am writing to formally request a leave of absence for '+n+' day'+(n===1?'':'s')+' in '+year+'. I have made the necessary arrangements to ensure my responsibilities are covered during my absence and will remain reachable if urgently needed.',
+    '',
+    'The specific date(s) requested are:',
+    dateLines,
+    '',
+    'I would be grateful if you could consider and approve this request. Thank you for your understanding.',
+    '',
+    'Yours faithfully,',
+    '',
+    agentName
+  ].join('\n');
+}
+function buildLeaveLetterPDF(req){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return null; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  let y=pdfHeader(doc,'LEAVE REQUEST');
+  y+=6;
+  const marginL=14, marginR=pageW-14;
+  const lines=(req.letterText||'').split('\n');
+  doc.setFont('times','normal'); doc.setFontSize(11); doc.setTextColor(20,20,20);
+  let afterSig=false;
+  const staffSig=getStaffSignature(req.agentKey);
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i].trim();
+    if(y>250){ doc.addPage(); y=20; }
+    if(!line){ y+=5; continue; }
+    if(/^date:/i.test(line)){ doc.setFontSize(10.5); doc.text(line,marginR,y,{align:'right'}); doc.setFontSize(11); y+=7; continue; }
+    if(line.toUpperCase()==='REQUEST FOR LEAVE'){
+      doc.setFont('times','bold'); doc.setFontSize(13);
+      const w=doc.getTextWidth(line); const cx=(marginL+marginR)/2;
+      doc.text(line,cx,y,{align:'center'});
+      doc.setLineWidth(0.4); doc.line(cx-w/2,y+1.4,cx+w/2,y+1.4);
+      doc.setFont('times','normal'); doc.setFontSize(11);
+      y+=9; continue;
+    }
+    if(line.startsWith('- ')){
+      const wrapped=doc.splitTextToSize(line,marginR-marginL-6);
+      doc.text(wrapped,marginL+6,y); y+=wrapped.length*5.6; continue;
+    }
+    if(/^yours faithfully,?$/i.test(line)){
+      doc.text(line,marginL,y); y+=16;
+      if(staffSig) pdfStampSignature(doc,marginL,y-3,32,13,staffSig);
+      afterSig=true; continue;
+    }
+    if(afterSig){
+      doc.setFont('times','bold'); doc.text(line,marginL,y); doc.setFont('times','normal'); y+=5.6;
+      afterSig=false; continue;
+    }
+    const wrapped=doc.splitTextToSize(line,marginR-marginL);
+    doc.text(wrapped,marginL,y); y+=wrapped.length*5.6;
+  }
+  if(req.status==='approved'){
+    y+=10; if(y>255){ doc.addPage(); y=20; }
+    doc.setDrawColor(220,220,220); doc.line(marginL,y,marginR,y); y+=8;
+    doc.setFont('times','bold'); doc.setFontSize(10); doc.text('MANAGEMENT APPROVAL',marginL,y); y+=14;
+    if(req.decidedSignature) pdfStampSignature(doc,marginL,y-3,32,13,req.decidedSignature);
+    doc.setFont('times','normal'); doc.setFontSize(9.5); doc.setTextColor(90,98,110);
+    doc.text((req.decidedByName||'Management')+' — Approved '+fmtLongDate((req.decidedAt||'').slice(0,10)),marginL,y+6);
+    doc.setTextColor(20,20,20);
+  }
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(140,140,140);
+  doc.text('Generated '+new Date().toLocaleDateString('en-GB'),marginR,290,{align:'right'});
+  return doc;
+}
+async function viewLeaveApp(){
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Leave Schedules</h2><p>Plan, apply for, and track staff leave</p></div></div>
+  <div id="leaveBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  if(!LEAVE_REQUESTS_LOADED){ try{ DB.leaveRequests=await apiLoadLeaveRequests(); LEAVE_REQUESTS_LOADED=true; }catch(e){ toast('Could not load leave requests'); } }
+  paintLeaveApp();
+}
+function paintLeaveApp(){
+  const isMgr=PROFILE.role==='manager';
+  const body=document.getElementById('leaveBody'); if(!body) return;
+  const pendingCount=leavePendingCountForMgr();
+  const tabs=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <button class="chip ${leaveAppTab==='mine'?'on':''}" data-leavetab="mine">My Leave</button>
+    ${isMgr?`<button class="chip ${leaveAppTab==='requests'?'on':''}" data-leavetab="requests">Leave Requests${pendingCount?' ('+pendingCount+')':''}</button>`:''}
+    ${isMgr?`<button class="chip ${leaveAppTab==='settings'?'on':''}" data-leavetab="settings">Leave Settings</button>`:''}
+  </div>`;
+  let content;
+  if(leaveAppTab==='requests'&&isMgr) content=leaveRequestsHtml();
+  else if(leaveAppTab==='settings'&&isMgr) content=leaveSettingsHtml();
+  else content=leaveMineHtml();
+  body.innerHTML=tabs+content;
+  body.querySelectorAll('[data-leavetab]').forEach(b=>b.onclick=()=>{ leaveAppTab=b.dataset.leavetab; paintLeaveApp(); });
+  if(leaveAppTab==='requests'&&isMgr) bindLeaveRequestsCtrls();
+  else if(leaveAppTab==='settings'&&isMgr) bindLeaveSettingsCtrls();
+  else bindLeaveMineCtrls();
+}
+function leaveMineHtml(){
+  const year=leaveCalYear;
+  const used=leaveDaysUsed(PROFILE.key,year);
+  const total=num(CONFIG.leaveTotalDays)||20;
+  const remaining=Math.max(0,total-used);
+  const mine=DB.leaveRequests.filter(r=>r.agentKey===PROFILE.key).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  const upcoming=leaveUpcomingSoonList();
+  return `
+  ${upcoming.length?`<div class="rowcard" style="border-color:var(--danger);background:#FBEDEA;margin-bottom:14px"><div class="top"><div><div class="nm" style="color:var(--danger)">🔴 Leave coming up</div><div class="mini">${upcoming.map(fmtLongDate).join(', ')} — make sure any handovers are sorted.</div></div></div></div>`:''}
+  <div class="kpis">${kpi('Total days/yr',total)}${kpi('Used in '+year,used)}${kpi('Remaining',remaining)}</div>
+  <div class="sectitle" style="margin-top:4px"><h3>Pick your leave dates</h3><span class="cnt">${year}</span></div>
+  <div class="formwrap">
+  <div class="grid2">${fld('Year',sel('lv_year',[String(year-1),String(year),String(year+1)],String(year)))}${fld('Month',sel('lv_month',LEAVE_MONTH_NAMES,LEAVE_MONTH_NAMES[leaveCalMonth]))}</div>
+  <div id="lvCalGrid" class="lvCalGrid"></div>
+  <div class="mini" style="margin:12px 0 6px">Selected: <span id="lvSelSummary">${leaveSelDates.length?leaveSelDates.length+' day(s) selected':'none yet'}</span></div>
+  <div class="chips" id="lvSelChips"></div>
+  <div class="formactions">
+    <button class="btn ghost" id="lvClearSel">Clear selection</button>
+    <button class="btn primary" id="lvApplyBtn">Apply for leave</button>
+  </div>
+  </div>
+  <div class="sectitle"><h3>My leave requests</h3><span class="cnt">${mine.length}</span></div>
+  <div class="list">${mine.length?mine.map(leaveRowHtml).join(''):emptyState(ic.calendar,'No leave requests yet','Pick some dates above and apply.')}</div>`;
+}
+function leaveRowHtml(r){
+  const badge=r.status==='approved'?'<span class="tag ok">Approved</span>':r.status==='declined'?'<span class="tag dgr">Declined</span>':'<span class="tag warnt">Pending approval</span>';
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.agentName)} · ${r.daysCount} day${r.daysCount===1?'':'s'} (${r.year})</div><div class="meta">${(r.dates||[]).slice().sort().map(fmtLongDate).join(', ')}</div></div>${badge}</div>
+  <div class="foot" style="display:flex;gap:7px;flex-wrap:wrap">
+    <button class="chip" data-leavepreview="${r.id}">Preview letter</button>
+    ${r.status==='approved'?`<button class="chip" data-leavedownload="${r.id}">⬇ Download</button>`:''}
+  </div></div>`;
+}
+function paintLeaveCalendar(){
+  const grid=document.getElementById('lvCalGrid'); if(!grid) return;
+  const year=leaveCalYear, month=leaveCalMonth;
+  const nDays=leaveDaysInMonth(year,month);
+  const firstDow=new Date(year,month,1).getDay();
+  const alreadyTaken=new Set(DB.leaveRequests.filter(r=>r.agentKey===PROFILE.key&&r.status!=='declined').flatMap(r=>r.dates||[]));
+  const wdHtml=['S','M','T','W','T','F','S'].map(w=>`<div class="lvCalWd">${w}</div>`).join('');
+  let cells='';
+  for(let i=0;i<firstDow;i++) cells+=`<div class="lvCalCell empty"></div>`;
+  for(let d=1;d<=nDays;d++){
+    const iso=leaveISO(year,month,d);
+    const isToday=iso===today();
+    const isSel=leaveSelDates.includes(iso);
+    const isTaken=alreadyTaken.has(iso)&&!isSel;
+    const isPast=iso<today();
+    cells+=`<button class="lvCalCell${isSel?' sel':''}${isTaken?' taken':''}${isToday?' today':''}${isPast?' past':''}" data-lviso="${iso}" ${isTaken||isPast?'disabled':''} title="${isTaken?'Already requested':''}">${d}</button>`;
+  }
+  grid.innerHTML=wdHtml+cells;
+  grid.querySelectorAll('[data-lviso]').forEach(b=>b.onclick=()=>{
+    const iso=b.dataset.lviso;
+    const idx=leaveSelDates.indexOf(iso);
+    if(idx>=0) leaveSelDates.splice(idx,1); else leaveSelDates.push(iso);
+    paintLeaveCalendar(); paintLeaveSelSummary();
+  });
+}
+function paintLeaveSelSummary(){
+  const s=document.getElementById('lvSelSummary'); if(s) s.textContent=leaveSelDates.length?leaveSelDates.length+' day(s) selected':'none yet';
+  const chips=document.getElementById('lvSelChips');
+  if(chips){
+    chips.innerHTML=leaveSelDates.slice().sort().map(d=>`<button class="chip2" data-lvchipremove="${d}">${fmtLongDate(d)} ✕</button>`).join('');
+    chips.querySelectorAll('[data-lvchipremove]').forEach(c=>c.onclick=()=>{ leaveSelDates=leaveSelDates.filter(x=>x!==c.dataset.lvchipremove); paintLeaveCalendar(); paintLeaveSelSummary(); });
+  }
+}
+function bindLeaveMineCtrls(){
+  document.getElementById('lv_year').onchange=e=>{ leaveCalYear=num(e.target.value); leaveSelDates=[]; paintLeaveApp(); };
+  document.getElementById('lv_month').onchange=e=>{ leaveCalMonth=LEAVE_MONTH_NAMES.indexOf(e.target.value); paintLeaveCalendar(); };
+  paintLeaveCalendar(); paintLeaveSelSummary();
+  document.getElementById('lvClearSel').onclick=()=>{ leaveSelDates=[]; paintLeaveCalendar(); paintLeaveSelSummary(); };
+  document.getElementById('lvApplyBtn').onclick=()=>openLeaveApplyModal();
+  document.querySelectorAll('[data-leavepreview]').forEach(b=>b.onclick=()=>previewLeaveLetter(b.dataset.leavepreview));
+  document.querySelectorAll('[data-leavedownload]').forEach(b=>b.onclick=()=>downloadLeaveLetter(b.dataset.leavedownload));
+}
+function openLeaveApplyModal(){
+  if(!leaveSelDates.length){ toast('Pick at least one date first'); return; }
+  const remaining=leaveDaysRemaining(PROFILE.key,leaveCalYear);
+  if(leaveSelDates.length>remaining){ toast("That's "+leaveSelDates.length+' day(s), but you only have '+remaining+' left for '+leaveCalYear+'.'); return; }
+  const letterText=buildLeaveLetterText(PROFILE.name,leaveSelDates.slice(),leaveCalYear);
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal" style="max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Review your leave letter</div><button id="closeLeaveApply" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <p class="mini" style="margin:-4px 0 12px">We've drafted this for you — edit anything before sending.</p>
+    <textarea id="lv_lettertext" rows="16" style="font-family:Georgia,'Times New Roman',serif;line-height:1.5">${esc(letterText)}</textarea>
+    <div class="formactions"><button class="btn primary" id="lvSendBtn" style="width:100%">Send to Management</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeLeaveApply').onclick=()=>ov.remove();
+  document.getElementById('lvSendBtn').onclick=async()=>{
+    const btn=document.getElementById('lvSendBtn'); btn.disabled=true; btn.textContent='Sending…';
+    try{
+      const text=document.getElementById('lv_lettertext').value.trim();
+      if(!text){ toast('The letter is empty'); btn.disabled=false; btn.textContent='Send to Management'; return; }
+      const rec=await apiInsertLeaveRequest(leaveSelDates.slice().sort(),text,leaveCalYear);
+      DB.leaveRequests.unshift(rec);
+      leaveSelDates=[];
+      ov.remove();
+      try{ await apiSendMessage('manager','New leave request from '+PROFILE.name+' — '+rec.daysCount+' day(s) in '+rec.year+'. Open Office Desk › Leave Schedules › Leave Requests to review.'); }catch(e){}
+      toast('Leave request sent');
+      offerSendLeaveLetter(rec);
+      paintLeaveApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Send to Management'; }
+  };
+}
+function offerSendLeaveLetter(rec){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  const waTarget=PROFILE.whatsapp||PROFILE.phone;
+  ov.innerHTML=`<div id="announceModal" class="successCard" style="padding:34px 22px;position:relative">
+    <button id="closeSendLeave" style="position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button>
+    <div class="successCheckWrap"><div class="successCheckCircle"><svg viewBox="0 0 24 24" fill="none"><path d="M6 12.5l4 4L18 7.5" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+    <div class="successTitle">Sent for approval!</div>
+    <div class="successSub">Your leave request for ${rec.daysCount} day(s) in ${rec.year} is now Pending with Management.</div>
+    <div style="display:flex;flex-direction:column;gap:10px;text-align:left">
+      <button class="btn primary" id="slDownload" style="width:100%">⬇ Download letter (PDF)</button>
+      ${waTarget?`<a class="btn ghost" id="slWhatsapp" target="_blank" rel="noopener" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Send a copy to my WhatsApp</a>`:''}
+      ${PROFILE.email?`<a class="btn ghost" id="slEmail" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Send a copy to my Email</a>`:''}
+    </div>
+    <button class="btn ghost" id="closeSendLeave2" style="width:100%;margin-top:14px">Done</button>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeSendLeave').onclick=()=>ov.remove();
+  document.getElementById('closeSendLeave2').onclick=()=>ov.remove();
+  const msg='Copy of my leave request letter — '+rec.daysCount+' day(s) in '+rec.year+'. (PDF attached)';
+  const waEl=document.getElementById('slWhatsapp'); if(waEl) waEl.href='https://wa.me/'+waNumberFromPhone(waTarget)+'?text='+encodeURIComponent(msg);
+  const emailEl=document.getElementById('slEmail'); if(emailEl) emailEl.href='mailto:'+PROFILE.email+'?subject='+encodeURIComponent('My leave request letter')+'&body='+encodeURIComponent(msg);
+  document.getElementById('slDownload').onclick=()=>{
+    const doc=buildLeaveLetterPDF(rec); if(!doc) return;
+    doc.save('Leave_Request_'+PROFILE.name.replace(/\s+/g,'_')+'_'+rec.year+'.pdf');
+  };
+}
+function previewLeaveLetter(id){
+  const rec=DB.leaveRequests.find(x=>x.id===id); if(!rec) return;
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal" style="max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(rec.agentName)} — leave letter</div><button id="closeLeavePreview" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="formwrap" style="white-space:pre-wrap;font-family:Georgia,'Times New Roman',serif;line-height:1.6;font-size:13.5px;max-height:50vh;overflow:auto">${esc(rec.letterText||'')}</div>
+    <div class="formactions" style="margin-top:14px"><button class="btn ghost" id="lvPreviewDownload" style="width:100%">⬇ Download PDF</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeLeavePreview').onclick=()=>ov.remove();
+  document.getElementById('lvPreviewDownload').onclick=()=>downloadLeaveLetter(id);
+}
+function downloadLeaveLetter(id){
+  const rec=DB.leaveRequests.find(x=>x.id===id); if(!rec) return;
+  const doc=buildLeaveLetterPDF(rec); if(!doc) return;
+  doc.save('Leave_Request_'+rec.agentName.replace(/\s+/g,'_')+'_'+rec.year+'.pdf');
+}
+function leaveRequestsHtml(){
+  const pending=DB.leaveRequests.filter(r=>r.status==='pending').sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
+  const decided=DB.leaveRequests.filter(r=>r.status!=='pending').sort((a,b)=>(b.decidedAt||b.createdAt||'').localeCompare(a.decidedAt||a.createdAt||'')).slice(0,20);
+  return `
+  <div class="sectitle" style="margin-top:0"><h3>Pending approval</h3><span class="cnt">${pending.length}</span></div>
+  <div class="list">${pending.length?pending.map(leaveMgrRowHtml).join(''):emptyState(ic.calendar,'Nothing pending','New leave requests will show up here.')}</div>
+  <div class="sectitle"><h3>Recently decided</h3><span class="cnt">${decided.length}</span></div>
+  <div class="list">${decided.length?decided.map(leaveMgrRowHtml).join(''):emptyState(ic.calendar,'Nothing yet','')}</div>`;
+}
+function leaveMgrRowHtml(r){
+  const badge=r.status==='approved'?'<span class="tag ok">Approved</span>':r.status==='declined'?'<span class="tag dgr">Declined</span>':'<span class="tag warnt">Pending</span>';
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.agentName)} · ${r.daysCount} day${r.daysCount===1?'':'s'} (${r.year})</div><div class="meta">${(r.dates||[]).slice().sort().map(fmtLongDate).join(', ')}</div></div>${badge}</div>
+  <div class="foot" style="display:flex;gap:7px;flex-wrap:wrap">
+    <button class="chip" data-leavereview="${r.id}">Preview &amp; decide</button>
+  </div></div>`;
+}
+function bindLeaveRequestsCtrls(){
+  document.querySelectorAll('[data-leavereview]').forEach(b=>b.onclick=()=>openLeaveReviewModal(b.dataset.leavereview));
+}
+function openLeaveReviewModal(id){
+  const rec=DB.leaveRequests.find(x=>x.id===id); if(!rec) return;
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  const isPending=rec.status==='pending';
+  ov.innerHTML=`<div id="announceModal" style="max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(rec.agentName)} — leave letter</div><button id="closeLeaveReview" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="formwrap" style="white-space:pre-wrap;font-family:Georgia,'Times New Roman',serif;line-height:1.6;font-size:13.5px;max-height:45vh;overflow:auto">${esc(rec.letterText||'')}</div>
+    ${isPending?`<div class="formactions" style="margin-top:14px">
+      <button class="btn ghost" id="lvDeclineBtn" style="flex:1">Decline</button>
+      <button class="btn primary" id="lvApproveBtn" style="flex:1">Approve &amp; sign</button>
+    </div>`:`<div class="mini" style="margin-top:14px">${rec.status==='approved'?'Approved':'Declined'} by ${esc(rec.decidedByName||'')} on ${(rec.decidedAt||'').slice(0,10)}</div>
+    <div class="formactions" style="margin-top:14px"><button class="btn ghost" id="lvReviewDownload" style="width:100%">⬇ Download PDF</button></div>`}
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeLeaveReview').onclick=()=>ov.remove();
+  if(isPending){
+    document.getElementById('lvApproveBtn').onclick=async()=>{
+      if(!getStaffSignature(PROFILE.key)){ toast('Save your signature first — open More > Settings > Account.'); return; }
+      const btn=document.getElementById('lvApproveBtn'); btn.disabled=true; btn.textContent='Approving…';
+      try{
+        const updated=await apiDecideLeaveRequest(rec.id,true);
+        Object.assign(rec,updated);
+        toast('Approved'); ov.remove();
+        try{ await apiSendMessage(rec.agentKey,'Your leave request for '+rec.daysCount+' day(s) in '+rec.year+' has been approved — you can now download the signed letter from Office Desk › Leave Schedules.'); }catch(e){}
+        paintLeaveApp();
+      }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Approve & sign'; }
+    };
+    document.getElementById('lvDeclineBtn').onclick=async()=>{
+      if(!confirm('Decline this leave request?')) return;
+      const btn=document.getElementById('lvDeclineBtn'); btn.disabled=true; btn.textContent='Declining…';
+      try{
+        const updated=await apiDecideLeaveRequest(rec.id,false);
+        Object.assign(rec,updated);
+        toast('Declined'); ov.remove();
+        try{ await apiSendMessage(rec.agentKey,'Your leave request for '+rec.daysCount+' day(s) in '+rec.year+' was declined. Reach out to Management for details.'); }catch(e){}
+        paintLeaveApp();
+      }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Decline'; }
+    };
+  } else {
+    document.getElementById('lvReviewDownload').onclick=()=>downloadLeaveLetter(rec.id);
+  }
+}
+function leaveSettingsHtml(){
+  return `<div class="sectitle" style="margin-top:0"><h3>Leave policy</h3><span class="cnt">applies company-wide</span></div>
+  <div class="formwrap">
+  ${fld('Total leave days per year','<input id="lv_totaldays" type="number" min="0" value="'+(num(CONFIG.leaveTotalDays)||20)+'"/>','every staff member gets this many days per calendar year')}
+  <div class="formactions"><button class="btn primary" id="lvSaveSettings">Save</button></div>
+  </div>`;
+}
+function bindLeaveSettingsCtrls(){
+  document.getElementById('lvSaveSettings').onclick=async()=>{
+    const btn=document.getElementById('lvSaveSettings'); btn.disabled=true; btn.textContent='Saving…';
+    try{ await apiSaveConfig({leaveTotalDays:num(val('lv_totaldays'))||20}); toast('Leave policy updated'); }
+    catch(e){ toast('Save failed: '+(e.message||e)); }
+    btn.disabled=false; btn.textContent='Save';
+  };
+}
 /* ================= COMMISSION ENGINE ================= */
 // Frozen spec: personal = cap x (amount client paid this month / list price of their
 // plot type) -- full plot cap 1000, half 500, list price as denominator (not net/grand),
