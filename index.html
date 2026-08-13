@@ -874,7 +874,7 @@ urlToDataUri(TRULANDER_LOGO_SRC).then(u=>TRULANDER_LOGO_DATA_URI=u).catch(()=>{}
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
-let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[],leaveRequests:[],memos:[]};
+let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[],leaveRequests:[],memos:[],banners:[]};
 /* ---- display preferences (font size / family), applied via CSS custom
    properties so they take effect instantly with no per-page rework ---- */
 const DISPLAY_FONT_FAMILIES={
@@ -2675,6 +2675,31 @@ async function apiMarkMemoRead(id){
   if(DEMO_MODE){ const d=await demoLoad(); const m=(d.memos||[]).find(x=>x.id===id); if(m) m.read=true; await demoSave(); return; }
   try{ await sb.from('memos').update({read:true}).eq('id',id); }catch(e){}
 }
+/* ---- banner tracking ---- */
+const mapBanner=r=>({id:r.id,name:r.name,area:r.area,status:r.status,lat:r.lat,lng:r.lng,image:r.image,notes:r.notes,createdBy:r.created_by,createdByName:r.created_by_name,createdAt:r.created_at,updatedAt:r.updated_at});
+async function apiLoadBanners(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.banners||[]).slice(); }
+  try{ const {data,error}=await sb.from('banners').select('*').order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapBanner); }
+  catch(e){ return []; }
+}
+async function apiInsertBanner(row){
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),...row,createdBy:PROFILE.key,createdByName:PROFILE.name,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    d.banners=d.banners||[]; d.banners.unshift(rec); await demoSave(); return rec; }
+  const {data,error}=await sb.from('banners').insert({name:row.name,area:row.area,status:row.status,lat:row.lat,lng:row.lng,image:row.image||null,notes:row.notes||'',created_by:PROFILE.key,created_by_name:PROFILE.name}).select().single();
+  if(error) throw error; return mapBanner(data);
+}
+async function apiUpdateBanner(id,patch){
+  const dbPatch={updated_at:new Date().toISOString()};
+  Object.keys(patch).forEach(k=>{ dbPatch[k]=patch[k]; });
+  if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.banners||[]).find(x=>x.id===id); if(rec) Object.assign(rec,patch,{updatedAt:dbPatch.updated_at}); await demoSave(); return rec; }
+  const {data,error}=await sb.from('banners').update(dbPatch).eq('id',id).select().single();
+  if(error) throw error; return mapBanner(data);
+}
+async function apiDeleteBanner(id){
+  if(DEMO_MODE){ const d=await demoLoad(); d.banners=(d.banners||[]).filter(x=>x.id!==id); await demoSave(); return; }
+  const {error}=await sb.from('banners').delete().eq('id',id); if(error) throw error;
+}
 /* ---- download directory ---- */
 const mapDownload=r=>({id:r.id,userKey:r.user_key,userName:r.user_name,filename:r.filename,kind:r.kind,fileData:r.file_data,createdAt:r.created_at});
 async function apiLoadDownloads(){
@@ -3911,7 +3936,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -3937,7 +3962,7 @@ function tabForRoute(name){
   if(['crm','sitevisit','enquiry','complaint'].includes(name)) return 'crm';
   if(name==='mgrCrmTools') return 'mgrcrm';
   if(name==='mgrPlotInv') return 'mgrplots';
-  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp') return 'officedesk';
+  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp'||name==='bannerapp') return 'officedesk';
   if(name==='chat'||name==='chatThread') return 'chat';
   if(name==='home'||name==='mgr') return 'home';
   return 'more';
@@ -4199,6 +4224,7 @@ function mgrAppRoute(key){
   else if(key==='Duties') route('duties');
   else if(key==='Leave Schedules') route('leaveapp');
   else if(key==='Memorandum') route('memoapp');
+  else if(key==='Banner Tracking') route('bannerapp');
   else if(key==='Insights') route('insights');
   else if(key==='Downloads') route('downloads');
   else if(key==='Plot Requests') route('plotrequests');
@@ -4237,6 +4263,7 @@ function viewOfficeDesk(){
     {key:'Feedback',fic:'chat',label:'Team Feedback'},
     {key:'Leave Schedules',fic:'calendar',label:'Leave Schedules'},
     {key:'Memorandum',fic:'document',label:'Memorandum'},
+    {key:'Banner Tracking',fic:'map',label:'Banner Tracking'},
     ...(isMgr?[{key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'}]:[]),
     ...(showCompanyLeads?[{key:'Company Leads',fic:'briefcase',label:'Company Leads'}]:[])
   ];
@@ -11446,6 +11473,289 @@ function openMemoEscalatePicker(m){
     ov.remove();
     memoAppTab='compose'; paintMemoApp();
   };
+}
+/* ================= BANNER TRACKING =================
+   Field team logs every banner placement/scouted spot with a photo and
+   GPS coordinates (captured via navigator.geolocation, or typed in). The
+   map view uses Leaflet + OpenStreetMap tiles (lazy-loaded, no API key)
+   for a visual picture of where everything is; actual turn-by-turn
+   routing is handed off to the user's own Google Maps app via a plain
+   deep-link (also no API key) -- single-banner or a whole area's stops
+   chained as waypoints. */
+let BANNERS_LOADED=false;
+let bannerAppTab='dashboard';
+let bannerAreaFilter='';
+let bannerStatusFilter='';
+let bannerMapInstance=null;
+let LEAFLET_LOADING=null;
+const BANNER_STATUS={
+  placed:{label:'Perfect condition',color:'#1E7A56',bg:'#DCEEE4'},
+  needs_maintenance:{label:'Needs maintenance',color:'#8A6E12',bg:'#F6EBD3'},
+  location_only:{label:'Scouted location',color:'#2E6E8E',bg:'#DCEAF0'}
+};
+function ensureLeafletLoaded(){
+  if(window.L) return Promise.resolve();
+  if(LEAFLET_LOADING) return LEAFLET_LOADING;
+  LEAFLET_LOADING=new Promise((resolve,reject)=>{
+    const link=document.createElement('link'); link.rel='stylesheet'; link.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(link);
+    const script=document.createElement('script'); script.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.onload=()=>resolve(); script.onerror=()=>reject(new Error('Could not load the map library — check your connection.'));
+    document.head.appendChild(script);
+  });
+  return LEAFLET_LOADING;
+}
+async function viewBannerApp(){
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Banner Tracking</h2><p>Add, track, and route to every banner placement</p></div></div>
+  <div id="bannerBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  if(!BANNERS_LOADED){ try{ DB.banners=await apiLoadBanners(); BANNERS_LOADED=true; }catch(e){ toast('Could not load banners'); } }
+  paintBannerApp();
+}
+function paintBannerApp(){
+  const body=document.getElementById('bannerBody'); if(!body) return;
+  const tabs=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <button class="chip ${bannerAppTab==='dashboard'?'on':''}" data-bntab="dashboard">Dashboard</button>
+    <button class="chip ${bannerAppTab==='list'?'on':''}" data-bntab="list">Banners</button>
+    <button class="chip ${bannerAppTab==='map'?'on':''}" data-bntab="map">Map &amp; Routes</button>
+    <button class="chip ${bannerAppTab==='reports'?'on':''}" data-bntab="reports">Reports</button>
+  </div>`;
+  let content;
+  if(bannerAppTab==='list') content=bannerListHtml();
+  else if(bannerAppTab==='map') content=bannerMapHtml();
+  else if(bannerAppTab==='reports') content=bannerReportsHtml();
+  else content=bannerDashboardHtml();
+  body.innerHTML=tabs+content;
+  body.querySelectorAll('[data-bntab]').forEach(b=>b.onclick=()=>{ bannerAppTab=b.dataset.bntab; paintBannerApp(); });
+  if(bannerAppTab==='list') bindBannerListCtrls();
+  else if(bannerAppTab==='map') bindBannerMapCtrls();
+  else if(bannerAppTab==='reports') bindBannerReportsCtrls();
+  else bindBannerDashboardCtrls();
+}
+function bannerRowHtml(b){
+  const st=BANNER_STATUS[b.status]||BANNER_STATUS.placed;
+  return `<button class="rowcard" style="text-align:left;width:100%" data-bnopen="${b.id}"><div class="top">
+    ${b.image?`<img src="${b.image}" style="width:44px;height:44px;border-radius:10px;object-fit:cover;flex:0 0 auto;margin-right:10px"/>`:''}
+    <div><div class="nm">${esc(b.name)}</div><div class="meta">${esc(b.area||'—')} · ${esc((b.updatedAt||b.createdAt||'').slice(0,16).replace('T',' '))}</div></div>
+    <span class="tag" style="background:${st.bg};color:${st.color};border-color:transparent">${st.label}</span>
+  </div></button>`;
+}
+function bannerDashboardHtml(){
+  const all=DB.banners;
+  const placed=all.filter(b=>b.status==='placed').length;
+  const maint=all.filter(b=>b.status==='needs_maintenance').length;
+  const newLoc=all.filter(b=>b.status==='location_only').length;
+  const areas=new Set(all.map(b=>b.area).filter(Boolean));
+  const recent=all.slice().sort((a,b)=>(b.updatedAt||b.createdAt||'').localeCompare(a.updatedAt||a.createdAt||'')).slice(0,8);
+  return `
+  <div class="kpis">${kpi('Total banners',placed+maint)}${kpi('Perfect condition',placed)}${kpi('Needs maintenance',maint)}${kpi('New locations',newLoc)}</div>
+  <div class="kpis" style="grid-template-columns:1fr">${kpi('Total areas',areas.size)}</div>
+  <div class="formactions" style="margin:4px 0 16px"><button class="btn primary" id="bnQuickAdd" style="width:100%">+ Add banner / location</button></div>
+  <div class="sectitle" style="margin-top:0"><h3>Recent activity</h3><span class="cnt">${recent.length}</span></div>
+  <div class="list">${recent.length?recent.map(bannerRowHtml).join(''):emptyState(ic.grid,'Nothing logged yet','Add your first banner or scouted location.')}</div>`;
+}
+function bindBannerDashboardCtrls(){
+  document.getElementById('bnQuickAdd').onclick=()=>openBannerModal(null);
+  document.querySelectorAll('[data-bnopen]').forEach(b=>b.onclick=()=>{ const rec=DB.banners.find(x=>x.id===b.dataset.bnopen); if(rec) openBannerModal(rec); });
+}
+function bannerListHtml(){
+  const areas=[...new Set(DB.banners.map(b=>b.area).filter(Boolean))].sort();
+  const areaCounts={}; DB.banners.forEach(b=>{ if(b.area) areaCounts[b.area]=(areaCounts[b.area]||0)+1; });
+  let list=DB.banners.slice();
+  if(bannerAreaFilter) list=list.filter(b=>b.area===bannerAreaFilter);
+  if(bannerStatusFilter) list=list.filter(b=>b.status===bannerStatusFilter);
+  list.sort((a,b)=>(b.updatedAt||b.createdAt||'').localeCompare(a.updatedAt||a.createdAt||''));
+  return `
+  <div class="searchbar" style="margin-bottom:10px"><input id="bnSearchInput" placeholder="Search by name or area…"/></div>
+  <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <button class="chip ${bannerStatusFilter===''?'on':''}" data-bnstatus="">All statuses</button>
+    <button class="chip ${bannerStatusFilter==='placed'?'on':''}" data-bnstatus="placed">Perfect</button>
+    <button class="chip ${bannerStatusFilter==='needs_maintenance'?'on':''}" data-bnstatus="needs_maintenance">Needs maintenance</button>
+    <button class="chip ${bannerStatusFilter==='location_only'?'on':''}" data-bnstatus="location_only">New locations</button>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <button class="chip2 ${bannerAreaFilter===''?'on':''}" data-bnarea="">All areas (${DB.banners.length})</button>
+    ${areas.map(a=>`<button class="chip2 ${bannerAreaFilter===a?'on':''}" data-bnarea="${esc(a)}">${esc(a)} (${areaCounts[a]})</button>`).join('')}
+  </div>
+  <div class="formactions" style="margin-bottom:14px"><button class="btn primary" id="bnAddBtn" style="width:100%">+ Add banner / location</button></div>
+  <div class="list" id="bnList">${list.length?list.map(bannerRowHtml).join(''):emptyState(ic.grid,'Nothing here','Try a different filter, or add a new entry.')}</div>`;
+}
+function bindBannerListCtrls(){
+  document.getElementById('bnAddBtn').onclick=()=>openBannerModal(null);
+  document.querySelectorAll('[data-bnstatus]').forEach(b=>b.onclick=()=>{ bannerStatusFilter=b.dataset.bnstatus; paintBannerApp(); });
+  document.querySelectorAll('[data-bnarea]').forEach(b=>b.onclick=()=>{ bannerAreaFilter=b.dataset.bnarea; paintBannerApp(); });
+  const rebindRows=(list)=>list.querySelectorAll('[data-bnopen]').forEach(b=>b.onclick=()=>{ const rec=DB.banners.find(x=>x.id===b.dataset.bnopen); if(rec) openBannerModal(rec); });
+  const searchInput=document.getElementById('bnSearchInput');
+  searchInput.oninput=()=>{
+    const q=searchInput.value.toLowerCase();
+    const listEl=document.getElementById('bnList');
+    let filtered=DB.banners.slice();
+    if(bannerAreaFilter) filtered=filtered.filter(b=>b.area===bannerAreaFilter);
+    if(bannerStatusFilter) filtered=filtered.filter(b=>b.status===bannerStatusFilter);
+    if(q) filtered=filtered.filter(b=>(b.name||'').toLowerCase().includes(q)||(b.area||'').toLowerCase().includes(q));
+    filtered.sort((a,b)=>(b.updatedAt||b.createdAt||'').localeCompare(a.updatedAt||a.createdAt||''));
+    listEl.innerHTML=filtered.length?filtered.map(bannerRowHtml).join(''):emptyState(ic.grid,'Nothing here','Try a different search.');
+    rebindRows(listEl);
+  };
+  rebindRows(document);
+}
+function openBannerModal(existing){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  const areas=[...new Set(DB.banners.map(b=>b.area).filter(Boolean))].sort();
+  const curLabel=existing?(BANNER_STATUS[existing.status]||BANNER_STATUS.placed).label:'Perfect condition';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${existing?'Edit entry':'Add banner / location'}</div><button id="closeBannerModal" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Name *','<input id="bn_name" placeholder="e.g. Spintex Road – near GOIL" value="'+esc(existing?existing.name:'')+'"/>')}
+    ${fld('Area *','<input id="bn_area" list="bnAreaList" placeholder="e.g. Spintex" value="'+esc(existing?existing.area:'')+'"/>')}
+    <datalist id="bnAreaList">${areas.map(a=>`<option value="${esc(a)}"></option>`).join('')}</datalist>
+    ${fld('Status',sel('bn_status',['Perfect condition','Needs maintenance','New location (no banner yet)'],curLabel))}
+    ${fld('Banner photo','<input id="bn_image" type="file" accept="image/*"/>','optional — skip for a scouted location with no banner yet')}
+    <div id="bn_imgPreview">${existing&&existing.image?`<img src="${existing.image}" style="max-width:140px;border-radius:10px;margin-top:6px"/>`:''}</div>
+    <div class="grid2">${fld('Latitude','<input id="bn_lat" type="number" step="any" value="'+(existing&&existing.lat!=null?existing.lat:'')+'"/>')}${fld('Longitude','<input id="bn_lng" type="number" step="any" value="'+(existing&&existing.lng!=null?existing.lng:'')+'"/>')}</div>
+    <div class="formactions" style="margin:-6px 0 12px"><button class="btn ghost" id="bn_useLoc" style="width:100%" type="button">📍 Use my current location</button></div>
+    ${fld('Notes','<textarea id="bn_notes" rows="2">'+esc(existing?existing.notes||'':'')+'</textarea>','optional')}
+    <div class="formactions"><button class="btn primary" id="bnSaveBtn" style="width:100%">${existing?'Save changes':'Add entry'}</button></div>
+    ${existing?`<button class="btn ghost" id="bnDeleteBtn" style="width:100%;margin-top:8px;color:var(--danger)">Delete</button>`:''}
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeBannerModal').onclick=()=>ov.remove();
+  let imageB64=existing?existing.image:null;
+  document.getElementById('bn_image').onchange=async(e)=>{
+    const file=e.target.files[0]; if(!file) return;
+    try{ imageB64=await resizeImageToB64(file,900,900,0.8); document.getElementById('bn_imgPreview').innerHTML=`<img src="${imageB64}" style="max-width:140px;border-radius:10px;margin-top:6px"/>`; }
+    catch(err){ toast('Could not read that image'); }
+  };
+  document.getElementById('bn_useLoc').onclick=()=>{
+    if(!navigator.geolocation){ toast('Geolocation not available on this device'); return; }
+    const btn=document.getElementById('bn_useLoc'); btn.disabled=true; btn.textContent='Locating…';
+    navigator.geolocation.getCurrentPosition(pos=>{
+      document.getElementById('bn_lat').value=pos.coords.latitude.toFixed(6);
+      document.getElementById('bn_lng').value=pos.coords.longitude.toFixed(6);
+      btn.disabled=false; btn.textContent='📍 Use my current location'; toast('Location captured');
+    },err=>{ btn.disabled=false; btn.textContent='📍 Use my current location'; toast('Could not get your location: '+err.message); },{enableHighAccuracy:true,timeout:10000});
+  };
+  document.getElementById('bnSaveBtn').onclick=async()=>{
+    const name=val('bn_name').trim(), area=val('bn_area').trim();
+    if(!name){ toast('Add a name'); return; }
+    if(!area){ toast('Add an area'); return; }
+    const statusMap={'Perfect condition':'placed','Needs maintenance':'needs_maintenance','New location (no banner yet)':'location_only'};
+    const status=statusMap[val('bn_status')]||'placed';
+    const lat=val('bn_lat')?num(val('bn_lat')):null, lng=val('bn_lng')?num(val('bn_lng')):null;
+    const notes=val('bn_notes').trim();
+    const btn=document.getElementById('bnSaveBtn'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      if(existing){
+        const updated=await apiUpdateBanner(existing.id,{name,area,status,lat,lng,image:imageB64,notes});
+        Object.assign(existing,updated);
+      } else {
+        const rec=await apiInsertBanner({name,area,status,lat,lng,image:imageB64,notes});
+        DB.banners.unshift(rec);
+      }
+      toast('Saved'); ov.remove(); paintBannerApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent=existing?'Save changes':'Add entry'; }
+  };
+  if(existing){
+    document.getElementById('bnDeleteBtn').onclick=async()=>{
+      if(!confirm('Delete this entry? This cannot be undone.')) return;
+      try{ await apiDeleteBanner(existing.id); DB.banners=DB.banners.filter(x=>x.id!==existing.id); toast('Deleted'); ov.remove(); paintBannerApp(); }
+      catch(e){ toast('Failed: '+(e.message||e)); }
+    };
+  }
+}
+function bannerMapHtml(){
+  const withCoords=DB.banners.filter(b=>b.lat!=null&&b.lng!=null);
+  const noCoords=DB.banners.length-withCoords.length;
+  return `
+  <div class="formwrap" style="margin-bottom:14px">
+  <div class="grid2">${fld('Find by name',sel('bnRoute_pick',['Select a banner…',...withCoords.map(b=>b.name+' — '+b.area)]))}${fld('Or by area',sel('bnRoute_area',['All areas',...[...new Set(DB.banners.map(b=>b.area).filter(Boolean))].sort()]))}</div>
+  <div class="formactions"><button class="btn primary" id="bnGetDirections" style="width:100%">🧭 Get directions (opens Google Maps)</button></div>
+  <p class="mini" style="margin:8px 0 0">Picking a single banner routes straight there. Picking an area routes through every mapped banner in it, in order.</p>
+  </div>
+  <div id="bnMapContainer" style="height:360px;border-radius:16px;overflow:hidden;border:1px solid var(--line)"></div>
+  ${noCoords?`<p class="mini" style="margin-top:10px">${noCoords} ${noCoords===1?'entry has':'entries have'} no coordinates yet and won't show on the map.</p>`:''}`;
+}
+function bindBannerMapCtrls(){
+  document.getElementById('bnGetDirections').onclick=()=>{
+    const pickVal=val('bnRoute_pick'); const areaVal=val('bnRoute_area');
+    if(pickVal&&pickVal!=='Select a banner…'){
+      const b=DB.banners.find(x=>(x.name+' — '+x.area)===pickVal);
+      if(!b||b.lat==null){ toast('That banner has no coordinates saved'); return; }
+      window.open('https://www.google.com/maps/dir/?api=1&destination='+b.lat+','+b.lng,'_blank');
+      return;
+    }
+    const areaBanners=DB.banners.filter(b=>b.lat!=null&&b.lng!=null&&(areaVal==='All areas'||b.area===areaVal));
+    if(!areaBanners.length){ toast('No mapped banners in that area'); return; }
+    const stops=areaBanners.slice(0,10);
+    const destination=stops[stops.length-1];
+    const waypoints=stops.slice(0,-1).map(b=>b.lat+','+b.lng).join('|');
+    let url='https://www.google.com/maps/dir/?api=1&destination='+destination.lat+','+destination.lng;
+    if(waypoints) url+='&waypoints='+encodeURIComponent(waypoints);
+    window.open(url,'_blank');
+  };
+  ensureLeafletLoaded().then(()=>{
+    const withCoords=DB.banners.filter(b=>b.lat!=null&&b.lng!=null);
+    const container=document.getElementById('bnMapContainer'); if(!container) return;
+    if(bannerMapInstance){ bannerMapInstance.remove(); bannerMapInstance=null; }
+    const center=withCoords.length?[withCoords[0].lat,withCoords[0].lng]:[5.6037,-0.1870];
+    bannerMapInstance=L.map(container).setView(center,withCoords.length?12:11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors',maxZoom:19}).addTo(bannerMapInstance);
+    withCoords.forEach(b=>{
+      const st=BANNER_STATUS[b.status]||BANNER_STATUS.placed;
+      const marker=L.circleMarker([b.lat,b.lng],{radius:8,color:'#fff',weight:2,fillColor:st.color,fillOpacity:0.9}).addTo(bannerMapInstance);
+      marker.bindPopup('<b>'+esc(b.name)+'</b><br>'+esc(b.area)+'<br>'+esc(st.label)+'<br><a href="https://www.google.com/maps/dir/?api=1&destination='+b.lat+','+b.lng+'" target="_blank" rel="noopener">Directions →</a>');
+    });
+    if(withCoords.length>1){ const bounds=L.latLngBounds(withCoords.map(b=>[b.lat,b.lng])); bannerMapInstance.fitBounds(bounds,{padding:[30,30]}); }
+  }).catch(e=>toast(e.message||'Could not load the map'));
+}
+function bannerReportsHtml(){
+  const all=DB.banners.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  return `
+  <div class="sectitle" style="margin-top:0"><h3>Activity report</h3><span class="cnt">${all.length} total entries</span></div>
+  <div class="formactions" style="margin-bottom:14px"><button class="btn primary" id="bnReportPdf" style="width:100%">⬇ Download full report (PDF)</button></div>
+  <div class="list">${all.length?all.map(b=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(b.name)}</div><div class="meta">${esc(b.area)} · ${esc((BANNER_STATUS[b.status]||BANNER_STATUS.placed).label)} · added by ${esc(b.createdByName)} on ${esc((b.createdAt||'').slice(0,16).replace('T',' '))}</div></div></div></div>`).join(''):emptyState(ic.document,'Nothing to report yet','')}</div>`;
+}
+function bindBannerReportsCtrls(){
+  document.getElementById('bnReportPdf').onclick=()=>{
+    const doc=buildBannerReportPDF(); if(!doc) return;
+    doc.save('Banner_Tracking_Report_'+today()+'.pdf');
+  };
+}
+function buildBannerReportPDF(){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return null; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  let y=pdfHeader(doc,'BANNER TRACKING REPORT');
+  y+=6;
+  const all=DB.banners;
+  const placed=all.filter(b=>b.status==='placed').length;
+  const maint=all.filter(b=>b.status==='needs_maintenance').length;
+  const newLoc=all.filter(b=>b.status==='location_only').length;
+  const areas=new Set(all.map(b=>b.area).filter(Boolean));
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(20,20,20);
+  doc.text('Total banners: '+(placed+maint)+'   ·   Perfect: '+placed+'   ·   Needs maintenance: '+maint+'   ·   New locations: '+newLoc+'   ·   Areas: '+areas.size,14,y);
+  y+=10;
+  const colX=[14,90,130,160];
+  doc.setFillColor(11,30,61); doc.rect(14,y,pageW-28,7,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(255,255,255);
+  doc.text('NAME / AREA',colX[0]+2,y+4.8); doc.text('STATUS',colX[1]+2,y+4.8); doc.text('ADDED BY',colX[2]+2,y+4.8); doc.text('DATE',colX[3]+2,y+4.8);
+  y+=7;
+  doc.setTextColor(20,20,20);
+  const sorted=all.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  sorted.forEach(b=>{
+    if(y>265){ doc.addPage(); y=16; }
+    doc.setDrawColor(226,231,237); doc.line(14,y+11,pageW-14,y+11);
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.text(pdfFitText(doc,b.name,72),colX[0]+2,y+4);
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(100,112,133); doc.text(pdfFitText(doc,b.area||'—',72),colX[0]+2,y+8.5);
+    doc.setFontSize(8); doc.setTextColor(20,20,20);
+    doc.text(pdfFitText(doc,(BANNER_STATUS[b.status]||BANNER_STATUS.placed).label,38),colX[1]+2,y+4.5);
+    doc.text(pdfFitText(doc,b.createdByName||'—',28),colX[2]+2,y+4.5);
+    doc.setFontSize(7.5); doc.text((b.createdAt||'').slice(0,10),colX[3]+2,y+4.5);
+    y+=15;
+  });
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(140,140,140);
+  doc.text('Generated '+new Date().toLocaleDateString('en-GB')+' '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),pageW-14,290,{align:'right'});
+  return doc;
 }
 /* ================= COMMISSION ENGINE ================= */
 // Frozen spec: personal = cap x (amount client paid this month / list price of their
