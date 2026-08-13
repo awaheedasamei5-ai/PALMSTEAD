@@ -1172,6 +1172,7 @@ function defaultConfig(){ return {
   quoteLandNoteText:'We offer to deliver all Land Indentures and Certified Site plan within 3 weeks after Full payment',
   quoteFooterAddress:'First Floor Alex Nerda Building. Nungua Nautical Beach Road Drive',
   receiptThanksText:'Thank you for your payment. This receipt confirms the amount above was received by us and applied to your account.',
+  companyTin:'',
   contractCeoName:'FRANK ADU PEPRAH',
   contractCoverImage:'', contractWordmarkImage:'',
   contractPreamble:[
@@ -2350,7 +2351,7 @@ async function apiLoadConfig(){
       commissionPoolPerPlot:data.commission_pool_per_plot!=null?num(data.commission_pool_per_plot):500,
       lastCommissionMonth:data.last_commission_month||'',
       targetPlotsPerMonth:data.target_plots_per_month!=null?num(data.target_plots_per_month):2, note:data.note||'',
-      companyPhone:data.company_phone||'',companyWhatsapp:data.company_whatsapp||'',companyEmail:data.company_email||'',
+      companyPhone:data.company_phone||'',companyWhatsapp:data.company_whatsapp||'',companyEmail:data.company_email||'',companyTin:data.company_tin||'',
       quoteCompanyName:data.quote_company_name||defaultConfig().quoteCompanyName,
       quoteSiteName:data.quote_site_name||defaultConfig().quoteSiteName,
       quoteDocTypeText:data.quote_doc_type_text||defaultConfig().quoteDocTypeText,
@@ -2375,7 +2376,7 @@ async function apiSaveConfig(patch){
     targets:CONFIG.targets,commission_pct:CONFIG.commissionPct,target_plots_per_month:CONFIG.targetPlotsPerMonth,note:CONFIG.note||'',
     commission_full_cap:CONFIG.commissionFullCap,commission_half_cap:CONFIG.commissionHalfCap,
     commission_pool_per_plot:CONFIG.commissionPoolPerPlot,last_commission_month:CONFIG.lastCommissionMonth||'',
-    company_phone:CONFIG.companyPhone||'',company_whatsapp:CONFIG.companyWhatsapp||'',company_email:CONFIG.companyEmail||'',
+    company_phone:CONFIG.companyPhone||'',company_whatsapp:CONFIG.companyWhatsapp||'',company_email:CONFIG.companyEmail||'',company_tin:CONFIG.companyTin||'',
     quote_company_name:CONFIG.quoteCompanyName||'',quote_site_name:CONFIG.quoteSiteName||'',
     quote_doc_type_text:CONFIG.quoteDocTypeText||'',quote_notes_text:CONFIG.quoteNotesText||'',
     quote_land_note_text:CONFIG.quoteLandNoteText||'',quote_footer_address:CONFIG.quoteFooterAddress||'',
@@ -8760,59 +8761,136 @@ function computeClientPortfolioTotal(contact,leadsList,name){
   if(own.length<2) return null;
   return own.reduce((s,l)=>{ const c=computeLead(l); return s+(l.grandTotal!=null?num(l.grandTotal):c.grand); },0);
 }
+/* ================= PAYMENT RECEIPT (lime/charcoal land-sale style) ================= */
+const RECEIPT_CREAM=[240,241,233], RECEIPT_LIME=[220,241,14], RECEIPT_DARK=[51,51,51], RECEIPT_GRAY=[110,118,128], RECEIPT_LINE=[214,214,206];
+function pdfFitText(doc,text,maxW){
+  text=String(text==null?'':text); if(!text) return '';
+  if(doc.getTextWidth(text)<=maxW) return text;
+  let t=text;
+  while(t.length>1 && doc.getTextWidth(t+'…')>maxW) t=t.slice(0,-1);
+  return t+'…';
+}
+function pdfReceiptArcAccent(doc,pageW){
+  const cx=pageW+16, cy=16;
+  [[96,RECEIPT_LIME],[83,RECEIPT_CREAM],[69,RECEIPT_LIME],[56,RECEIPT_CREAM],[42,RECEIPT_LIME],[29,RECEIPT_CREAM]].forEach(([r,col])=>{
+    doc.setFillColor(col[0],col[1],col[2]); doc.circle(cx,cy,r,'F');
+  });
+}
+function pdfReceiptIcon(doc,cx,cy,r,kind){
+  doc.setFillColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.circle(cx,cy,r,'F');
+  doc.setFillColor(255,255,255); doc.setDrawColor(255,255,255);
+  if(kind==='person'){ doc.circle(cx,cy-r*0.28,r*0.32,'F'); doc.triangle(cx-r*0.45,cy+r*0.55,cx+r*0.45,cy+r*0.55,cx,cy-r*0.02,'F'); }
+  else if(kind==='pin'){ doc.circle(cx,cy-r*0.2,r*0.34,'F'); doc.triangle(cx-r*0.22,cy+r*0.05,cx+r*0.22,cy+r*0.05,cx,cy+r*0.55,'F'); }
+  else if(kind==='phone'){ doc.setLineWidth(r*0.32); doc.line(cx-r*0.28,cy-r*0.42,cx+r*0.42,cy+r*0.5); }
+  else if(kind==='mail'){ doc.rect(cx-r*0.42,cy-r*0.28,r*0.84,r*0.58,'F'); doc.setDrawColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.setLineWidth(r*0.12); doc.line(cx-r*0.42,cy-r*0.28,cx,cy+r*0.08); doc.line(cx+r*0.42,cy-r*0.28,cx,cy+r*0.08); }
+  else if(kind==='wallet'){ doc.rect(cx-r*0.44,cy-r*0.32,r*0.88,r*0.62,'F'); doc.setFillColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.circle(cx+r*0.2,cy-r*0.02,r*0.1,'F'); }
+  else if(kind==='bank'){ doc.triangle(cx-r*0.44,cy-r*0.12,cx+r*0.44,cy-r*0.12,cx,cy-r*0.5,'F'); doc.rect(cx-r*0.44,cy-r*0.1,r*0.88,r*0.5,'F'); }
+  else if(kind==='calendar'){ doc.rect(cx-r*0.42,cy-r*0.36,r*0.84,r*0.72,'F'); doc.setDrawColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.setLineWidth(r*0.14); doc.line(cx-r*0.42,cy-r*0.12,cx+r*0.42,cy-r*0.12); }
+  else if(kind==='check'){ doc.setDrawColor(255,255,255); doc.setLineWidth(r*0.28); doc.line(cx-r*0.32,cy,cx-r*0.06,cy+r*0.28); doc.line(cx-r*0.06,cy+r*0.28,cx+r*0.4,cy-r*0.32); }
+  doc.setDrawColor(0,0,0); doc.setFillColor(0,0,0);
+}
+function pdfReceiptInfoRow(doc,x,y,colW,r,kind,label,value){
+  pdfReceiptIcon(doc,x+r,y-r*0.7,r,kind);
+  doc.setFont('helvetica','bold'); doc.setFontSize(7.2); doc.setTextColor(RECEIPT_GRAY[0],RECEIPT_GRAY[1],RECEIPT_GRAY[2]);
+  doc.text(label,x+r*2+3,y);
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+  doc.text(pdfFitText(doc,value,colW-r*2-3-26),x+r*2+29,y);
+}
 function buildReceiptPDF(clientName,payment,lead,existingDoc,portfolioTotal){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return null; }
   const {jsPDF}=window.jspdf; const doc=existingDoc||new jsPDF({unit:'mm',format:'a4'});
   if(existingDoc) doc.addPage();
-  const pageW=doc.internal.pageSize.getWidth();
+  const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
   const ref=Math.random().toString(16).slice(2,10).toUpperCase();
   const dateStr=payment.date?new Date(payment.date+'T00:00:00').toLocaleDateString('en-GB'):new Date().toLocaleDateString('en-GB');
   const siteName=CONFIG.quoteSiteName||'Royal Palm Enclave, Tsopoli';
   const companyName=CONFIG.quoteCompanyName||'Trulander JSF Limited';
-  let y=pdfBrandedHeader(doc,'RECEIPT',siteName,['No: '+ref,'Date: '+dateStr]);
-  y+=8;
+  const L=14, R=196, colW=(R-L-10)/2, colLx=L, colRx=L+colW+10;
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(100,112,133);
-  doc.text('RECEIVED FROM',12,y); y+=6;
-  doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.setTextColor(20,20,20);
-  doc.text(clientName,12,y); y+=6;
-  if(lead){
-    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(60,68,82);
-    doc.text('For: '+(lead.plotType||'Plot')+' × '+(lead.noPlots||1),12,y); y+=5.5;
+  doc.setFillColor(RECEIPT_CREAM[0],RECEIPT_CREAM[1],RECEIPT_CREAM[2]); doc.rect(0,0,pageW,pageH,'F');
+  pdfReceiptArcAccent(doc,pageW);
+  doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(28);
+  doc.text('PAYMENT',L,27); doc.text('RECEIPT',L,43);
+  let infoY=51;
+  if(CONFIG.companyTin){ doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]); doc.text('Tax ID: '+CONFIG.companyTin,L,infoY); infoY+=5; }
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(RECEIPT_GRAY[0],RECEIPT_GRAY[1],RECEIPT_GRAY[2]);
+  doc.text('Receipt No: '+ref+'   ·   Date: '+dateStr,L,infoY);
+
+  let y=68;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+  doc.text('BILL TO:',colLx,y); doc.text('ISSUED BY:',colRx,y);
+  y+=9;
+  const r=2.7, rowH=7.4;
+  const billRows=[['person','Name',clientName],['pin','Plot',lead?((lead.plotType||'Plot')+' × '+(lead.noPlots||1)):'—'],['phone','Phone',(lead&&lead.contact)||(typeof CLIENT_PROFILE!=='undefined'&&CLIENT_PROFILE&&CLIENT_PROFILE.contact)||'—'],['mail','Email',(typeof CLIENT_PROFILE!=='undefined'&&CLIENT_PROFILE&&CLIENT_PROFILE.email)||'—']];
+  const issuedRows=[['person','Name',companyName],['pin','Address',CONFIG.quoteFooterAddress||siteName],['phone','Phone',CONFIG.companyPhone||'—'],['mail','Email',CONFIG.companyEmail||'—']];
+  for(let i=0;i<4;i++){
+    pdfReceiptInfoRow(doc,colLx,y+i*rowH,colW,r,billRows[i][0],billRows[i][1],billRows[i][2]);
+    pdfReceiptInfoRow(doc,colRx,y+i*rowH,colW,r,issuedRows[i][0],issuedRows[i][1],issuedRows[i][2]);
   }
-  y+=8;
+  y+=4*rowH+8;
 
-  const statItems=[{label:'Amount paid',value:ghs(payment.amount)},{label:'Date of payment',value:dateStr}];
-  if(payment.method) statItems.push({label:'Payment method',value:payment.method});
-  y=pdfDarkStatBar(doc,y,pageW,statItems);
-  y+=2;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+  doc.text('PAYMENT DETAILS',L,y); y+=6;
+  const tblX=[L,98,120,158], tblW=[84,22,38,38];
+  doc.setFillColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.rect(L,y,R-L,8,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+  doc.text('DESCRIPTION',tblX[0]+3,y+5.3); doc.text('QTY',tblX[1]+3,y+5.3); doc.text('UNIT PRICE',tblX[2]+3,y+5.3); doc.text('TOTAL',tblX[3]+3,y+5.3);
+  y+=8;
+  const c=lead?computeLead(lead):null; const grand=lead?(lead.grandTotal!=null?num(lead.grandTotal):c.grand):0;
+  const noPlots=lead?(num(lead.noPlots)||1):1;
+  const desc=lead?((lead.plotType||'Plot')+' — '+siteName):'Payment received';
+  const unitPrice=lead?ghs(grand/noPlots):'—';
+  doc.setDrawColor(RECEIPT_LINE[0],RECEIPT_LINE[1],RECEIPT_LINE[2]); doc.setLineWidth(0.3); doc.rect(L,y,R-L,9.5);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+  doc.text(pdfFitText(doc,desc,tblW[0]-6),tblX[0]+3,y+6.2);
+  doc.text(String(noPlots),tblX[1]+3,y+6.2);
+  doc.text(unitPrice,tblX[2]+tblW[2]-3,y+6.2,{align:'right'});
+  doc.setFont('helvetica','bold'); doc.text(ghs(payment.amount),tblX[3]+tblW[3]-3,y+6.2,{align:'right'});
+  y+=9.5+4;
 
   if(lead){
-    const c=computeLead(lead); const grand=lead.grandTotal!=null?num(lead.grandTotal):c.grand;
     const paid=num(lead.amtPaid); const bal=Math.max(grand-paid,0);
-    const gap=4, cardW=(pageW-24-gap*2)/3;
-    pdfStatCard(doc,12,y,cardW,'Total price',ghs(grand));
-    pdfStatCard(doc,12+cardW+gap,y,cardW,'Paid to date',ghs(paid));
-    pdfStatCard(doc,12+(cardW+gap)*2,y,cardW,'Balance remaining',ghs(bal));
-    y+=17+8;
-  } else y+=6;
+    const boxX=tblX[2], boxW=(R-boxX);
+    const totRows=[['Total contract price',ghs(grand)],['Paid to date',ghs(paid)],[bal<=0?'Status':'Balance remaining',bal<=0?'PAID IN FULL':ghs(bal)]];
+    totRows.forEach((row,i)=>{
+      const ry=y+i*7.5;
+      if(i>0){ doc.setDrawColor(RECEIPT_LINE[0],RECEIPT_LINE[1],RECEIPT_LINE[2]); doc.line(boxX,ry-5,R,ry-5); }
+      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(RECEIPT_GRAY[0],RECEIPT_GRAY[1],RECEIPT_GRAY[2]);
+      doc.text(row[0],boxX+3,ry);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+      doc.text(row[1],R-3,ry,{align:'right'});
+    });
+    y+=3*7.5+8;
+  } else y+=8;
 
-  if(portfolioTotal!=null){
-    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(60,68,82);
-    doc.text('Total value across all your purchases with us: '+ghs(portfolioTotal),12,y); y+=9;
-  }
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+  doc.text('PAYMENT INFORMATION:',colLx,y); doc.text('NOTES:',colRx,y);
+  y+=9;
+  const payRows=[['wallet','Payment Method',payment.method||'—'],['bank','Reference No.',ref],['calendar','Payment Date',dateStr],['check','Status',lead?(Math.max(grand-num(lead.amtPaid),0)<=0?'PAID IN FULL':'PARTIAL PAYMENT'):'RECEIVED']];
+  payRows.forEach((row,i)=>pdfReceiptInfoRow(doc,colLx,y+i*rowH,colW,r,row[0],row[1],row[2]));
 
-  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(60,68,82);
-  const thanksLines=doc.splitTextToSize(CONFIG.receiptThanksText||'Thank you for your payment. This receipt confirms the amount above was received by us and applied to your account.',pageW-24);
-  doc.text(thanksLines,12,y); y+=thanksLines.length*5+14;
+  const notes=[CONFIG.receiptThanksText||'This receipt confirms the amount above was received by us and applied to your account.','Please keep this document for your records.'];
+  if(portfolioTotal!=null) notes.push('Total value across all your purchases with us: '+ghs(portfolioTotal));
+  notes.push('For inquiries, contact us at '+(CONFIG.companyEmail||CONFIG.companyPhone||'the office'));
+  let ny=y;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+  notes.forEach(n=>{
+    doc.setFillColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.circle(colRx+1,ny-1.4,0.8,'F');
+    const lines=doc.splitTextToSize(n,colW-6);
+    doc.text(lines,colRx+5,ny);
+    ny+=lines.length*4.2+2.4;
+  });
+  y=Math.max(y+4*rowH,ny)+6;
 
-  doc.setDrawColor(220,220,220); doc.line(12,y,90,y); y+=5;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(60,68,82);
-  doc.text('Authorized Signature',12,y);
+  doc.setDrawColor(RECEIPT_LINE[0],RECEIPT_LINE[1],RECEIPT_LINE[2]); doc.line(L,y,L+65,y); y+=5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(RECEIPT_GRAY[0],RECEIPT_GRAY[1],RECEIPT_GRAY[2]);
+  doc.text('Authorized Signature',L,y);
 
-  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(140,140,140);
-  doc.text(companyName+' — '+siteName,12,290);
-  doc.text('Generated '+new Date().toLocaleDateString('en-GB'),pageW-12,290,{align:'right'});
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(RECEIPT_GRAY[0],RECEIPT_GRAY[1],RECEIPT_GRAY[2]);
+  doc.text(companyName+' — '+siteName,L,pageH-8);
+  doc.text('Generated '+new Date().toLocaleDateString('en-GB'),R,pageH-8,{align:'right'});
 
   return doc;
 }
@@ -10563,6 +10641,7 @@ function mgrCompanySettingsHtml(){
   <div class="formwrap">
   <div class="grid2">${fld('Phone','<input id="cfg_companyPhone" placeholder="0244…" value="'+esc(CONFIG.companyPhone||'')+'"/>')}${fld('WhatsApp','<input id="cfg_companyWhatsapp" placeholder="0244… (if different)" value="'+esc(CONFIG.companyWhatsapp||'')+'"/>')}</div>
   ${fld('Email','<input id="cfg_companyEmail" type="email" placeholder="info@landbankghana.com" value="'+esc(CONFIG.companyEmail||'')+'"/>')}
+  ${fld('Tax ID / TIN','<input id="cfg_companyTin" placeholder="e.g. C0012345678" value="'+esc(CONFIG.companyTin||'')+'"/>','shown on payment receipts — leave blank to hide it')}
   <div class="formactions"><button class="btn primary" id="saveCompanyContact">Save company contact info</button></div>
   </div>`;
 }
@@ -10570,7 +10649,7 @@ function bindCompanySettingsCtrls(){
   document.getElementById('saveCompanyContact').onclick=async()=>{
     const btn=document.getElementById('saveCompanyContact'); btn.disabled=true; btn.textContent='Saving…';
     try{
-      await apiSaveConfig({companyPhone:val('cfg_companyPhone').trim(),companyWhatsapp:val('cfg_companyWhatsapp').trim(),companyEmail:val('cfg_companyEmail').trim()});
+      await apiSaveConfig({companyPhone:val('cfg_companyPhone').trim(),companyWhatsapp:val('cfg_companyWhatsapp').trim(),companyEmail:val('cfg_companyEmail').trim(),companyTin:val('cfg_companyTin').trim()});
       toast('Company contact info saved');
     }catch(e){ toast('Failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save company contact info';
