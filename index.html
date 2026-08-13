@@ -1464,7 +1464,14 @@ function weekRangeLabel(weekStartIso){
   const fmt=d=>d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
   return fmt(s)+' – '+fmt(e)+', '+e.getFullYear();
 }
-const mapWeeklyVisitForm=r=>({id:r.id,weekStart:r.week_start,
+// The 5 Monday-Friday ISO dates for the week starting weekStartIso -- Site Visit
+// Authorization groups visits by day within this range (isoPlusDays is defined
+// later in the file but hoisted, same as any other function declaration).
+function weekWorkdayIsos(weekStartIso){
+  const out=[]; for(let i=0;i<5;i++) out.push(isoPlusDays(weekStartIso,i));
+  return out;
+}
+const mapWeeklyVisitForm=r=>({id:r.id,weekStart:r.week_start,visitDate:r.visit_date,
   vehicleRentalEst:r.vehicle_rental_est,driversTipEst:r.drivers_tip_est,fuelEst:r.fuel_est,refreshmentEst:r.refreshment_est,tntEst:r.tnt_est,
   vehicleRentalAct:r.vehicle_rental_act,driversTipAct:r.drivers_tip_act,fuelAct:r.fuel_act,refreshmentAct:r.refreshment_act,tntAct:r.tnt_act,
   status:r.status,approvedBy:r.approved_by,approvedByName:r.approved_by_name,approvedSignature:r.approved_signature,finalizedAt:(r.finalized_at||'').slice(0,16).replace('T',' ')});
@@ -2136,16 +2143,18 @@ async function apiRejectPlotRequest(id){
   const {error}=await sb.from('plot_requests').update({status:'Rejected',resolved_at:new Date().toISOString(),resolved_by:PROFILE.name}).eq('id',id);
   if(error) throw error;
 }
-/* Loads the weekly site-visit authorization form for a given Monday, creating an
-   Open one on demand -- this is what makes the form "reset weekly" with zero manual
-   setup: the moment anyone opens a week that doesn't have a row yet, one is created. */
-async function apiLoadOrCreateWeeklyVisitForm(weekStart){
-  let {data,error}=await sb.from('weekly_visit_forms').select('*').eq('week_start',weekStart).maybeSingle();
+/* Loads the site-visit authorization form for one specific day within a week,
+   creating an Open one on demand -- this is what makes the form "reset per day"
+   with zero manual setup: the moment anyone opens a day that doesn't have a row
+   yet, one is created. One form per (week, day) -- see weekly_visit_forms_per_day
+   migration -- so each day's cost breakdown and approval are independent. */
+async function apiLoadOrCreateWeeklyVisitForm(weekStart,visitDate){
+  let {data,error}=await sb.from('weekly_visit_forms').select('*').eq('week_start',weekStart).eq('visit_date',visitDate).maybeSingle();
   if(error) throw error;
   if(!data){
-    const ins=await sb.from('weekly_visit_forms').insert({week_start:weekStart}).select().single();
+    const ins=await sb.from('weekly_visit_forms').insert({week_start:weekStart,visit_date:visitDate}).select().single();
     if(ins.error){
-      const retry=await sb.from('weekly_visit_forms').select('*').eq('week_start',weekStart).maybeSingle();
+      const retry=await sb.from('weekly_visit_forms').select('*').eq('week_start',weekStart).eq('visit_date',visitDate).maybeSingle();
       if(retry.error) throw retry.error;
       data=retry.data;
     } else data=ins.data;
@@ -7685,7 +7694,7 @@ function openLogPayEditModal(p,lead){
    NOTE: the estimated side literally says "Vehicle Rentals" while the actual
    side says "Van Hiring" for the same row in your original form -- kept as-is
    on purpose, not a typo. */
-let SVA_WEEK_START=null, SVA_FORM=null, SVA_VISITS=[];
+let SVA_WEEK_START=null, SVA_SELECTED_DAY=null, SVA_FORM=null, SVA_VISITS=[], SVA_ALL_WEEK_VISITS=[];
 const SVA_COST_ROWS=[
   {estKey:'vehicleRentalEst',actKey:'vehicleRentalAct',estLabel:'Vehicle Rentals',actLabel:'Van Hiring'},
   {estKey:'driversTipEst',actKey:'driversTipAct',estLabel:"Driver's Tip",actLabel:"Driver's Tip"},
@@ -7697,19 +7706,25 @@ const SVA_VISIT_COLS=[['Client Name','name'],['Contact','contact'],['Accompanied
   ['Pick-up Location','pickup'],['Transport Medium','transport'],['Feedback/Remarks','feedback'],['Staff','agentName']];
 function svaCostTotal(form,suffix){ return SVA_COST_ROWS.reduce((n,r)=>n+num(form[suffix==='Est'?r.estKey:r.actKey]),0); }
 function svaMoney(n){ n=num(n); return n?n.toFixed(2):'-'; }
-async function viewSiteVisitAuth(weekStartArg){
+async function viewSiteVisitAuth(weekStartArg,dayArg){
   if(!canViewClientDatabase()){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Restricted','Site Visit Authorization is limited to Management, Elias, Emmanuel and Elizabeth.'); return; }
   SVA_WEEK_START=weekStartArg||currentWeekStartIso();
-  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Weekly logistics</div><h2>Site Visit Authorization</h2><p>Estimate and reconcile this week's site-visit costs, then get Management's approval.</p></div></div>
+  SVA_SELECTED_DAY=dayArg||null;
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Daily logistics</div><h2>Site Visit Authorization</h2><p>Pick a day, estimate and reconcile that day's site-visit costs, then get Management's approval.</p></div></div>
   <div id="svaBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   await paintSiteVisitAuthBody();
 }
 async function paintSiteVisitAuthBody(){
   const body=document.getElementById('svaBody'); if(!body) return;
   try{
-    const [form,visits]=await Promise.all([apiLoadOrCreateWeeklyVisitForm(SVA_WEEK_START),apiLoadSiteVisitsForWeek(SVA_WEEK_START)]);
-    SVA_FORM=form; SVA_VISITS=visits;
-  }catch(e){ body.innerHTML=`<div class="empty">Could not load this week's form: ${esc(e.message||e)}</div>`; return; }
+    SVA_ALL_WEEK_VISITS=await apiLoadSiteVisitsForWeek(SVA_WEEK_START);
+    const workdays=weekWorkdayIsos(SVA_WEEK_START);
+    if(!SVA_SELECTED_DAY||!workdays.includes(SVA_SELECTED_DAY)){
+      SVA_SELECTED_DAY=workdays.find(d=>SVA_ALL_WEEK_VISITS.some(v=>v.date===d))||SVA_WEEK_START;
+    }
+    SVA_VISITS=SVA_ALL_WEEK_VISITS.filter(v=>v.date===SVA_SELECTED_DAY);
+    SVA_FORM=await apiLoadOrCreateWeeklyVisitForm(SVA_WEEK_START,SVA_SELECTED_DAY);
+  }catch(e){ body.innerHTML=`<div class="empty">Could not load this day's form: ${esc(e.message||e)}</div>`; return; }
   body.innerHTML=siteVisitAuthBodyHtml(SVA_FORM,SVA_VISITS);
   bindSiteVisitAuthCtrls();
 }
@@ -7726,13 +7741,20 @@ function siteVisitAuthBodyHtml(form,visits){
       </div>
       <span class="tag ${form.status==='Finalized'?'ok':'warnt'}">${esc(form.status)}</span>
     </div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+      ${weekWorkdayIsos(form.weekStart).map((iso,i)=>{
+        const count=SVA_ALL_WEEK_VISITS.filter(v=>v.date===iso).length;
+        const dnum=new Date(iso+'T00:00:00').getDate();
+        return `<button class="chip ${iso===SVA_SELECTED_DAY?'on':''}" data-svaday="${iso}">${['Mon','Tue','Wed','Thu','Fri'][i]} ${dnum}${count?' · '+count:''}</button>`;
+      }).join('')}
+    </div>
   </div>
 
-  <div class="sectitle" style="margin-top:0"><h3>AUTHORIZATION FORM-TSOPOLI SITE VISIT</h3><span class="cnt">${visits.length} visit${visits.length===1?'':'s'} this week</span></div>
+  <div class="sectitle" style="margin-top:0"><h3>AUTHORIZATION FORM-TSOPOLI SITE VISIT</h3><span class="cnt">${esc(fmtLongDate(SVA_SELECTED_DAY))} · ${visits.length} visit${visits.length===1?'':'s'}</span></div>
   <div style="overflow-x:auto;margin-bottom:18px;border:1px solid var(--line);border-radius:12px">
     <table class="league-table" style="min-width:960px">
       <thead><tr>${SVA_VISIT_COLS.map(([label])=>`<th>${esc(label)}</th>`).join('')}<th></th></tr></thead>
-      <tbody>${!visits.length?`<tr><td colspan="${SVA_VISIT_COLS.length+1}" style="text-align:center;color:var(--muted)">No site visits logged for this week yet.</td></tr>`:
+      <tbody>${!visits.length?`<tr><td colspan="${SVA_VISIT_COLS.length+1}" style="text-align:center;color:var(--muted)">No site visits logged for this day yet.</td></tr>`:
         visits.map(v=>`<tr>${SVA_VISIT_COLS.map(([,key])=>`<td>${esc(v[key]||'—')}</td>`).join('')}
           <td><button class="trashbtn" data-svadelvisit="${esc(v.id)}" title="Remove from this form"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V4h6v3m-8 0l1 13h8l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td></tr>`).join('')}
       </tbody>
@@ -7785,6 +7807,7 @@ function siteVisitAuthBodyHtml(form,visits){
 function bindSiteVisitAuthCtrls(){
   const prev=document.getElementById('svaPrevWeek'); if(prev) prev.onclick=()=>{ const d=new Date(SVA_WEEK_START+'T00:00:00'); d.setDate(d.getDate()-7); viewSiteVisitAuth(isoDateOnly(d)); };
   const next=document.getElementById('svaNextWeek'); if(next) next.onclick=()=>{ const d=new Date(SVA_WEEK_START+'T00:00:00'); d.setDate(d.getDate()+7); viewSiteVisitAuth(isoDateOnly(d)); };
+  document.querySelectorAll('[data-svaday]').forEach(b=>b.onclick=()=>viewSiteVisitAuth(SVA_WEEK_START,b.dataset.svaday));
   const saveBtn=document.getElementById('svaSave');
   if(saveBtn) saveBtn.onclick=async()=>{
     const patch={}; SVA_COST_ROWS.forEach(r=>{ [r.estKey,r.actKey].forEach(k=>{ const el=document.getElementById('sva_'+k); if(el) patch[k]=num(el.value); }); });
@@ -7798,7 +7821,7 @@ function bindSiteVisitAuthCtrls(){
   };
   const finBtn=document.getElementById('svaFinalize');
   if(finBtn) finBtn.onclick=async()=>{
-    if(!confirm("Finalize and approve this week's site visit costs? This locks the form and stamps your signature.")) return;
+    if(!confirm("Finalize and approve this day's site visit costs? This locks the form and stamps your signature.")) return;
     finBtn.disabled=true; finBtn.textContent='Approving…';
     try{
       SVA_FORM=await apiFinalizeWeeklyVisitForm(SVA_FORM.id);
@@ -7810,7 +7833,7 @@ function bindSiteVisitAuthCtrls(){
   if(dlBtn) dlBtn.onclick=()=>buildWeeklyVisitAuthPDF(SVA_FORM,SVA_VISITS);
   document.querySelectorAll('[data-svadelvisit]').forEach(b=>b.onclick=async()=>{
     const id=b.dataset.svadelvisit; const v=SVA_VISITS.find(x=>x.id===id); if(!v) return;
-    if(!confirm('Remove '+(v.name||'this client')+' from this week\'s authorization form? This deletes the site visit record entirely.')) return;
+    if(!confirm('Remove '+(v.name||'this client')+" from this day's authorization form? This deletes the site visit record entirely.")) return;
     b.disabled=true;
     try{
       await apiDeleteVisit(id);
@@ -7861,7 +7884,7 @@ function buildWeeklyVisitAuthPDF(form,visits){
 
   y+=svaGridRow(doc,x0,y,colW,[{text:'AUTHORIZATION FORM-TSOPOLI SITE VISIT',span:8,bold:true,align:'center',size:10.5}],8.5);
   y+=svaGridRow(doc,x0,y,colW,[
-    {text:'Date of visit'},{text:weekRangeLabel(form.weekStart).replace(/–/g,'-'),span:3},{text:''},
+    {text:'Date of visit'},{text:(form.visitDate?fmtLongDate(form.visitDate):weekRangeLabel(form.weekStart).replace(/–/g,'-')),span:3},{text:''},
     {text:'Approved By:'},{text:form.status==='Finalized'?(form.approvedByName||''):'',span:2}
   ]);
   y+=svaGridRow(doc,x0,y,colW,SVA_VISIT_COLS.map(([label])=>({text:label,bold:true})));
@@ -7899,7 +7922,7 @@ function buildWeeklyVisitAuthPDF(form,visits){
   doc.text('Date:.....................................',rx,y+18);
   if(form.status==='Finalized'&&form.approvedSignature) pdfStampSignature(doc,rx+30,y+9,32,12,form.approvedSignature);
 
-  const fname='SiteVisitAuth_'+form.weekStart+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
+  const fname='SiteVisitAuth_'+(form.visitDate||form.weekStart)+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
 }
 
 /* ================= ENQUIRY ================= */
