@@ -2478,6 +2478,27 @@ async function apiSaveConfig(patch){
     contract_cover_image:CONFIG.contractCoverImage||null,contract_wordmark_image:CONFIG.contractWordmarkImage||null};
   const {error}=await sb.from('app_config').upsert(row); if(error) throw error;
 }
+/* ---- pricing change audit trail --------------------------------------------
+   Existing leads already store their OWN unitPrice/discount/netTotal/grandTotal
+   at the moment they were priced (computeLead() only falls back to the live
+   CONFIG price when a lead has none of its own), so a price change here never
+   silently rewrites old deals. What was missing was a record of the change
+   itself -- who, when, old value, new value -- an immutable trail (see the
+   pricing_history migration: no UPDATE/DELETE policy on purpose). */
+const PRICING_FIELD_LABELS={fullPrice:'Full Plot price',halfPrice:'Half Plot price',fullDiscount:'Full Plot standard discount',halfDiscount:'Half Plot standard discount',int3:'3-month interest',int6:'6-month interest',int9:'9-month interest',int12:'12-month interest'};
+async function apiLogPricingChange(field,oldValue,newValue){
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),changedBy:PROFILE.key,changedByName:PROFILE.name,field,fieldLabel:PRICING_FIELD_LABELS[field]||field,oldValue,newValue,changedAt:new Date().toISOString()};
+    d.pricingHistory=d.pricingHistory||[]; d.pricingHistory.unshift(rec); await demoSave(); return rec; }
+  const {data,error}=await sb.from('pricing_history').insert({changed_by:PROFILE.key,changed_by_name:PROFILE.name,field,field_label:PRICING_FIELD_LABELS[field]||field,old_value:oldValue,new_value:newValue}).select().single();
+  if(error) throw error;
+  return {id:data.id,changedBy:data.changed_by,changedByName:data.changed_by_name,field:data.field,fieldLabel:data.field_label,oldValue:data.old_value,newValue:data.new_value,changedAt:data.changed_at};
+}
+async function apiLoadPricingHistory(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.pricingHistory||[]).slice(0,30); }
+  try{ const {data,error}=await sb.from('pricing_history').select('*').order('changed_at',{ascending:false}).limit(30); if(error) throw error;
+    return (data||[]).map(r=>({id:r.id,changedBy:r.changed_by,changedByName:r.changed_by_name,field:r.field,fieldLabel:r.field_label,oldValue:r.old_value,newValue:r.new_value,changedAt:r.changed_at})); }
+  catch(e){ return []; }
+}
 async function apiSaveBirthday(agentKey,birthday){
   if(DEMO_MODE){ const d=await demoLoad(); d.profileBirthdays=d.profileBirthdays||{}; if(birthday) d.profileBirthdays[agentKey]=birthday; else delete d.profileBirthdays[agentKey]; await demoSave(); return; }
   const {error}=await sb.from('profiles').update({birthday}).eq('agent_key',agentKey); if(error) throw error;
@@ -9889,7 +9910,7 @@ async function managerView(){
   else if(mgrTab==='Settings'){ body.innerHTML=mgrSettingsHubHtml(); bindMgrAppGrid(document.getElementById('mgrSettingsGrid'),SETTINGS_APPS); }
   else if(mgrTab==='Quotation Settings'){ body.innerHTML=mgrQuotationSettingsHtml(); bindQuotationSettingsCtrls(); }
   else if(mgrTab==='Commission Settings'){ body.innerHTML=mgrCommissionSettingsHtml(); bindCommissionSettingsCtrls(); }
-  else if(mgrTab==='Pricing & Targets'){ body.innerHTML=mgrPricingTargetsHtml(); bindPricingTargetsCtrls(); }
+  else if(mgrTab==='Pricing & Targets'){ if(!PRICING_HISTORY_LOADED){ try{ PRICING_HISTORY_LIST=await apiLoadPricingHistory(); PRICING_HISTORY_LOADED=true; }catch(e){} } body.innerHTML=mgrPricingTargetsHtml(); bindPricingTargetsCtrls(); }
   else if(mgrTab==='Staff Settings'){ TEAM_ROSTER=await apiLoadFullRoster(); INVITE_LIST=await apiListInvites().catch(()=>[]); body.innerHTML=mgrStaffSettingsHtml(); bindStaffSettingsCtrls(); }
   else if(mgrTab==='Company Settings'){ body.innerHTML=mgrCompanySettingsHtml(); bindCompanySettingsCtrls(); }
   else if(mgrTab==='System'){ body.innerHTML=mgrSystemHtml(); bindSystemCtrls(); }
@@ -10724,10 +10745,12 @@ function bindCommissionSettingsCtrls(){
     saveCommBtn.disabled=false; saveCommBtn.textContent='Save commission settings';
   };
 }
+let PRICING_HISTORY_LOADED=false, PRICING_HISTORY_LIST=[];
 function mgrPricingTargetsHtml(){
   const agentStaff=STAFF_LIST.filter(s=>s.role==='agent');
   return `<div class="sectitle" style="margin-top:0"><h3>Plot pricing</h3><span class="cnt">applies to new leads immediately</span></div>
   <div class="formwrap">
+  <p class="mini" style="margin:-2px 0 14px">Existing leads already keep their own price and discount from when they were created — changing this here only affects new leads and anyone re-saved after the change. Every change here is logged below with who, when, and the old vs. new value.</p>
   <div class="grid2">${fld('Full Plot price (GHS)','<input id="cfg_fullPrice" type="number" value="'+CONFIG.fullPrice+'"/>')}${fld('Full Plot standard discount (GHS)','<input id="cfg_fullDiscount" type="number" value="'+CONFIG.fullDiscount+'"/>')}</div>
   <div class="grid2">${fld('Half Plot price (GHS)','<input id="cfg_halfPrice" type="number" value="'+CONFIG.halfPrice+'"/>')}${fld('Half Plot standard discount (GHS)','<input id="cfg_halfDiscount" type="number" value="'+CONFIG.halfDiscount+'"/>')}</div>
   <div class="sectitle" style="margin-top:6px"><h3 style="font-size:14px">Payment plan interest (per full-plot-equivalent)</h3></div>
@@ -10735,6 +10758,9 @@ function mgrPricingTargetsHtml(){
   <div class="grid2">${fld('9 Months (GHS)','<input id="cfg_int9" type="number" value="'+CONFIG.int9+'"/>')}${fld('12 Months (GHS)','<input id="cfg_int12" type="number" value="'+CONFIG.int12+'"/>')}</div>
   <div class="formactions"><button class="btn primary" id="saveCfg">Save pricing</button></div>
   </div>
+
+  <div class="sectitle"><h3>Price change history</h3><span class="cnt">${PRICING_HISTORY_LIST.length} logged</span></div>
+  <div class="list" style="margin-bottom:18px">${PRICING_HISTORY_LIST.length?PRICING_HISTORY_LIST.map(h=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(h.fieldLabel)}</div><div class="meta">${esc(ghs(h.oldValue))} → ${esc(ghs(h.newValue))} · by ${esc(h.changedByName)} · ${esc((h.changedAt||'').slice(0,16).replace('T',' '))}</div></div></div></div>`).join(''):emptyState(ic.analytics,'No changes logged yet','Every price/discount/interest change you save will appear here.')}</div>
 
   <div class="sectitle"><h3>Monthly price adjustment</h3><span class="cnt">bulk-apply to clients still paying</span></div>
   <div class="formwrap">
@@ -10754,10 +10780,20 @@ function mgrPricingTargetsHtml(){
 function bindPricingTargetsCtrls(){
   document.getElementById('saveCfg').onclick=async()=>{
     const btn=document.getElementById('saveCfg'); btn.disabled=true; btn.textContent='Saving…';
-    try{ await apiSaveConfig({fullPrice:num(val('cfg_fullPrice')),halfPrice:num(val('cfg_halfPrice')),
+    const next={fullPrice:num(val('cfg_fullPrice')),halfPrice:num(val('cfg_halfPrice')),
       fullDiscount:num(val('cfg_fullDiscount')),halfDiscount:num(val('cfg_halfDiscount')),
-      int3:num(val('cfg_int3')),int6:num(val('cfg_int6')),int9:num(val('cfg_int9')),int12:num(val('cfg_int12'))});
-      toast('Pricing updated'); }
+      int3:num(val('cfg_int3')),int6:num(val('cfg_int6')),int9:num(val('cfg_int9')),int12:num(val('cfg_int12'))};
+    const changed=Object.keys(next).filter(k=>num(CONFIG[k])!==next[k]);
+    try{
+      const prev={}; changed.forEach(k=>prev[k]=num(CONFIG[k]));
+      await apiSaveConfig(next);
+      for(const k of changed){
+        const rec=await apiLogPricingChange(k,prev[k],next[k]);
+        PRICING_HISTORY_LIST.unshift(rec);
+      }
+      toast(changed.length?'Pricing updated · '+changed.length+' change'+(changed.length===1?'':'s')+' logged':'Pricing updated');
+      if(changed.length){ managerView(); return; }
+    }
     catch(e){ toast('Save failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save pricing';
   };
