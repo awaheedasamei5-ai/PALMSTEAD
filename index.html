@@ -2985,7 +2985,8 @@ function openAddClientDbLead(){
   };
 }
 async function viewClientDatabase(){
-  V.innerHTML=`${back('more')}<div class="pagehead"><div><div class="eyebrow">Company-wide</div><h2>Client Database</h2><p>Every client across every agent.</p></div></div>
+  const homeRoute=PROFILE.role==='manager'?'mgrSalesDesk':'salesdesk';
+  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Company-wide</div><h2>Client Database</h2><p>Every client across every agent.</p></div></div>
   <div id="cdbBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load client database: '+(e.message||e)); } }
   const body=document.getElementById('cdbBody');
@@ -3079,7 +3080,7 @@ function openAssignCompanyLeadModal(lead){
   };
 }
 async function viewPlotRequests(){
-  const homeRoute=PROFILE.role==='manager'?'mgrPlotInv':'more';
+  const homeRoute=PROFILE.role==='manager'?'mgrSalesDesk':'salesdesk';
   V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Additional plot requests</div><h2>Plot Requests</h2><p>Submitted by clients from their dashboard.</p></div></div>
   <div id="prBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   let list=[];
@@ -3934,9 +3935,9 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     customer:formCustomer,plots:viewPlots,
     paid:()=>kpiDrilldown('paid'),owed:()=>kpiDrilldown('owed'),visits:()=>kpiDrilldown('visits'),donepaying:()=>kpiDrilldown('donepaying'),
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
-    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewCRM,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
+    agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrCrmTools:viewMgrCrmTools,mgrPlotInv:viewMgrPlotInv,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -3958,11 +3959,8 @@ function tabForRoute(name){
     if(name==='clientallocation') return 'clienthome';
     return 'clienthome';
   }
-  if(['salesdesk','addlead','update','updateOne','myDataCheck','plots','pipeline'].includes(name)) return 'salesdesk';
-  if(['crm','sitevisit','enquiry','complaint'].includes(name)) return 'crm';
-  if(name==='mgrCrmTools') return 'mgrcrm';
-  if(name==='mgrPlotInv') return 'mgrplots';
-  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp'||name==='bannerapp') return 'officedesk';
+  if(['salesdesk','mgrSalesDesk','mgrCrmTools','mgrPlotInv','crm','addlead','update','updateOne','myDataCheck','plots','pipeline','sitevisit','enquiry','complaint','plotrequests','clientdb','allocations'].includes(name)) return 'salesdesk';
+  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp'||name==='bannerapp'||name==='contractapp'||name==='sitevisitauth'||name==='logpayment') return 'officedesk';
   if(name==='chat'||name==='chatThread') return 'chat';
   if(name==='home'||name==='mgr') return 'home';
   return 'more';
@@ -3986,16 +3984,16 @@ function renderBottomNavNow(){
   const isMgr=PROFILE.role==='manager';
   const openTasks=computeDutiesSummary((DB.tasks||[]).filter(t=>isMgr||t.assignedTo===PROFILE.key)).openCount;
   const unread=totalUnread();
-  const crmBadge=unreadByKind('sitevisit')+unreadByKind('enquiry')+unreadByKind('complaint');
-  const plotInvBadge=unreadByKind('plotrequest');
-  const moreBadge=isMgr?0:plotInvBadge;
+  const salesDeskBadge=unreadByKind('sitevisit')+unreadByKind('enquiry')+unreadByKind('complaint')+unreadByKind('plotrequest');
+  // Five tabs for both roles -- Sales Desk now folds in everything client/lead/plot-related
+  // (site visits, enquiries, feedback, plot requests, and for managers the old separate
+  // CRM Tools + Plot Inventory tabs) so the nav shape matches across roles.
   const tabDefs=[
     {key:'home',label:'Home',icon:ic.home,r:isMgr?'mgr':'home'},
-    ...(isMgr?[{key:'mgrcrm',label:'CRM Tools',icon:ic.phone,r:'mgrCrmTools',badge:crmBadge},{key:'mgrplots',label:'Plot Inventory',icon:ic.grid,r:'mgrPlotInv',badge:plotInvBadge}]
-      :[{key:'salesdesk',label:'Sales Desk',icon:ic.briefcase2,r:'salesdesk'},{key:'crm',label:'CRM Tools',icon:ic.phone,r:'crm',badge:crmBadge}]),
+    {key:'salesdesk',label:'Sales Desk',icon:ic.briefcase2,r:isMgr?'mgrSalesDesk':'salesdesk',badge:salesDeskBadge},
     {key:'officedesk',label:'Office Desk',icon:ic.desk,r:'officedesk',badge:openTasks},
     {key:'chat',label:'Chat',icon:ic.chat,r:'chat',badge:unread,badgeId:'bnChatBadge'},
-    {key:'more',label:'More',icon:ic.more,r:'more',badge:moreBadge}
+    {key:'more',label:'More',icon:ic.more,r:'more'}
   ];
   nav.innerHTML=tabDefs.map(t=>{
     const show=t.badge>0;
@@ -4182,11 +4180,6 @@ const AGENT_HUBS={
     {r:'myDataCheck',fic:'datacheck',label:'Data check'},
     {r:'plots',fic:'map',label:'Plot availability'},
     {r:'pipeline',fic:'document',label:'My pipeline'}
-  ]},
-  crm:{title:'CRM Tools',items:[
-    {r:'sitevisit',fic:'location',label:'Site visit',badgeKind:'sitevisit'},
-    {r:'enquiry',fic:'enquiry',label:'Client enquiry',badgeKind:'enquiry'},
-    {r:'complaint',fic:'alert',label:'Client feedback',badgeKind:'complaint'}
   ]}
 };
 // Small red count badge overlaid on an appGrid tile -- data-badgekind lets
@@ -4202,18 +4195,23 @@ function viewSmartInsights(){
   V.innerHTML=`${back(homeRoute)}${renderSmartInsights(scope,DB.payments)}`;
   bindSmartInsights();
 }
+// Sales Desk is the single agent-side hub for everything client/lead/plot-related --
+// personal pipeline tools (AGENT_HUBS.salesdesk) plus the client-touchpoint and
+// plot-inventory items that used to live in a separate CRM Tools tab, so agents and
+// managers share the same nav shape (Home / Sales Desk / Office Desk / Chat / More).
 function viewSalesDesk(){
-  const hub=AGENT_HUBS.salesdesk;
-  V.innerHTML=`<div class="pagehead"><div><h2>Sales Desk</h2><p>Leads, pipeline &amp; plots — everything for your book of clients</p></div></div>
-  <div class="appGrid">${hub.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}"><span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`;
-  V.querySelectorAll('[data-hubroute]').forEach(b=>b.onclick=()=>route(b.dataset.hubroute));
-}
-function viewCRM(){
-  const hub=AGENT_HUBS.crm;
-  V.innerHTML=`<div class="pagehead"><div><h2>CRM Tools</h2><p>Site visits, enquiries &amp; client feedback</p></div></div>
-  <div class="appGrid">${hub.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`;
+  const items=[...AGENT_HUBS.salesdesk.items,
+    {r:'sitevisit',fic:'location',label:'Site visit',badgeKind:'sitevisit'},
+    {r:'enquiry',fic:'enquiry',label:'Client enquiry',badgeKind:'enquiry'},
+    {r:'complaint',fic:'alert',label:'Client feedback',badgeKind:'complaint'},
+    {r:'plotrequests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
+    ...(canManagePlots()?[{r:'allocations',fic:'allocation',label:'Allocations'}]:[]),
+    ...(canViewClientDatabase()?[{r:'clientdb',fic:'savings',label:'Client Database'}]:[])
+  ];
+  V.innerHTML=`<div class="pagehead"><div><h2>Sales Desk</h2><p>Leads, pipeline, plots &amp; client touchpoints — everything for your book of clients</p></div></div>
+  <div class="appGrid">${items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`;
   V.querySelectorAll('[data-hubroute]').forEach(b=>{
-    const item=hub.items.find(a=>a.r===b.dataset.hubroute);
+    const item=items.find(a=>a.r===b.dataset.hubroute);
     b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); route(b.dataset.hubroute); };
   });
 }
@@ -4243,17 +4241,13 @@ function bindMgrAppGrid(grid,items){
     b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); mgrAppRoute(b.dataset.moreapp); };
   });
 }
-function viewMgrCrmTools(){
-  const items=MGR_APPS.filter(a=>a.section==='crm');
-  V.innerHTML=`<div class="pagehead"><div><h2>CRM Tools</h2><p>Client database, feedback, site visits &amp; enquiries</p></div></div>
-  <div class="appGrid" id="mgrCrmGrid">${mgrAppGridHtml(items)}</div>`;
-  bindMgrAppGrid(document.getElementById('mgrCrmGrid'),items);
-}
-function viewMgrPlotInv(){
-  const items=MGR_APPS.filter(a=>a.section==='plots');
-  V.innerHTML=`<div class="pagehead"><div><h2>Plot Inventory</h2><p>Plots, allocations &amp; additional-plot requests</p></div></div>
-  <div class="appGrid" id="mgrPlotGrid">${mgrAppGridHtml(items)}</div>`;
-  bindMgrAppGrid(document.getElementById('mgrPlotGrid'),items);
+// Replaces the old separate CRM Tools / Plot Inventory tabs with one Sales Desk hub,
+// mirroring the agent-side consolidation -- same nav shape for both roles.
+function viewMgrSalesDesk(){
+  const items=MGR_APPS.filter(a=>a.section==='salesdesk');
+  V.innerHTML=`<div class="pagehead"><div><h2>Sales Desk</h2><p>Client database, plots, allocations, site visits, enquiries &amp; plot requests</p></div></div>
+  <div class="appGrid" id="mgrSalesGrid">${mgrAppGridHtml(items)}</div>`;
+  bindMgrAppGrid(document.getElementById('mgrSalesGrid'),items);
 }
 function viewOfficeDesk(){
   const isMgr=PROFILE.role==='manager';
@@ -4264,6 +4258,10 @@ function viewOfficeDesk(){
     {key:'Leave Schedules',fic:'calendar',label:'Leave Schedules'},
     {key:'Memorandum',fic:'document',label:'Memorandum'},
     {key:'Banner Tracking',fic:'map',label:'Banner Tracking'},
+    ...(showCompanyLeads?[{key:'Site Visit Auth',fic:'clipboard',label:'Site Visit Auth'}]:[]),
+    ...(canManageContracts()?[{key:'Contract of Sale',fic:'document',label:'Contract of Sale'}]:[]),
+    ...(canManagePayments()?[{key:'Log Payment',fic:'savings',label:'Log Payment'}]:[]),
+    ...(isMgr?[{key:'Commission',fic:'savings',label:'Commission'}]:[]),
     ...(isMgr?[{key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'}]:[]),
     ...(showCompanyLeads?[{key:'Company Leads',fic:'briefcase',label:'Company Leads'}]:[])
   ];
@@ -4283,11 +4281,6 @@ function viewMore(){
     const items=[
       {key:'insights',fic:'target',label:'Smart Insights'},
       {key:'downloads',fic:'document',label:'Download Directory'},
-      {key:'plotrequests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
-      ...(canManagePlots()?[{key:'allocations',fic:'allocation',label:'Allocations'}]:[]),
-      ...(canManagePayments()?[{key:'logpayment',fic:'savings',label:'Log Payment'}]:[]),
-      ...(canViewClientDatabase()?[{key:'clientdb',fic:'savings',label:'Client Database'},{key:'sitevisitauth',fic:'clipboard',label:'Site Visit Auth'}]:[]),
-      ...(canManageContracts()?[{key:'contractapp',fic:'document',label:'Contract of Sale'}]:[]),
       {key:'account',fic:'settings',label:'Settings'}
     ];
     grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
@@ -7258,7 +7251,7 @@ async function saveUpdate(id,resolvedDepositTarget){ const l=findLeadById(id); i
     await checkTargetExceeded();
     const parts=[]; if(pay>0)parts.push('Payment '+ghs(pay)); parts.push('Stage: '+stage); if(discount!==oldDiscount)parts.push('Discount now '+ghs(discount));
     await addActivity(name,'Pipeline update',parts.join(' · '),val('u_disc').trim(),val('u_method'),val('u_follow'));
-    toast(pay>0?('Payment recorded · '+ghs(pay)):'Pipeline updated'); route('pipeline');
+    toast(pay>0?('Payment recorded · '+ghs(pay)):'Pipeline updated'); route('updateOne',id,true);
     if(loggedPayment && canManagePayments()){
       if(contact) apiSendSms(contact,`Hi ${name}, thank you for your payment of ${ghs(pay)} towards your plot at Royal Palm Enclave. - PEP Landbank`,'payment_thanks');
       offerSendReceipt({...l,name,contact},loggedPayment);
@@ -7437,9 +7430,9 @@ function openLogMonthPayment(lead,slotKey,expected){
    consistent everywhere, but re-renders in place instead of navigating away. */
 let LOGPAY_SELECTED_LEAD=null, LOGPAY_QUERY='';
 async function viewLogPaymentApp(){
-  if(!canManagePayments()){ V.innerHTML=back('more')+emptyState(ic.savings,'Elias/Management only','Payment entry is restricted to Elias and Management.'); return; }
+  if(!canManagePayments()){ V.innerHTML=back('officedesk')+emptyState(ic.savings,'Elias/Management only','Payment entry is restricted to Elias and Management.'); return; }
   LOGPAY_SELECTED_LEAD=null; LOGPAY_QUERY='';
-  V.innerHTML=`${back('more')}<div class="pagehead"><div><div class="eyebrow">Payments</div><h2>Log Payment</h2><p>Search a client, log a payment, or review and correct past entries.</p></div></div>
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Payments</div><h2>Log Payment</h2><p>Search a client, log a payment, or review and correct past entries.</p></div></div>
   <div id="logpayBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load clients: '+(e.message||e)); } }
   paintLogPayBody();
@@ -7593,9 +7586,9 @@ const SVA_VISIT_COLS=[['Client Name','name'],['Contact','contact'],['Accompanied
 function svaCostTotal(form,suffix){ return SVA_COST_ROWS.reduce((n,r)=>n+num(form[suffix==='Est'?r.estKey:r.actKey]),0); }
 function svaMoney(n){ n=num(n); return n?n.toFixed(2):'-'; }
 async function viewSiteVisitAuth(weekStartArg){
-  if(!canViewClientDatabase()){ V.innerHTML=back('more')+emptyState(ic.doc,'Restricted','Site Visit Authorization is limited to Management, Elias, Emmanuel and Elizabeth.'); return; }
+  if(!canViewClientDatabase()){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Restricted','Site Visit Authorization is limited to Management, Elias, Emmanuel and Elizabeth.'); return; }
   SVA_WEEK_START=weekStartArg||currentWeekStartIso();
-  V.innerHTML=`${back('more')}<div class="pagehead"><div><div class="eyebrow">Weekly logistics</div><h2>Site Visit Authorization</h2><p>Estimate and reconcile this week's site-visit costs, then get Management's approval.</p></div></div>
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Weekly logistics</div><h2>Site Visit Authorization</h2><p>Estimate and reconcile this week's site-visit costs, then get Management's approval.</p></div></div>
   <div id="svaBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   await paintSiteVisitAuthBody();
 }
@@ -9291,9 +9284,9 @@ function readImageFileAsDataUri(file,maxW){
 }
 let CONTRACTAPP_QUERY='';
 async function viewContractApp(){
-  if(!canManageContracts()){ V.innerHTML=back('more')+emptyState(ic.doc,'Restricted','Contract of Sale is limited to Elizabeth and Management.'); return; }
+  if(!canManageContracts()){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Restricted','Contract of Sale is limited to Elizabeth and Management.'); return; }
   CONTRACTAPP_QUERY='';
-  V.innerHTML=`${back('more')}<div class="pagehead"><div><div class="eyebrow">Contracts</div><h2>Contract of Sale</h2><p>Generate a client's contract, or edit the text and images it's built from.</p></div></div>
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Contracts</div><h2>Contract of Sale</h2><p>Generate a client's contract, or edit the text and images it's built from.</p></div></div>
   <div id="contractAppBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load clients: '+(e.message||e)); } }
   paintContractAppBody();
@@ -9682,26 +9675,26 @@ function formClientSettings(){
 
 /* ================= MANAGER ================= */
 let mgrTab='overview'; let cmpFilter='All'; let slYear=new Date(today()).getFullYear(); let TEAM_ROSTER=[]; let INVITE_LIST=[];
-// section tags 'crm'/'plots' route a tile into the manager's dedicated CRM Tools /
-// Plot Inventory bottom-nav tabs instead of the general More grid -- see
-// viewMgrCrmTools()/viewMgrPlotInv()/viewMore(). Untagged entries stay in More.
+// section tags route a tile into a dedicated bottom-nav hub instead of the general
+// More grid -- 'salesdesk'->viewMgrSalesDesk(), 'officedesk'->viewOfficeDesk(),
+// 'settingshub'->the Settings hub. Untagged entries stay in More.
 const MGR_APPS=[
   {key:'Data Check',fic:'datacheck',label:'Data Check'},
   {key:'Leaderboard',fic:'leaderboard',label:'Leaderboard',section:'officedesk'},
   {key:'Reports',fic:'analytics',label:'Reports'},
-  {key:'Plots',fic:'map',label:'Plot Inventory',section:'plots'},
-  {key:'Allocations',fic:'allocation',label:'Allocations',section:'plots'},
-  {key:'Client Database',fic:'savings',label:'Client Database',section:'crm'},
-  {key:'Plot Requests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest',section:'plots'},
+  {key:'Plots',fic:'map',label:'Plot Inventory',section:'salesdesk'},
+  {key:'Allocations',fic:'allocation',label:'Allocations',section:'salesdesk'},
+  {key:'Client Database',fic:'savings',label:'Client Database',section:'salesdesk'},
+  {key:'Plot Requests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest',section:'salesdesk'},
   {key:'Company Leads',fic:'briefcase',label:'Company Leads',section:'officedesk'},
-  {key:'Enquiries',fic:'enquiry',label:'Enquiries',badgeKind:'enquiry',section:'crm'},
-  {key:'Complaints',fic:'alert',label:'Client Feedback',badgeKind:'complaint',section:'crm'},
-  {key:'Site visits',fic:'location',label:'Site Visits',badgeKind:'sitevisit',section:'crm'},
-  {key:'Site Visit Auth',fic:'clipboard',label:'Site Visit Auth'},
-  {key:'Contract of Sale',fic:'document',label:'Contract of Sale'},
-  {key:'Log Payment',fic:'savings',label:'Log Payment'},
+  {key:'Enquiries',fic:'enquiry',label:'Enquiries',badgeKind:'enquiry',section:'salesdesk'},
+  {key:'Complaints',fic:'alert',label:'Client Feedback',badgeKind:'complaint',section:'salesdesk'},
+  {key:'Site visits',fic:'location',label:'Site Visits',badgeKind:'sitevisit',section:'salesdesk'},
+  {key:'Site Visit Auth',fic:'clipboard',label:'Site Visit Auth',section:'officedesk'},
+  {key:'Contract of Sale',fic:'document',label:'Contract of Sale',section:'officedesk'},
+  {key:'Log Payment',fic:'savings',label:'Log Payment',section:'officedesk'},
   {key:'News',fic:'announce',label:'News & Announcements'},
-  {key:'Commission',fic:'savings',label:'Commission'},
+  {key:'Commission',fic:'savings',label:'Commission',section:'officedesk'},
   {key:'Duties',fic:'clipboard',label:'Operations Tracker',section:'officedesk'},
   {key:'Feedback',fic:'chat',label:'Team Feedback',section:'officedesk'},
   {key:'Insights',fic:'target',label:'Smart Insights'},
@@ -9716,7 +9709,7 @@ const MGR_APPS=[
 ];
 async function managerView(){
   const mgrAppDef=MGR_APPS.find(a=>a.key===mgrTab);
-  const mgrBackTarget=mgrAppDef&&mgrAppDef.section==='crm'?'mgrCrmTools':mgrAppDef&&mgrAppDef.section==='plots'?'mgrPlotInv':mgrAppDef&&mgrAppDef.section==='settingshub'?'mgrSettingsHub':mgrAppDef&&mgrAppDef.section==='officedesk'?'officedesk':'mgr';
+  const mgrBackTarget=mgrAppDef&&mgrAppDef.section==='salesdesk'?'mgrSalesDesk':mgrAppDef&&mgrAppDef.section==='settingshub'?'mgrSettingsHub':mgrAppDef&&mgrAppDef.section==='officedesk'?'officedesk':'mgr';
   V.innerHTML=`${mgrTab!=='overview'?back(mgrBackTarget):''}<div class="pagehead"><div><h2>${mgrTab==='overview'?'Management Dashboard':esc((mgrAppDef||{label:mgrTab}).label)}</h2><p>${mgrTab==='overview'?'Live across all agents':'Management'}</p></div>
   <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
   <div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>
