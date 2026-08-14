@@ -4113,7 +4113,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -4407,6 +4407,7 @@ function mgrAppRoute(key){
   else if(key==='Site Visit Auth') route('sitevisitauth');
   else if(key==='Contract of Sale') route('contractapp');
   else if(key==='Notes') route('notes');
+  else if(key==='SMS') route('sms');
   else route('mgrTabView',key);
 }
 function mgrAppGridHtml(items){
@@ -4459,6 +4460,7 @@ function viewMore(){
       {key:'insights',fic:'target',label:'Smart Insights'},
       {key:'downloads',fic:'document',label:'Download Directory'},
       {key:'notes',fic:'document',label:'Notes'},
+      {key:'sms',fic:'chat',label:'SMS'},
       {key:'account',fic:'settings',label:'Settings'}
     ];
     grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
@@ -10098,6 +10100,7 @@ const MGR_APPS=[
   {key:'Settings',fic:'settings',label:'Settings'},
   {key:'Downloads',fic:'document',label:'Download Directory'},
   {key:'Notes',fic:'document',label:'Notes'},
+  {key:'SMS',fic:'chat',label:'SMS'},
   {key:'Quotation Settings',fic:'document',label:'Quotation Settings',section:'settingshub'},
   {key:'Commission Settings',fic:'savings',label:'Commission Settings',section:'settingshub'},
   {key:'Pricing & Targets',fic:'analytics',label:'Pricing & Targets',section:'settingshub'},
@@ -11391,6 +11394,157 @@ function downloadNote(note){
   const blob=new Blob([text],{type:'text/plain'});
   const url=URL.createObjectURL(blob);
   triggerDownload(url,(note.title||'note').replace(/[^a-z0-9]+/gi,'_').slice(0,40)+'.txt','note',blob);
+}
+/* SMS app -- custom message composition to staff, clients, or a custom number list,
+   reusing the existing apiSendSms/Arkesel proxy. Recipients are de-duplicated by
+   normalized phone before sending, and an identical message sent in the last hour
+   triggers a warn-before-resend prompt, to guard against accidental repeat blasts. */
+let SMS_STAFF_LOADED=false, SMS_STAFF_LIST=[];
+let SMS_CLIENTS_LOADED=false, SMS_CLIENTS_LIST=[];
+let SMS_MODE='staff', SMS_SEARCH='', SMS_SELECTED={}, SMS_SENDING=false, SMS_RESULT=null;
+async function apiLoadStaffContacts(){
+  if(DEMO_MODE) return STAFF_LIST.filter(s=>demoActive(s.key)).map(s=>({key:s.key,name:s.name,phone:null}));
+  const {data,error}=await sb.from('profiles').select('name,agent_key,phone').eq('active',true).order('name');
+  if(error) throw error;
+  return (data||[]).map(p=>({key:p.agent_key,name:p.name,phone:p.phone}));
+}
+async function apiLoadClientContacts(){
+  if(DEMO_MODE){ const list=await apiAllLeadsFlat(); return list.filter(l=>l.contact).map(l=>({name:l.name,phone:l.contact})); }
+  const {data,error}=await sb.from('leads').select('name,contact').not('contact','is',null);
+  if(error) throw error; return (data||[]).filter(r=>r.contact).map(r=>({name:r.name,phone:r.contact}));
+}
+async function apiRecentDuplicateSms(message){
+  if(DEMO_MODE) return null;
+  const since=new Date(Date.now()-60*60*1000).toISOString();
+  const {data,error}=await sb.from('sms_log').select('created_at').eq('message',message).eq('status','sent').gte('created_at',since).order('created_at',{ascending:false}).limit(1);
+  if(error||!data||!data.length) return null;
+  return data[0].created_at;
+}
+async function viewSmsApp(){
+  SMS_MODE='staff'; SMS_SEARCH=''; SMS_SELECTED={}; SMS_SENDING=false; SMS_RESULT=null;
+  V.innerHTML=`${back(PROFILE.role==='manager'?'mgr':'more')}<div class="pagehead"><div><div class="eyebrow">Broadcast</div><h2>SMS</h2><p>Send a custom text message to staff, clients, or any number.</p></div></div>
+  <div id="smsBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  if(!SMS_STAFF_LOADED){ try{ SMS_STAFF_LIST=await apiLoadStaffContacts(); SMS_STAFF_LOADED=true; }catch(e){} }
+  paintSmsBody();
+}
+function smsSelectedCount(){ return Object.keys(SMS_SELECTED).length; }
+function smsModeChip(mode,label){ return `<button class="chip ${SMS_MODE===mode?'on':''}" data-smsmode="${mode}">${label}</button>`; }
+function paintSmsBody(){
+  const body=document.getElementById('smsBody'); if(!body) return;
+  const customVal=SMS_MODE==='custom'?(document.getElementById('sms_custom')?document.getElementById('sms_custom').value:''):'';
+  body.innerHTML=`
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${smsModeChip('staff','Staff')}${smsModeChip('clients','Clients')}${smsModeChip('custom','Custom number')}</div>
+  <div id="smsRecipientArea">${smsRecipientAreaHtml()}</div>
+  <div class="formwrap" style="margin-top:6px">
+  ${fld('Message','<textarea id="sms_message" rows="5" placeholder="Type your message…">'+esc(document.getElementById('sms_message')?document.getElementById('sms_message').value:'')+'</textarea>')}
+  <div class="mini" id="smsCharCount" style="margin:-8px 0 12px"></div>
+  <div class="mini" style="margin-bottom:12px" id="smsRecipCount">${smsSelectedCount()} recipient(s) selected</div>
+  <div class="formactions"><button class="btn primary" id="smsSendBtn" style="width:100%" ${SMS_SENDING?'disabled':''}>${SMS_SENDING?'Sending…':'Send SMS'}</button></div>
+  ${SMS_RESULT?`<div class="mini" style="margin-top:10px">${SMS_RESULT}</div>`:''}
+  </div>`;
+  if(SMS_MODE==='custom'&&customVal) document.getElementById('sms_custom').value=customVal;
+  bindSmsCtrls();
+}
+function smsRecipientAreaHtml(){
+  if(SMS_MODE==='custom'){
+    return `${fld('Phone number(s)','<textarea id="sms_custom" rows="3" placeholder="0244123456, 0501234567 — one per line or comma-separated"></textarea>','any format; normalized automatically')}`;
+  }
+  const list=SMS_MODE==='staff'?SMS_STAFF_LIST:SMS_CLIENTS_LIST;
+  const loaded=SMS_MODE==='staff'?SMS_STAFF_LOADED:SMS_CLIENTS_LOADED;
+  if(!loaded) return `<div class="skel" style="height:60px;border-radius:12px"></div>`;
+  const q=SMS_SEARCH.trim().toLowerCase();
+  const filtered=list.filter(p=>!q||(p.name||'').toLowerCase().includes(q));
+  return `${fld('Search '+SMS_MODE,'<input id="sms_search" placeholder="Search by name…" value="'+esc(SMS_SEARCH)+'"/>')}
+  <div style="display:flex;justify-content:space-between;align-items:center;margin:-6px 0 10px">
+    <button class="chip" id="smsSelectAll">Select all shown (${filtered.filter(p=>p.phone).length} with a number)</button>
+    ${smsSelectedCount()?`<button class="chip" id="smsClearAll" style="color:#B91C1C">Clear selection</button>`:''}
+  </div>
+  <div class="list" style="max-height:260px;overflow-y:auto">${filtered.length?filtered.map(p=>smsPersonRowHtml(p)).join(''):emptyState(ic.doc,'No matches','Try a different search.')}</div>`;
+}
+function smsPersonRowHtml(p){
+  const phone=p.phone?normalizeGhPhone(p.phone):'';
+  const checked=phone&&SMS_SELECTED[phone];
+  return `<label class="agentrow" style="cursor:${phone?'pointer':'not-allowed'};opacity:${phone?1:.55}">
+    <input type="checkbox" data-smsperson="${esc(phone)}" data-smsname="${esc(p.name||'')}" ${checked?'checked':''} ${phone?'':'disabled'} style="width:18px;height:18px;margin-right:10px"/>
+    <div class="ai"><div><div class="nm">${esc(p.name||'Unnamed')}</div><div class="mini">${phone?esc(p.phone):'No phone on file'}</div></div></div>
+  </label>`;
+}
+function bindSmsCtrls(){
+  document.querySelectorAll('[data-smsmode]').forEach(b=>b.onclick=async()=>{
+    SMS_MODE=b.dataset.smsmode; SMS_SEARCH='';
+    if(SMS_MODE==='clients'&&!SMS_CLIENTS_LOADED){
+      document.getElementById('smsRecipientArea').innerHTML=`<div class="skel" style="height:60px;border-radius:12px"></div>`;
+      try{ SMS_CLIENTS_LIST=await apiLoadClientContacts(); SMS_CLIENTS_LOADED=true; }catch(e){ toast('Could not load clients: '+(e.message||e)); }
+    }
+    paintSmsBody();
+  });
+  const search=document.getElementById('sms_search');
+  if(search) search.oninput=()=>{ SMS_SEARCH=search.value; document.getElementById('smsRecipientArea').innerHTML=smsRecipientAreaHtml(); bindSmsCtrls(); };
+  document.querySelectorAll('[data-smsperson]').forEach(cb=>cb.onchange=()=>{
+    const phone=cb.dataset.smsperson;
+    if(cb.checked) SMS_SELECTED[phone]=cb.dataset.smsname;
+    else delete SMS_SELECTED[phone];
+    document.getElementById('smsRecipCount').textContent=smsSelectedCount()+' recipient(s) selected';
+    const selectAllBtn=document.getElementById('smsSelectAll'); if(selectAllBtn) paintSmsSelectionButtons();
+  });
+  const selectAllBtn=document.getElementById('smsSelectAll');
+  if(selectAllBtn) selectAllBtn.onclick=()=>{
+    document.querySelectorAll('[data-smsperson]:not(:disabled)').forEach(cb=>{ cb.checked=true; SMS_SELECTED[cb.dataset.smsperson]=cb.dataset.smsname; });
+    document.getElementById('smsRecipCount').textContent=smsSelectedCount()+' recipient(s) selected';
+    paintSmsSelectionButtons();
+  };
+  const clearBtn=document.getElementById('smsClearAll');
+  if(clearBtn) clearBtn.onclick=()=>{ SMS_SELECTED={}; paintSmsBody(); };
+  const msgBox=document.getElementById('sms_message');
+  if(msgBox){ msgBox.oninput=()=>{ const n=msgBox.value.length; const segs=n<=160?1:Math.ceil(n/153);
+    document.getElementById('smsCharCount').textContent=n+' characters · ≈'+segs+' SMS segment'+(segs>1?'s':''); };
+    msgBox.oninput(); }
+  const sendBtn=document.getElementById('smsSendBtn');
+  if(sendBtn) sendBtn.onclick=smsHandleSend;
+}
+function paintSmsSelectionButtons(){
+  const area=document.getElementById('smsRecipientArea'); if(!area) return;
+  const wrap=area.querySelector('#smsSelectAll')?.parentElement; if(!wrap) return;
+  wrap.innerHTML=`<button class="chip" id="smsSelectAll">Select all shown</button>${smsSelectedCount()?`<button class="chip" id="smsClearAll" style="color:#B91C1C">Clear selection</button>`:''}`;
+  document.getElementById('smsSelectAll').onclick=document.querySelectorAll('[data-smsperson]').length?()=>{
+    document.querySelectorAll('[data-smsperson]:not(:disabled)').forEach(cb=>{ cb.checked=true; SMS_SELECTED[cb.dataset.smsperson]=cb.dataset.smsname; });
+    document.getElementById('smsRecipCount').textContent=smsSelectedCount()+' recipient(s) selected';
+    paintSmsSelectionButtons();
+  }:null;
+  const clearBtn=document.getElementById('smsClearAll');
+  if(clearBtn) clearBtn.onclick=()=>{ SMS_SELECTED={}; paintSmsBody(); };
+}
+function smsGatherRecipients(){
+  if(SMS_MODE==='custom'){
+    const raw=val('sms_custom');
+    const nums=raw.split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
+    const out={};
+    nums.forEach(n=>{ const norm=normalizeGhPhone(n)||n; out[norm]=n; });
+    return out;
+  }
+  return {...SMS_SELECTED};
+}
+async function smsHandleSend(){
+  const message=val('sms_message').trim();
+  if(!message){ toast('Write a message first'); return; }
+  const recipients=smsGatherRecipients();
+  const phones=Object.keys(recipients);
+  if(!phones.length){ toast('Select at least one recipient'); return; }
+  const dupAt=await apiRecentDuplicateSms(message).catch(()=>null);
+  if(dupAt){
+    const mins=Math.round((Date.now()-new Date(dupAt).getTime())/60000);
+    if(!confirm('This exact message was already sent '+mins+' minute(s) ago. Send it again to '+phones.length+' recipient(s)?')) return;
+  } else if(!confirm('Send this message to '+phones.length+' recipient(s)?')) return;
+  SMS_SENDING=true; SMS_RESULT=null; paintSmsBody();
+  let sent=0, failed=0;
+  for(const phone of phones){
+    const ok=await apiSendSms(phone,message,'manual_broadcast').catch(()=>false);
+    if(ok) sent++; else failed++;
+  }
+  SMS_SENDING=false;
+  SMS_RESULT=`Sent to ${sent} of ${phones.length}.${failed?' '+failed+' failed — check the SMS log.':''}`;
+  if(sent>0){ SMS_SELECTED={}; toast('SMS sent'); }
+  paintSmsBody();
 }
 function paintTeamToggle(b,isActive){
   b.dataset.active=isActive;
