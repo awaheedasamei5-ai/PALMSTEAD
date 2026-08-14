@@ -236,6 +236,8 @@ a{color:var(--green2)}
   background:linear-gradient(100deg,transparent 30%,rgba(190,242,100,.08) 48%,transparent 65%);
   background-size:220% 100%;animation:sheenSlide 7s ease-in-out infinite}
 @keyframes sheenSlide{0%{background-position:130% 0}100%{background-position:-30% 0}}
+.topbar::before{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;pointer-events:none;
+  background:linear-gradient(90deg,transparent,var(--green) 20%,var(--gold2,#C9A227) 50%,var(--green) 80%,transparent);opacity:.5}
 .topbar .glyph{width:34px;height:34px;border-radius:10px;overflow:hidden;flex:0 0 auto;box-shadow:0 4px 12px rgba(0,0,0,.3),0 0 0 1px rgba(190,242,100,.25)}
 .topbar .glyph img{width:100%;height:100%;display:block}
 .topbar .tt{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14.5px;letter-spacing:.09em;line-height:1}
@@ -251,6 +253,7 @@ a{color:var(--green2)}
   border-right:1px solid rgba(255,255,255,.16);white-space:nowrap;flex:0 0 auto}
 .tb-avatar{width:26px;height:26px;border-radius:100px;overflow:hidden;flex:0 0 auto;display:inline-block;box-shadow:0 0 0 1.5px rgba(190,242,100,.55)}
 .tb-avatar img{width:100%;height:100%;object-fit:cover}
+.tbDivider{width:1px;height:20px;background:rgba(255,255,255,.16);flex:0 0 auto;margin:0 3px}
 .iconbtn{background:transparent;border:1px solid transparent;color:#C6D3E8;border-radius:50%;
   width:35px;height:35px;flex:0 0 auto;display:grid;place-items:center;cursor:pointer;
   transition:background .18s ease,color .18s ease,transform .2s cubic-bezier(.34,1.56,.64,1)}
@@ -270,7 +273,8 @@ a{color:var(--green2)}
   .topbar .tt{font-size:12.5px}
   .topbar .ts{font-size:9px}
   .tb-name{display:none}
-  .whoami{padding:4px 4px 4px 4px;gap:1px}
+  .whoami{padding:4px 4px 4px 4px;gap:2px}
+  .tbDivider{margin:0 2px}
   .iconbtn{width:31px;height:31px}
   .iconbtn svg{width:15px;height:15px}
   /* Site Visit Auth: an 8-column table can't fit a phone screen without horizontal
@@ -958,15 +962,16 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
     <div class="whoami"><span id="tbAvatar" class="tb-avatar hidden"></span><span class="tb-name" id="tbName"></span>
       <button class="iconbtn hidden" id="clientBellBtn" title="Notifications" style="position:relative">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.73 21a2 2 0 01-3.46 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        <span id="clientBellBadge" class="hidden" style="position:absolute;top:2px;right:2px;min-width:15px;height:15px;border-radius:100px;background:#B4472F;color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 3px">0</span>
+        <span id="clientBellBadge" class="hidden" style="position:absolute;top:2px;right:2px;min-width:15px;height:15px;border-radius:100px;background:#B4472F;color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 3px;box-shadow:0 0 0 2px rgba(11,30,61,.55)">0</span>
       </button>
       <button class="iconbtn hidden" id="staffBellBtn" title="Notifications" style="position:relative">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.73 21a2 2 0 01-3.46 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        <span id="staffBellBadge" class="hidden" style="position:absolute;top:2px;right:2px;min-width:15px;height:15px;border-radius:100px;background:#B4472F;color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 3px">0</span>
+        <span id="staffBellBadge" class="hidden" style="position:absolute;top:2px;right:2px;min-width:15px;height:15px;border-radius:100px;background:#B4472F;color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 3px;box-shadow:0 0 0 2px rgba(11,30,61,.55)">0</span>
       </button>
+      <span class="tbDivider"></span>
       <button class="iconbtn" id="darkModeBtn" title="Toggle dark mode"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
       <button class="iconbtn" id="globalSearchBtn" title="Search"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-      <button class="iconbtn" id="accountBtn" title="Change password"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button class="iconbtn" id="accountBtn" title="Settings"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button class="iconbtn" id="logoutBtn" title="Sign out"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M15 12H4m0 0l4-4m-4 4l4 4M14 5h4a2 2 0 012 2v10a2 2 0 01-2 2h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>
   </header>
