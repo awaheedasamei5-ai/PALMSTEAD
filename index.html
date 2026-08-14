@@ -1673,7 +1673,7 @@ const mapLead=r=>({id:r.id,agent:r.agent_key,name:r.name,contact:r.contact,date:
   plotType:r.plot_type,noPlots:r.no_plots,unitPrice:r.unit_price,discount:r.discount,netTotal:r.net_total,
   paymentPlan:r.payment_plan,grandTotal:r.grand_total,siteVisit:r.site_visit,priority:r.priority,
   amtPaid:r.amt_paid,balance:r.balance,nextAction:r.next_action,notes:r.notes,tags:r.tags,depositTarget:r.deposit_target,
-  docStage:r.doc_stage,docStageUpdatedAt:r.doc_stage_updated_at,leadSource:r.lead_source,bannerId:r.banner_id});
+  docStage:r.doc_stage,docStageUpdatedAt:r.doc_stage_updated_at,leadSource:r.lead_source,bannerId:r.banner_id,address:r.address});
 const mapEnq=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,name:r.name,contact:r.contact,location:r.location,
   types:(r.types||'').split(',').filter(Boolean),plot:r.plot,source:r.source,details:r.details,follow:r.follow,
   followDate:r.follow_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
@@ -2310,7 +2310,7 @@ async function apiUpdateLead(id,patch){
   if('balance' in patch) dbPatch.balance=patch.balance; if('discount' in patch) dbPatch.discount=patch.discount;
   if('paymentPlan' in patch) dbPatch.payment_plan=patch.paymentPlan; if('netTotal' in patch) dbPatch.net_total=patch.netTotal;
   if('grandTotal' in patch) dbPatch.grand_total=patch.grandTotal; if('name' in patch) dbPatch.name=patch.name;
-  if('contact' in patch) dbPatch.contact=patch.contact; if('plotType' in patch) dbPatch.plot_type=patch.plotType;
+  if('contact' in patch) dbPatch.contact=patch.contact; if('address' in patch) dbPatch.address=patch.address; if('plotType' in patch) dbPatch.plot_type=patch.plotType;
   if('noPlots' in patch) dbPatch.no_plots=patch.noPlots; if('unitPrice' in patch) dbPatch.unit_price=patch.unitPrice;
   if('priority' in patch) dbPatch.priority=patch.priority; if('notes' in patch) dbPatch.notes=patch.notes;
   if('date' in patch) dbPatch.date_added=patch.date; if('tags' in patch) dbPatch.tags=patch.tags;
@@ -10400,15 +10400,21 @@ function pdfContractCheckRow(doc,x,y,pageW,options,selected){
 function pdfContractBody(doc,y,n,text){
   const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
   const marginR=pageW-14;
+  // Spacing tightened to match the reference document's actual density -- the original
+  // looser values (5.6mm line height, 3-4mm gaps between every clause) rendered Section
+  // 3-6 roughly 50% taller than the reference's single page 9, spilling onto an extra
+  // page and pushing the signature page from page 10 to page 11. These values were
+  // tuned against the reference's own page 9 (26 clauses + 3 full paragraphs fitting on
+  // one page) until the same content fit on one page with comparable margin.
   function ensure(need){ if(y+need>pageH-20){ n++; y=pdfContractNewPage(doc,n); } }
   function listItem(markerX,bodyX,marker,body,boldMarker){
-    const w=marginR-bodyX, lines=doc.splitTextToSize(body,w), h=Math.max(lines.length*5.6,5.6);
-    ensure(h+3);
+    const w=marginR-bodyX, lines=doc.splitTextToSize(body,w), h=Math.max(lines.length*4.4,4.4);
+    ensure(h+0.8);
     doc.setFont('times',boldMarker?'bold':'normal'); doc.setFontSize(10); doc.setTextColor(...CONTRACT_INK);
     doc.text(marker,markerX,y);
     doc.setFont('times','normal'); doc.setFontSize(10);
     doc.text(body,bodyX,y,{maxWidth:w,align:'justify'});
-    y+=h+3;
+    y+=h+0.8;
   }
   String(text||'').split(/\n\s*\n/).forEach(raw=>{
     const para=raw.trim(); if(!para) return;
@@ -10420,8 +10426,8 @@ function pdfContractBody(doc,y,n,text){
     if(isSectionHeading){
       doc.setFont('times','bold'); doc.setFontSize(12.5);
       const hLines=doc.splitTextToSize(para,marginR-14);
-      ensure(hLines.length*7+16); y+=4;
-      doc.text(hLines,14,y); y+=hLines.length*7+4;
+      ensure(hLines.length*5.4+2.4); y+=1.2;
+      doc.text(hLines,14,y); y+=hLines.length*5.4+1.8;
     } else if(threeLevel){
       listItem(20,38,threeLevel[1],threeLevel[2],false);
     } else if(romanOrLetter){
@@ -10429,18 +10435,18 @@ function pdfContractBody(doc,y,n,text){
     } else if(twoLevel){
       const bodyIsHeading=twoLevel[2]===twoLevel[2].toUpperCase() && twoLevel[2].length<40;
       if(bodyIsHeading){
-        ensure(10);
+        ensure(4.5);
         doc.setFont('times','bold'); doc.setFontSize(11);
-        doc.text(twoLevel[1]+'  '+twoLevel[2],14,y); y+=8;
+        doc.text(twoLevel[1]+'  '+twoLevel[2],14,y); y+=4.5;
       } else {
         listItem(14,30,twoLevel[1],twoLevel[2],true);
       }
     } else {
-      const w=marginR-14, lines=doc.splitTextToSize(para,w), h=lines.length*5.6;
-      ensure(h+4);
+      const w=marginR-14, lines=doc.splitTextToSize(para,w), h=lines.length*4.4;
+      ensure(h+1.8);
       doc.setFont('times','normal'); doc.setFontSize(10);
       doc.text(para,14,y,{maxWidth:w,align:'justify'});
-      y+=h+4;
+      y+=h+1.8;
     }
   });
   return {y,n};
@@ -10562,7 +10568,7 @@ async function buildContractOfSalePDF(lead){
   ({y,n}=pdfContractBody(doc,y,n,'BETWEEN'));
   ({y,n}=pdfContractBody(doc,y,n,vendorName+' of P.O. BOX CO3644, Tema represented by its CEO, '+ceo+' (herein called "the Vendor" which expression shall where the context so requires, include its successors or assigns) on one part.'));
   ({y,n}=pdfContractBody(doc,y,n,'AND'));
-  ({y,n}=pdfContractBody(doc,y,n,String(lead.name||'').toUpperCase()+' of '+(lead.contact||'')+' herein called "the Purchaser", which expression shall, where the context so requires, include his legal heirs, successors, successors-in-interest, executors, legal representatives, and/or assigns) of the other part.'));
+  ({y,n}=pdfContractBody(doc,y,n,String(lead.name||'').toUpperCase()+' of '+(lead.address||'…………………………………………..')+' herein called "the Purchaser", which expression shall, where the context so requires, include his legal heirs, successors, successors-in-interest, executors, legal representatives, and/or assigns) of the other part.'));
   ({y,n}=pdfContractBody(doc,y,n,'The Purchaser and the Vendor shall where the context so require be referred as "the Parties" and individually as "a party"'));
   doc.setFont('times','normal'); doc.setFontSize(10.5); doc.setTextColor(...CONTRACT_INK);
   doc.text('WHEREAS;',14,y); y+=8;
@@ -10570,9 +10576,15 @@ async function buildContractOfSalePDF(lead){
   ({y,n}=pdfContractBody(doc,y,n,'NOW THEREFORE, in consideration of the foregoing and the terms set forth in this Agreement, the receipt and sufficiency of which is hereby acknowledged, and intending to be legally bound hereby, the Parties agree as follows:'));
 
   // ---- 1. Definitions and Interpretation (editable, static) ----
+  // Reference document starts Section 1 on its own fresh page (page 6) even though
+  // page 5 has room left -- a deliberate break in the original, not natural overflow.
+  // Forced explicitly rather than relying on height math, so it can never drift.
+  n++; y=pdfContractNewPage(doc,n);
   ({y,n}=pdfContractBody(doc,y,n,CONFIG.contractDefinitions||''));
 
   // ---- 1.3 The Transaction (dynamic, computed from this lead) ----
+  // Reference also force-breaks here -- "IT IS NOW MUTUALLY agreed..." opens page 7.
+  n++; y=pdfContractNewPage(doc,n);
   ({y,n}=pdfContractBody(doc,y,n,'IT IS NOW MUTUALLY agreed as follows:'));
   const allocationDeposit=Math.round(t.grand*QUOTE_DEPOSIT_PCT);
   const transactionItems=[
@@ -10590,7 +10602,20 @@ async function buildContractOfSalePDF(lead){
   ({y,n}=pdfContractBody(doc,y,n,transactionItems));
 
   // ---- 2-6: Representations, payments/defaults/refund, governing law, notices (editable, static) ----
-  ({y,n}=pdfContractBody(doc,y,n,CONFIG.contractTerms||''));
+  // Reference document's own page breaks: 2.1 (Vendor warranties) continues right after
+  // 1.3 on page 7; 2.2 (Purchaser warranties) force-breaks onto page 8; Section 3 onward
+  // force-breaks onto page 9. Split on the clause markers themselves so this stays
+  // correct even after Management edits clause wording in the settings editor.
+  const termsChunks=splitClausesBeforeMarkers(CONFIG.contractTerms||'',['2.2 ','3. ']);
+  ({y,n}=pdfContractBody(doc,y,n,termsChunks[0]||''));
+  if(termsChunks[1]){ n++; y=pdfContractNewPage(doc,n); ({y,n}=pdfContractBody(doc,y,n,termsChunks[1])); }
+  if(termsChunks[2]){
+    n++; y=pdfContractNewPage(doc,n);
+    ({y,n}=pdfContractBody(doc,y,n,termsChunks[2]));
+    y+=8; if(y>pageH-24){ n++; y=pdfContractNewPage(doc,n); }
+    doc.setFont('times','bold'); doc.setFontSize(11); doc.setTextColor(...CONTRACT_INK);
+    doc.text('{SIGNATURE PAGE TO FOLLOW}',pageW/2,y,{align:'center'});
+  }
 
   // ---- Signature page ----
   n++; y=pdfContractNewPage(doc,n);
@@ -10669,7 +10694,34 @@ async function apiMarkContractRequestsRead(ids){
 // Wraps buildContractOfSalePDF with the bookkeeping side of "save and download":
 // records that the contract now exists (so the client and agent can see it) and
 // auto-fulfils any pending request for this lead.
+// The Purchaser identification line on page 5 needs the client's real postal address
+// (matching the reference document, which has it pre-filled there) -- it must never
+// silently fall back to their phone number again, so this catches a missing address
+// before a contract ever gets generated instead of leaving it wrong in the PDF.
+function promptForLeadAddress(lead){
+  return new Promise(resolve=>{
+    let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+    ov=document.createElement('div'); ov.id='announceOverlay';
+    ov.innerHTML=`<div id="announceModal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(lead.name)}'s address</div><button id="pla_close" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+      <div class="mini" style="margin-bottom:14px">No address on file yet. This is what prints on the contract's Purchaser identification line — get it right before it goes out.</div>
+      ${fld('Address','<textarea id="pla_address" rows="2" placeholder="e.g. 15 Lyneham Walk, Hackney E5 0HX"></textarea>')}
+      <div class="formactions"><button class="btn ghost" id="pla_skip" style="flex:1">Skip for now</button><button class="btn primary" id="pla_save" style="flex:1">Save &amp; continue</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    const finish=v=>{ ov.remove(); resolve(v); };
+    ov.addEventListener('click',e=>{ if(e.target===ov) finish(null); });
+    document.getElementById('pla_close').onclick=()=>finish(null);
+    document.getElementById('pla_skip').onclick=()=>finish('');
+    document.getElementById('pla_save').onclick=()=>finish(val('pla_address').trim());
+  });
+}
 async function generateAndRecordContract(lead){
+  if(!lead.address){
+    const address=await promptForLeadAddress(lead);
+    if(address===null) return;
+    if(address){ lead.address=address; try{ await apiUpdateLead(lead.id,{address}); }catch(e){} }
+  }
   await buildContractOfSalePDF(lead);
   try{
     const already=(DB.contracts||[]).find(c=>c.leadId===lead.id);
@@ -10743,6 +10795,19 @@ function bindContractRequestsCtrls(){
 // exact same blank-line boundary pdfContractBody() itself splits on -- so what you
 // edit here as "one clause" is exactly one printed clause, never more, never less.
 function splitContractClauses(text){ return String(text||'').split(/\n\s*\n/).map(p=>p.trim()).filter(Boolean); }
+// Splits a clause-text block into chunks, starting a new chunk right before any clause
+// whose text begins with one of the given marker prefixes (e.g. '2.2 ', '3. ') -- used
+// to force the PDF's page breaks onto the exact same clauses the reference document
+// itself breaks on, without hardcoding page numbers that would drift if wording changes.
+function splitClausesBeforeMarkers(text,markers){
+  const clauses=splitContractClauses(text);
+  const chunks=[[]];
+  clauses.forEach(c=>{
+    if(markers.some(m=>c.startsWith(m))) chunks.push([]);
+    chunks[chunks.length-1].push(c);
+  });
+  return chunks.map(arr=>arr.join('\n\n'));
+}
 // A short label for the collapsed summary row -- the clause's own number/marker
 // plus a preview of its opening words, so "2.2.6" or "3.1 Payments and Defaults"
 // is findable at a glance without opening every clause to check.
@@ -10754,9 +10819,10 @@ function clauseLabel(para){
 }
 function clauseEditorHtml(prefix,text){
   const clauses=splitContractClauses(text);
-  return `<div class="clauseList" id="${prefix}_clauseList">${clauses.map(c=>{
+  return `${fld('','<input id="'+prefix+'_clauseSearch" placeholder="Search by clause number, section name, or a few words…" autocomplete="off"/>','type to find one clause instead of scrolling through all '+clauses.length)}
+  <div class="clauseList" id="${prefix}_clauseList">${clauses.map(c=>{
     const {marker,preview}=clauseLabel(c);
-    return `<details class="clauseItem">
+    return `<details class="clauseItem" data-clausesearch="${esc((marker+' '+c).toLowerCase())}">
       <summary class="clauseSummary">
         ${marker?`<span class="clauseMarker">${esc(marker)}</span>`:''}
         <span class="clausePreview">${esc(preview)}</span>
@@ -10765,6 +10831,7 @@ function clauseEditorHtml(prefix,text){
       <textarea class="clauseText" rows="3">${esc(c)}</textarea>
     </details>`;
   }).join('')}</div>
+  <div class="mini hidden" id="${prefix}_clauseNoMatch" style="text-align:center;padding:14px 0">No clauses match that search.</div>
   <button type="button" class="chip" id="${prefix}_addClause" style="width:100%;margin-top:10px">+ Add a clause</button>`;
 }
 function collectClauseEditorValue(prefix){
@@ -10772,12 +10839,26 @@ function collectClauseEditorValue(prefix){
   return [...list.querySelectorAll('.clauseText')].map(a=>a.value.trim()).filter(Boolean).join('\n\n');
 }
 function bindClauseEditorCtrls(prefix){
+  const search=document.getElementById(prefix+'_clauseSearch');
+  if(search) search.oninput=debounce(()=>{
+    const q=search.value.trim().toLowerCase();
+    const items=[...document.querySelectorAll('#'+prefix+'_clauseList .clauseItem')];
+    let shown=0;
+    items.forEach(it=>{
+      const match=!q||(it.dataset.clausesearch||'').includes(q);
+      it.classList.toggle('hidden',!match);
+      if(match) shown++;
+    });
+    const noMatch=document.getElementById(prefix+'_clauseNoMatch');
+    if(noMatch) noMatch.classList.toggle('hidden',shown>0);
+  },150);
   const addBtn=document.getElementById(prefix+'_addClause');
   if(addBtn) addBtn.onclick=()=>{
     const list=document.getElementById(prefix+'_clauseList');
     const wrap=document.createElement('div');
-    wrap.innerHTML=`<details class="clauseItem" open><summary class="clauseSummary"><span class="clausePreview">New clause</span><svg class="clauseChevron" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><textarea class="clauseText" rows="3"></textarea></details>`;
+    wrap.innerHTML=`<details class="clauseItem" open data-clausesearch="new clause"><summary class="clauseSummary"><span class="clausePreview">New clause</span><svg class="clauseChevron" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><textarea class="clauseText" rows="3"></textarea></details>`;
     const item=wrap.firstElementChild; list.appendChild(item);
+    if(search) search.value='';
     item.querySelector('.clauseText').focus();
   };
 }
