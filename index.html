@@ -815,6 +815,10 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.73 21a2 2 0 01-3.46 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         <span id="clientBellBadge" class="hidden" style="position:absolute;top:2px;right:2px;min-width:15px;height:15px;border-radius:100px;background:#B4472F;color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 3px">0</span>
       </button>
+      <button class="iconbtn hidden" id="staffBellBtn" title="Notifications" style="position:relative">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.73 21a2 2 0 01-3.46 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span id="staffBellBadge" class="hidden" style="position:absolute;top:2px;right:2px;min-width:15px;height:15px;border-radius:100px;background:#B4472F;color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 3px">0</span>
+      </button>
       <button class="iconbtn" id="darkModeBtn" title="Toggle dark mode"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
       <button class="iconbtn" id="globalSearchBtn" title="Search"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
       <button class="iconbtn" id="accountBtn" title="Change password"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -3729,6 +3733,7 @@ async function enterApp(){
   document.getElementById('topbarSub').innerHTML = DEMO_MODE ? 'by PEP Landbank <span class="demodot"></span> Demo data' : 'by PEP Landbank';
   paintTopbarAvatar();
   const searchBtnS=document.getElementById('globalSearchBtn'); if(searchBtnS) searchBtnS.classList.remove('hidden');
+  const bellBtnS=document.getElementById('staffBellBtn'); if(bellBtnS) bellBtnS.classList.remove('hidden');
   // The greeting animation used to run AFTER data finished loading, stacking its fixed
   // 5s on top of however long the network took. Running both at once means the wait is
   // whichever is longer, not both added together -- same animation, faster sign-in.
@@ -3785,6 +3790,7 @@ async function enterClientPortal(){
   const bellBtn=document.getElementById('clientBellBtn');
   if(bellBtn){ bellBtn.classList.remove('hidden'); bellBtn.onclick=openClientNotifications; }
   const searchBtn=document.getElementById('globalSearchBtn'); if(searchBtn) searchBtn.classList.add('hidden');
+  const staffBellBtn=document.getElementById('staffBellBtn'); if(staffBellBtn) staffBellBtn.classList.add('hidden');
   // Same overlap-instead-of-stack fix as the staff login: run the data load and the
   // greeting animation at once so sign-in doesn't wait for both back-to-back.
   const loadPromise=(async()=>{
@@ -3879,6 +3885,7 @@ document.getElementById('logoutBtn').onclick=async()=>{
   refreshStaffList().then(buildDropdown);
 };
 document.getElementById('globalSearchBtn').onclick=openGlobalSearch;
+document.getElementById('staffBellBtn').onclick=()=>route('notifications');
 function applyDarkModePref(){ try{ if(localStorage.getItem('pep_dark')==='1') document.body.classList.add('dark'); }catch(e){} }
 applyDarkModePref();
 document.getElementById('darkModeBtn').onclick=()=>{
@@ -4117,7 +4124,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,mgmtreports:viewManagementReportsApp,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,mgmtreports:viewManagementReportsApp,notifications:viewNotifications,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -6047,6 +6054,59 @@ function avatarHtml(key,name){ const av=avatarOf(key); return av?`<img src="${av
 function messagesWith(otherKey){ return DB.messages.filter(m=>(m.senderKey===PROFILE.key&&m.recipientKey===otherKey)||(m.senderKey===otherKey&&m.recipientKey===PROFILE.key)).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)); }
 function unreadFrom(otherKey){ return DB.messages.filter(m=>m.senderKey===otherKey&&m.recipientKey===PROFILE.key&&!m.read).length; }
 function totalUnread(){ return DB.messages.filter(m=>m.recipientKey===PROFILE.key&&!m.read).length; }
+/* Notifications Centre -- every message addressed to me, in one feed, whether it's a
+   system-generated alert (site visit/enquiry/complaint/plot request -- these had no
+   screen of their own before this; only a badge count) or a real person's message
+   (contract requests etc., already readable via Chat, now also surfaced here). */
+const NOTIF_KIND_META={
+  sitevisit:{icon:'📍',label:'Site visit request',route:'sitevisit'},
+  enquiry:{icon:'❓',label:'Enquiry',route:'enquiry'},
+  complaint:{icon:'⚠️',label:'Client feedback',route:'complaint'},
+  plotrequest:{icon:'🧱',label:'Plot request',route:'plotrequests'}
+};
+function notificationRows(){
+  return DB.messages.filter(m=>m.recipientKey===PROFILE.key).slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+}
+function viewNotifications(){
+  const rows=notificationRows();
+  const unreadCount=rows.filter(m=>!m.read).length;
+  V.innerHTML=`${back(PROFILE.role==='manager'?'mgr':'home')}<div class="pagehead"><div><div class="eyebrow">Inbox</div><h2>Notifications</h2><p>${unreadCount?unreadCount+' unread':'You’re all caught up'}</p></div>${unreadCount?'<button class="chip" id="notifMarkAllBtn">Mark all read</button>':''}</div>
+  <div class="list" id="notifList">${rows.length?rows.map(notificationRowHtml).join(''):emptyState(ic.doc,'Nothing here yet','System alerts and messages waiting on you will show up here.')}</div>`;
+  bindNotificationCtrls();
+}
+function notificationRowHtml(m){
+  const meta=NOTIF_KIND_META[m.kind];
+  const fromLabel=m.senderKey==='system'?'Palmstead':(m.senderName||m.senderKey||'Someone');
+  return `<div class="rowcard" data-notifopen="${esc(m.id)}" style="cursor:pointer;${m.read?'':'border-left:3px solid #1D4ED8'}">
+    <div class="top"><div><div class="nm">${meta?meta.icon+' '+esc(meta.label):esc(fromLabel)}</div><div class="meta">${esc(fromLabel)} · ${esc((m.createdAt||'').slice(0,16).replace('T',' '))}</div></div>${m.read?'':'<span class="tag ghost">New</span>'}</div>
+    <div class="note" style="margin-top:8px">${esc(m.body||lastMsgPreview(m)||'')}</div></div>`;
+}
+function bindNotificationCtrls(){
+  document.querySelectorAll('[data-notifopen]').forEach(row=>row.onclick=async()=>{
+    const m=DB.messages.find(x=>x.id===row.dataset.notifopen); if(!m) return;
+    if(!m.read){
+      try{ if(m.kind) await apiMarkKindRead(m.kind); else await apiMarkThreadRead(m.senderKey); }catch(e){}
+      m.read=true; refreshAllBadges();
+    }
+    const meta=NOTIF_KIND_META[m.kind];
+    if(meta) route(meta.route);
+    else if(m.senderKey && m.senderKey!=='system') route('chatThread',m.senderKey);
+    else viewNotifications();
+  });
+  const markAllBtn=document.getElementById('notifMarkAllBtn');
+  if(markAllBtn) markAllBtn.onclick=async()=>{
+    markAllBtn.disabled=true; markAllBtn.textContent='Marking…';
+    const unread=notificationRows().filter(m=>!m.read);
+    const kinds=[...new Set(unread.filter(m=>m.kind).map(m=>m.kind))];
+    const senders=[...new Set(unread.filter(m=>!m.kind).map(m=>m.senderKey))];
+    try{
+      for(const k of kinds) await apiMarkKindRead(k);
+      for(const s of senders) await apiMarkThreadRead(s);
+    }catch(e){}
+    DB.messages.forEach(m=>{ if(m.recipientKey===PROFILE.key) m.read=true; });
+    refreshAllBadges(); viewNotifications();
+  };
+}
 function openGlobalSearch(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
@@ -6098,6 +6158,12 @@ function refreshAllBadges(){
     el.textContent=n>9?'9+':String(n);
     el.classList.toggle('hidden',n<=0);
   });
+  const bellBadge=document.getElementById('staffBellBadge');
+  if(bellBadge && typeof PROFILE!=='undefined' && PROFILE){
+    const n=totalUnread();
+    bellBadge.textContent=n>9?'9+':String(n);
+    bellBadge.classList.toggle('hidden',n<=0);
+  }
 }
 function lastMsgPreview(m){
   if(m.body) return m.body;
