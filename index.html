@@ -4859,7 +4859,7 @@ function viewMore(){
   } else {
     const items=[
       {key:'insights',fic:'target',label:'Smart Insights'},
-      {key:'downloads',fic:'downloads',label:'Download Directory'},
+      {key:'downloads',fic:'downloads',label:'Document Vault'},
       {key:'notes',fic:'notes',label:'Notes'},
       {key:'sms',fic:'sms',label:'SMS'},
       {key:'account',fic:'settings',label:'Settings'}
@@ -4887,20 +4887,33 @@ function previewKindOf(d){
   if(d.kind==='backup'||/\.json$/i.test(f)) return 'json';
   return guessFileKind(f);
 }
+const DOC_TYPE_COLOR={pdf:'#B4472F',excel:'#1E7A56',image:'#1D4ED8',csv:'#0C7A93',json:'#8A6E12',other:'#5C7280'};
+function docTypeIconHtml(kind){
+  const color=DOC_TYPE_COLOR[kind]||DOC_TYPE_COLOR.other;
+  return `<div style="width:40px;height:40px;border-radius:12px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:${color}1a;color:${color}"><span style="width:19px;height:19px;display:inline-flex">${ic.doc}</span></div>`;
+}
 function viewDownloads(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
   const all=(DB.downloads||[]);
   const kinds=[...new Set(all.map(d=>d.kind))];
   const list=downloadsKindFilter?all.filter(d=>d.kind===downloadsKindFilter):all;
-  const rowOf=d=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(d.filename)}</div><div class="meta">${esc((d.createdAt||'').slice(0,16).replace('T',' '))}${PROFILE.role==='manager'?(' · '+esc(d.userName)):''}</div></div>
+  const rowOf=d=>`<div class="rowcard"><div class="top">${docTypeIconHtml(d.kind)}<div style="flex:1;min-width:0"><div class="nm">${esc(d.filename)}</div><div class="meta">${esc((d.createdAt||'').slice(0,16).replace('T',' '))}${PROFILE.role==='manager'?(' · '+esc(d.userName)):''}</div></div>
     <span class="tag ghost">${esc((d.kind||'').toUpperCase())}</span></div>
     <div class="foot">
       ${isPreviewableDownload(d)?`<button class="chip" data-dlview="${esc(d.id)}" style="display:inline-flex;align-items:center;gap:6px"><span style="width:13px;height:13px;display:inline-flex">${ic.eye}</span>View</button>`:''}
       <button class="chip" data-dlsend="${esc(d.id)}" style="display:inline-flex;align-items:center;gap:6px"><span style="width:13px;height:13px;display:inline-flex">${ic.upload}</span>Send</button>
     </div></div>`;
-  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><h2>Download Directory</h2><p>${all.length} file${all.length===1?'':'s'} · ${PROFILE.role==='manager'?'every file downloaded by the team':'everything you have downloaded from this account'}</p></div></div>
+  const quickAccess=[
+    {label:'Quotation',route:()=>openQuotationRequest(),fic:'quote'},
+    ...(canManageContracts()?[{label:'Contract of Sale',route:()=>route('contractapp'),fic:'contract'}]:[]),
+    ...(PROFILE.role==='manager'?[{label:'Management Reports',route:()=>route('mgmtreports'),fic:'reportdoc'}]:[])
+  ];
+  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><h2>Document Vault</h2><p>${all.length} file${all.length===1?'':'s'} · ${PROFILE.role==='manager'?'every file downloaded by the team':'everything you have downloaded from this account'}</p></div></div>
+  ${quickAccess.length?`<div class="appGridGroupLabel" style="margin-top:0">Create a document</div><div class="appGrid" style="grid-template-columns:repeat(${quickAccess.length},1fr);margin-bottom:20px">${quickAccess.map((q,i)=>`<button class="appGridIcon" data-vaultquick="${i}"><span class="appGridGlyph">${fic(q.fic)}</span><span class="appGridLabel">${esc(q.label)}</span></button>`).join('')}</div>`:''}
+  <div class="appGridGroupLabel">Saved documents</div>
   ${kinds.length>1?`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"><button class="chip ${!downloadsKindFilter?'on':''}" data-dlkind="">All</button>${kinds.map(k=>`<button class="chip ${downloadsKindFilter===k?'on':''}" data-dlkind="${esc(k)}">${esc(k.toUpperCase())}</button>`).join('')}</div>`:''}
-  <div class="list">${list.length?list.map(rowOf).join(''):emptyState(ic.doc,'Nothing downloaded yet','PDFs, Excel exports and backups you generate will show up here.')}</div>`;
+  <div class="list">${list.length?list.map(rowOf).join(''):emptyState(ic.doc,'Nothing here yet','PDFs, Excel exports and backups you generate will show up here.')}</div>`;
+  V.querySelectorAll('[data-vaultquick]').forEach(b=>b.onclick=()=>quickAccess[+b.dataset.vaultquick].route());
   V.querySelectorAll('[data-dlkind]').forEach(b=>b.onclick=()=>{ downloadsKindFilter=b.dataset.dlkind; viewDownloads(); });
   V.querySelectorAll('[data-dlview]').forEach(b=>b.onclick=async()=>{
     const d=list.find(x=>x.id===b.dataset.dlview); if(!d) return;
@@ -10785,7 +10798,7 @@ const MGR_APPS=[
   {key:'Feedback',fic:'feedback',label:'Team Feedback',section:'officedesk'},
   {key:'Insights',fic:'target',label:'Smart Insights'},
   {key:'Settings',fic:'settings',label:'Settings'},
-  {key:'Downloads',fic:'downloads',label:'Download Directory'},
+  {key:'Downloads',fic:'downloads',label:'Document Vault'},
   {key:'Notes',fic:'notes',label:'Notes'},
   {key:'SMS',fic:'sms',label:'SMS'},
   {key:'Quotation Settings',fic:'quote',label:'Quotation Settings',section:'settingshub'},
