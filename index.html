@@ -11838,7 +11838,13 @@ const SETTINGS_APPS=[
   {key:'System',fic:'serverconfig',label:'System',section:'settingshub'}
 ];
 function mgrSettingsHubHtml(){
-  return `<div class="appGrid" id="mgrSettingsGrid">${mgrAppGridHtml(SETTINGS_APPS)}</div>`;
+  const byKey=k=>SETTINGS_APPS.find(a=>a.key===k);
+  const groups=[
+    {title:'Pricing & money',items:['Quotation Settings','Commission Settings','Pricing & Targets'].map(byKey)},
+    {title:'Team & company',items:['Staff Settings','Company Settings'].map(byKey)},
+    {title:'System',items:['Backup & Restore','System Health','System'].map(byKey)}
+  ];
+  return `<div id="mgrSettingsGrid">${groupedAppGridHtml(groups)}</div>`;
 }
 function mgrQuotationSettingsHtml(){
   return `<div class="sectitle" style="margin-top:0"><h3>Quotation &amp; receipt text</h3><span class="cnt">everything printed on client-facing PDFs</span></div>
