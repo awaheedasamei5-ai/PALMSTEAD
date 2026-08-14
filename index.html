@@ -177,8 +177,8 @@ a{color:var(--green2)}
 
 /* ---------- LOGIN — role choice (futuristic redesign) ---------- */
 .loginOrbs{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
-.loginOrbs .orb{position:absolute;border-radius:50%;filter:blur(50px);opacity:.45;animation:orbDrift 14s ease-in-out infinite alternate}
-.loginOrbs .orb1{width:280px;height:280px;left:-60px;top:6%;background:radial-gradient(circle,var(--wave-orb1,rgba(14,165,183,.55)),transparent 70%);animation-duration:16s}
+.loginOrbs .orb{position:absolute;border-radius:50%;filter:blur(50px);opacity:.2;animation:orbDrift 14s ease-in-out infinite alternate}
+.loginOrbs .orb1{width:280px;height:280px;left:-100px;top:2%;background:radial-gradient(circle,var(--wave-orb1,rgba(14,165,183,.55)),transparent 70%);animation-duration:16s}
 .loginOrbs .orb2{width:340px;height:340px;right:-90px;top:32%;background:radial-gradient(circle,var(--wave-orb2,rgba(34,211,238,.5)),transparent 70%);animation-duration:19s;animation-delay:-4s}
 .loginOrbs .orb3{width:220px;height:220px;left:18%;bottom:-40px;background:radial-gradient(circle,var(--wave-orb3,rgba(201,162,39,.35)),transparent 70%);animation-duration:13s;animation-delay:-7s}
 @keyframes orbDrift{0%{transform:translate(0,0) scale(1)}100%{transform:translate(26px,-22px) scale(1.16)}}
@@ -851,13 +851,18 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
    page load and applied via CSS custom properties, set here (before the
    boot screen's first paint) rather than after, to avoid a flash of the
    fallback colors. */
+/* All linear (never radial-with-percentage-sizing) -- a radial gradient's ellipse
+   shape depends on box width:height ratio, so the same variant looked fine tall
+   and narrow (mobile) but produced a visible hard edge wide and short (desktop).
+   Linear gradients only vary along their angle axis, so they blend smoothly at
+   any aspect ratio. */
 const WAVE_VARIANTS=[
   {bg:'linear-gradient(165deg,#050B14 0%,#0A2A3A 30%,#0C7A93 55%,#22D3EE 74%,#BAE6E8 90%,#F2F6F7 100%)',orb1:'rgba(14,165,183,.55)',orb2:'rgba(34,211,238,.5)',orb3:'rgba(201,162,39,.3)'},
-  {bg:'radial-gradient(150% 115% at 25% -15%,#123F52 0%,#0B1E3D 45%,#050B14 100%)',orb1:'rgba(34,211,238,.5)',orb2:'rgba(14,165,183,.45)',orb3:'rgba(103,232,249,.3)'},
+  {bg:'linear-gradient(170deg,#050B14 0%,#0B1E3D 42%,#123F52 72%,#22D3EE 100%)',orb1:'rgba(34,211,238,.5)',orb2:'rgba(14,165,183,.45)',orb3:'rgba(103,232,249,.3)'},
   {bg:'linear-gradient(135deg,#0B1E3D 0%,#0A2A3A 35%,#0C7A93 70%,#67E8F9 100%)',orb1:'rgba(103,232,249,.5)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(201,162,39,.28)'},
   {bg:'linear-gradient(180deg,#050B14 0%,#0B1E3D 55%,#0A3E4E 78%,#14C7D6 100%)',orb1:'rgba(20,199,214,.5)',orb2:'rgba(11,30,61,.6)',orb3:'rgba(34,211,238,.35)'},
   {bg:'linear-gradient(160deg,#050B14 0%,#0B1E3D 30%,#0C7A93 60%,#C9A227 85%,#67E8F9 100%)',orb1:'rgba(201,162,39,.4)',orb2:'rgba(14,165,183,.5)',orb3:'rgba(103,232,249,.3)'},
-  {bg:'radial-gradient(130% 95% at 50% 105%,#67E8F9 0%,#0C7A93 35%,#0B1E3D 72%,#050B14 100%)',orb1:'rgba(103,232,249,.45)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(34,211,238,.35)'}
+  {bg:'linear-gradient(0deg,#050B14 0%,#0B1E3D 28%,#0C7A93 62%,#67E8F9 85%,#F2F6F7 100%)',orb1:'rgba(103,232,249,.45)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(34,211,238,.35)'}
 ];
 (function applyWaveVariant(){
   const v=WAVE_VARIANTS[Math.floor(Math.random()*WAVE_VARIANTS.length)];
@@ -3754,11 +3759,12 @@ const MOTIVATIONS={
   evening:['Wrap up loose ends before you log off.','Tomorrow\'s easier when today\'s follow-ups are done.','One more call could be the one that closes.','Review what moved today — and what needs a push tomorrow.','Finish strong — it\'s how deals stay warm overnight.','A five-minute recap now saves a scramble tomorrow.'],
   night:['Rest well — the pipeline will be here tomorrow.','Late nights build the business, but sleep builds you.','Whatever\'s pending can wait until morning.','Steady progress beats burnout. Get some rest.','Tomorrow\'s leads need a rested mind today.']
 };
-/* Intelligence chip: a genuinely dynamic line on the greeting screen, not more
-   canned copy. Two sources, both non-blocking so sign-in speed is unaffected --
-   a reliable instant read of the calendar (always available), and for managers,
-   a best-effort lightweight query for pending approvals that only shows up if
-   it resolves before the greeting closes (never delays sign-in waiting on it). */
+/* Intelligence chip: one genuinely dynamic, freshly-fetched fact per login, not
+   canned copy -- a different source each time, real data, gracefully falling
+   back to a calendar-context tip only if every data fetch comes back empty
+   (new staff with no leads yet, offline, etc). Each fetcher is self-contained,
+   fast (single indexed query or a local demoLoad() read), and never throws --
+   errors just mean that source didn't have anything to say this time. */
 function temporalInsight(){
   const d=new Date(); const day=d.getDay(); const date=d.getDate();
   const lastDay=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
@@ -3766,7 +3772,7 @@ function temporalInsight(){
   if(day===5) return "It's Friday — a good day to tie up loose ends before the weekend.";
   if(lastDay-date<=2) return 'Month-end is close — a good moment to check progress against target.';
   if(date<=2) return 'Fresh month, fresh pipeline — a good time to reconnect with warm leads.';
-  return null;
+  return 'Steady day ahead — check what needs a follow-up first.';
 }
 async function fetchApprovalsInsight(){
   if(DEMO_MODE||!sb) return null;
@@ -3775,6 +3781,87 @@ async function fetchApprovalsInsight(){
     if(error||!count) return null;
     return count+' payment'+(count===1?'':'s')+' waiting on your approval.';
   }catch(e){ return null; }
+}
+async function fetchTeamNoVisitInsight(){
+  if(DEMO_MODE||!sb) return null;
+  try{
+    const {count,error}=await sb.from('leads').select('id',{count:'exact',head:true}).neq('site_visit','Yes').not('stage','eq','Lost');
+    if(error||!count) return null;
+    return count+' lead'+(count===1?'':'s')+' company-wide '+(count===1?"hasn't":"haven't")+' had a site visit yet.';
+  }catch(e){ return null; }
+}
+async function fetchStaleLeadInsight(){
+  const key=PROFILE.key; let list;
+  if(DEMO_MODE){ const d=await demoLoad(); list=(d.leads[key]||[]).filter(l=>l.nextAction); }
+  else{
+    try{ const {data,error}=await sb.from('leads').select('name,stage,next_action').eq('agent_key',key).not('next_action','is',null).limit(30);
+      if(error) return null; list=(data||[]).map(r=>({name:r.name,stage:r.stage,nextAction:r.next_action})); }
+    catch(e){ return null; }
+  }
+  list=(list||[]).filter(l=>l.nextAction&&l.nextAction.trim()&&l.stage!=='Lost'&&l.stage!=='4');
+  if(!list.length) return null;
+  const l=list[Math.floor(Math.random()*list.length)];
+  return l.name+' is waiting on: '+l.nextAction;
+}
+async function fetchOpenTasksInsight(){
+  const key=PROFILE.key;
+  if(DEMO_MODE||!sb) return null;
+  try{
+    const {count,error}=await sb.from('tasks').select('id',{count:'exact',head:true}).eq('assigned_to',key).in('status',['Open','In Progress']);
+    if(error||!count) return null;
+    return 'You have '+count+' open task'+(count===1?'':'s')+' on your Operations Tracker.';
+  }catch(e){ return null; }
+}
+async function fetchNoVisitInsight(){
+  const key=PROFILE.key; let count;
+  if(DEMO_MODE){ const d=await demoLoad(); count=(d.leads[key]||[]).filter(l=>l.siteVisit!=='Yes'&&l.stage!=='Lost'&&l.stage!=='4').length; }
+  else{ try{ const {count:c,error}=await sb.from('leads').select('id',{count:'exact',head:true}).eq('agent_key',key).neq('site_visit','Yes');
+      if(error) return null; count=c; }catch(e){ return null; } }
+  if(!count) return null;
+  return count+' lead'+(count===1?'':'s')+' on your pipeline '+(count===1?"hasn't":"haven't")+' had a site visit yet.';
+}
+async function fetchTargetProgressInsight(){
+  const key=PROFILE.key;
+  try{
+    let target,collected;
+    const monthPrefix=today().slice(0,7);
+    if(DEMO_MODE){
+      const d=await demoLoad(); target=num((d.config&&d.config.targets&&d.config.targets[key])||0);
+      collected=(d.payments||[]).filter(p=>p.agentKey===key&&(p.date||'').slice(0,7)===monthPrefix).reduce((s,p)=>s+num(p.amount),0);
+    }else{
+      if(!sb) return null;
+      const {data:cfg}=await sb.from('app_config').select('targets').eq('id',1).maybeSingle();
+      target=num((cfg&&cfg.targets&&cfg.targets[key])||0);
+      const {data:pays,error}=await sb.from('payments').select('amount').eq('agent_key',key).eq('status','approved').gte('payment_date',monthPrefix+'-01');
+      if(error) return null;
+      collected=(pays||[]).reduce((s,p)=>s+num(p.amount),0);
+    }
+    if(!target) return null;
+    const pct=Math.round(collected/target*100);
+    return "You're "+pct+"% toward this month's target ("+ghs(collected)+' of '+ghs(target)+').';
+  }catch(e){ return null; }
+}
+/* Races a fetcher against a timeout so a slow/hung query never holds up the
+   greeting screen -- if nothing comes back in time, the temporal tip covers it. */
+function withTimeout(promise,ms){
+  return Promise.race([promise,new Promise(r=>setTimeout(()=>r(null),ms))]);
+}
+function pickIntelligenceInsight(isManager){
+  // All sources race concurrently (not one-at-a-time), capped at 2.6s total --
+  // fits inside the greeting's own display window. Whichever real fact comes
+  // back first wins; which one that is varies login to login by design.
+  const pool=isManager?[fetchApprovalsInsight,fetchTeamNoVisitInsight]:[fetchStaleLeadInsight,fetchOpenTasksInsight,fetchNoVisitInsight,fetchTargetProgressInsight];
+  const shuffled=pool.slice().sort(()=>Math.random()-.5);
+  const promises=shuffled.map(fn=>withTimeout(fn().catch(()=>null),2600));
+  return new Promise(resolve=>{
+    let remaining=promises.length, done=false;
+    promises.forEach(p=>p.then(result=>{
+      remaining--;
+      if(done) return;
+      if(result){ done=true; resolve(result); }
+      else if(remaining===0){ done=true; resolve(temporalInsight()); }
+    }));
+  });
 }
 function pickGreeting(name){
   const h=new Date().getHours();
@@ -3799,11 +3886,10 @@ function showGreetScreen(name,isManager){
     const finish=()=>{ if(done) return; done=true; el.classList.add('fade'); setTimeout(()=>{ el.remove(); resolve(); },400); };
     el.addEventListener('click',finish);
     setTimeout(finish,3400);
-    (async()=>{
-      const insight=isManager?(await fetchApprovalsInsight())||temporalInsight():temporalInsight();
+    pickIntelligenceInsight(isManager).then(insight=>{
       const slot=document.getElementById('gInsight');
       if(insight&&slot) slot.innerHTML=`<div class="chip-insight">${ic.spark}${esc(insight)}</div>`;
-    })();
+    });
   });
 }
 async function enterApp(){
