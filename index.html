@@ -1356,6 +1356,18 @@ function val(id){const e=document.getElementById(id);return e?e.value:'';}
 // but janky on slower phones and only gets worse as the tables grow. Debounce delays
 // that work until typing actually pauses, without changing what any of it does.
 function debounce(fn,wait){ let t; return function(...args){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,args),wait||220); }; }
+// A hung Supabase request on a bad mobile connection never resolves OR rejects on its
+// own -- there's no built-in fetch timeout -- so an `await`ed load can leave a screen
+// stuck on its loading skeleton forever, since the code after the await (the real
+// render) simply never runs. This races the real request against a timer so the
+// screen always eventually settles into either real data or a retryable error state.
+function withLoadTimeout(promise,ms,label){
+  ms=ms||15000;
+  return Promise.race([
+    promise,
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error((label||'This')+' is taking too long — check your connection and try again')),ms))
+  ]);
+}
 function fld(l,inner,hint){return `<div class="field"><label>${l}${hint?` <span class="hint">— ${hint}</span>`:''}</label>${inner}</div>`;}
 function sel(id,opts,cur){return `<select id="${id}">`+opts.map(o=>`<option ${o===cur?'selected':''}>${o}</option>`).join('')+`</select>`;}
 function back(to){return `<button class="backlink" onclick="goBack('${to}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button>`;}
@@ -3410,7 +3422,7 @@ async function viewClientDatabase(){
   const homeRoute=PROFILE.role==='manager'?'mgrSalesDesk':'salesdesk';
   V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Company-wide</div><h2>Client Database</h2><p>Every client across every agent.</p></div></div>
   <div id="cdbBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
-  if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load client database: '+(e.message||e)); } }
+  if(!CLIENTDB_LOADED){ try{ await withLoadTimeout(apiLoadClientDatabase(),15000,'Client database'); }catch(e){ toast('Could not load client database: '+(e.message||e)); } }
   const body=document.getElementById('cdbBody');
   body.innerHTML=clientDatabaseBodyHtml();
   bindClientDatabaseCtrls(body);
@@ -3454,7 +3466,7 @@ function bindCompanyLeadsRows(container){
 // down to the specific banner location -- so Banner Tracking can show real
 // enquiry/lead counts per location instead of just placement status.
 async function openLeadSourceModal(lead,onSaved){
-  if(!BANNERS_LOADED){ try{ DB.banners=await apiLoadBanners(); BANNERS_LOADED=true; }catch(e){} }
+  if(!BANNERS_LOADED){ try{ DB.banners=await withLoadTimeout(apiLoadBanners(),15000,'Banners'); BANNERS_LOADED=true; }catch(e){} }
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   const areas=[...new Set((DB.banners||[]).map(b=>b.area).filter(Boolean))].sort();
@@ -3511,7 +3523,7 @@ function companyLeadsBodyHtml(){
 async function viewCompanyPipeline(){
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Company-sourced</div><h2>Company Leads</h2><p>Clients who came to the company directly -- assign each to an agent once you know who's handling them.</p></div></div>
   <div id="companyLeadsBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
-  if(!COMPANY_LEADS_LOADED){ try{ await apiLoadCompanyLeads(); }catch(e){ toast('Could not load company leads: '+(e.message||e)); } }
+  if(!COMPANY_LEADS_LOADED){ try{ await withLoadTimeout(apiLoadCompanyLeads(),15000,'Company leads'); }catch(e){ toast('Could not load company leads: '+(e.message||e)); } }
   const body=document.getElementById('companyLeadsBody');
   body.innerHTML=companyLeadsBodyHtml();
   bindCompanyLeadsRows(body);
@@ -4157,7 +4169,7 @@ async function enterApp(){
   // The greeting animation used to run AFTER data finished loading, stacking its fixed
   // 5s on top of however long the network took. Running both at once means the wait is
   // whichever is longer, not both added together -- same animation, faster sign-in.
-  const loadPromise=(async()=>{ try{ await apiLoadConfig(); await apiLoadAll(); }catch(e){ toast('Could not load data'); } })();
+  const loadPromise=(async()=>{ try{ await withLoadTimeout(apiLoadConfig(),15000,'Config'); await withLoadTimeout(apiLoadAll(),20000,'Sign-in'); }catch(e){ toast(e.message||'Could not load data'); } })();
   const greetPromise=showGreetScreen(PROFILE.role==='manager'?'Management':PROFILE.name,PROFILE.role==='manager');
   await Promise.all([loadPromise,greetPromise]);
   refreshAnnounceBubble();
@@ -5876,8 +5888,8 @@ function agentHome(){ const k=kpisOf(DB.leads);
   document.getElementById('heroQuoteChip').onclick=openQuotationRequest;
   document.getElementById('dashRefreshBtn').onclick=async(e)=>{
     const btn=e.currentTarget; btn.classList.add('spinning'); btn.disabled=true;
-    try{ await apiLoadAll(); toast('Up to date'); agentHome(); }
-    catch(err){ toast('Refresh failed'); btn.classList.remove('spinning'); btn.disabled=false; }
+    try{ await withLoadTimeout(apiLoadAll(),20000,'Refresh'); toast('Up to date'); agentHome(); }
+    catch(err){ toast(err.message||'Refresh failed'); btn.classList.remove('spinning'); btn.disabled=false; }
   };
 }
 
@@ -7913,7 +7925,7 @@ async function formCustomer(arg){
   if(leadWithSource){
     sourceLabel=leadWithSource.leadSource;
     if(leadWithSource.bannerId){
-      if(!BANNERS_LOADED){ try{ DB.banners=await apiLoadBanners(); BANNERS_LOADED=true; }catch(e){} }
+      if(!BANNERS_LOADED){ try{ DB.banners=await withLoadTimeout(apiLoadBanners(),15000,'Banners'); BANNERS_LOADED=true; }catch(e){} }
       const banner=(DB.banners||[]).find(b=>b.id===leadWithSource.bannerId);
       if(banner) sourceLabel+=' · '+banner.name;
     }
@@ -8536,7 +8548,7 @@ async function viewLogPaymentApp(){
     <button class="chip ${logPayTab==='pending'?'on':''}" data-logpaytab="pending">Pending Approvals${pendingCount?' ('+pendingCount+')':''}</button>
   </div>`:''}
   <div id="logpayBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
-  if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load clients: '+(e.message||e)); } }
+  if(!CLIENTDB_LOADED){ try{ await withLoadTimeout(apiLoadClientDatabase(),15000,'Client list'); }catch(e){ toast('Could not load clients: '+(e.message||e)); } }
   if(isMgr) document.querySelectorAll('[data-logpaytab]').forEach(b=>b.onclick=()=>{ logPayTab=b.dataset.logpaytab; viewLogPaymentApp(); });
   paintLogPayBody();
 }
@@ -10539,7 +10551,7 @@ let CONTRACTAPP_QUERY='', contractAppTab='generate', CONTRACT_REQUESTS_LOADED=fa
 async function viewContractApp(){
   if(!canManageContracts()){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Restricted','Contract of Sale is limited to Elizabeth and Management.'); return; }
   CONTRACTAPP_QUERY='';
-  if(!CONTRACT_REQUESTS_LOADED){ try{ DB.contractRequests=await apiLoadContractRequests(); CONTRACT_REQUESTS_LOADED=true; }catch(e){} }
+  if(!CONTRACT_REQUESTS_LOADED){ try{ DB.contractRequests=await withLoadTimeout(apiLoadContractRequests(),15000,'Contract requests'); CONTRACT_REQUESTS_LOADED=true; }catch(e){} }
   const pendingCount=(DB.contractRequests||[]).filter(r=>r.status==='pending').length;
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Contracts</div><h2>Contract of Sale</h2><p>Generate a client's contract, or edit the text and images it's built from.</p></div></div>
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
@@ -10548,7 +10560,7 @@ async function viewContractApp(){
   </div>
   <div id="contractAppBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   document.querySelectorAll('[data-catab]').forEach(b=>b.onclick=()=>{ contractAppTab=b.dataset.catab; viewContractApp(); });
-  if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load clients: '+(e.message||e)); } }
+  if(!CLIENTDB_LOADED){ try{ await withLoadTimeout(apiLoadClientDatabase(),15000,'Client list'); }catch(e){ toast('Could not load clients: '+(e.message||e)); } }
   paintContractAppBody();
 }
 function contractRequestsHtml(){
@@ -11000,13 +11012,13 @@ async function managerView(){
   <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>`:''}
   <div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>
   <div class="footer-note">System created by Abdul Waheed (Digital Operations) © ${new Date().getFullYear()}</div>`;
-  if(!isOverview) document.getElementById('mgrRefresh').onclick=async()=>{ toast('Refreshing…'); try{ await apiLoadAll(); managerView(); toast('Up to date'); }catch(e){ toast('Refresh failed'); } };
+  if(!isOverview) document.getElementById('mgrRefresh').onclick=async()=>{ toast('Refreshing…'); try{ await withLoadTimeout(apiLoadAll(),20000,'Refresh'); managerView(); toast('Up to date'); }catch(e){ toast(e.message||'Refresh failed'); } };
   const body=document.getElementById('mbody');
   if(mgrTab==='overview'){ body.innerHTML=mgrOverview(); bindTasks(); bindOverviewCtrls(); animateKpiCounts(body); bindExpectedRevenueCard(); bindPipelineHealthCard(); bindBannerSlideshow();
-    document.getElementById('mgrHeroRefresh').onclick=async(e)=>{ const btn=e.currentTarget; btn.classList.add('spinning'); btn.disabled=true; try{ await apiLoadAll(); toast('Up to date'); managerView(); }catch(err){ toast('Refresh failed'); btn.classList.remove('spinning'); btn.disabled=false; } };
+    document.getElementById('mgrHeroRefresh').onclick=async(e)=>{ const btn=e.currentTarget; btn.classList.add('spinning'); btn.disabled=true; try{ await withLoadTimeout(apiLoadAll(),20000,'Refresh'); toast('Up to date'); managerView(); }catch(err){ toast(err.message||'Refresh failed'); btn.classList.remove('spinning'); btn.disabled=false; } };
   }
   else if(mgrTab==='Data Check'){ const renderMgrDataCheck=()=>{ body.innerHTML=renderDataCheck(null); bindDataCheckCtrls(null,renderMgrDataCheck); }; renderMgrDataCheck(); }
-  else if(mgrTab==='Leaderboard'){ if(!LEADERBOARD_TODOS_LOADED){ try{ LEADERBOARD_TODOS_LIST=await apiLoadAllTodosForLeaderboard(isoPlusDays(today(),-90),today()); LEADERBOARD_TODOS_LOADED=true; }catch(e){} } body.innerHTML=mgrLeaderboard(); bindLeagueCtrls(); }
+  else if(mgrTab==='Leaderboard'){ if(!LEADERBOARD_TODOS_LOADED){ try{ LEADERBOARD_TODOS_LIST=await withLoadTimeout(apiLoadAllTodosForLeaderboard(isoPlusDays(today(),-90),today()),15000,'Leaderboard'); LEADERBOARD_TODOS_LOADED=true; }catch(e){} } body.innerHTML=mgrLeaderboard(); bindLeagueCtrls(); }
   else if(mgrTab==='Reports'){ body.innerHTML=mgrReports(); bindReportCtrls(); }
   else if(mgrTab==='Plots'){ PLOTS_CONTEXT='manager'; body.innerHTML=renderPlotsGrid(); bindPlotsGrid(); }
   else if(mgrTab==='Allocations'){
@@ -11030,7 +11042,7 @@ async function managerView(){
     bindAllocationCtrls();
   }
   else if(mgrTab==='Client Database'){
-    if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load client database: '+(e.message||e)); } }
+    if(!CLIENTDB_LOADED){ try{ await withLoadTimeout(apiLoadClientDatabase(),15000,'Client database'); }catch(e){ toast('Could not load client database: '+(e.message||e)); } }
     body.innerHTML=clientDatabaseBodyHtml();
     bindClientDatabaseCtrls(body);
   }
@@ -11042,11 +11054,15 @@ async function managerView(){
   else if(mgrTab==='Settings'){ body.innerHTML=mgrSettingsHubHtml(); bindMgrAppGrid(document.getElementById('mgrSettingsGrid'),SETTINGS_APPS); }
   else if(mgrTab==='Quotation Settings'){ body.innerHTML=mgrQuotationSettingsHtml(); bindQuotationSettingsCtrls(); }
   else if(mgrTab==='Commission Settings'){ body.innerHTML=mgrCommissionSettingsHtml(); bindCommissionSettingsCtrls(); }
-  else if(mgrTab==='Pricing & Targets'){ if(!PRICING_HISTORY_LOADED){ try{ PRICING_HISTORY_LIST=await apiLoadPricingHistory(); PRICING_HISTORY_LOADED=true; }catch(e){} } body.innerHTML=mgrPricingTargetsHtml(); bindPricingTargetsCtrls(); }
+  else if(mgrTab==='Pricing & Targets'){ if(!PRICING_HISTORY_LOADED){ try{ PRICING_HISTORY_LIST=await withLoadTimeout(apiLoadPricingHistory(),15000,'Pricing history'); PRICING_HISTORY_LOADED=true; }catch(e){} } body.innerHTML=mgrPricingTargetsHtml(); bindPricingTargetsCtrls(); }
   else if(mgrTab==='Staff Settings'){ [TEAM_ROSTER,INVITE_LIST]=await Promise.all([apiLoadFullRoster(),apiListInvites().catch(()=>[])]); body.innerHTML=mgrStaffSettingsHtml(); bindStaffSettingsCtrls(); }
   else if(mgrTab==='Company Settings'){ body.innerHTML=mgrCompanySettingsHtml(); bindCompanySettingsCtrls(); }
-  else if(mgrTab==='Backup & Restore'){ if(!BACKUPS_LOADED){ try{ BACKUPS_LIST=await apiLoadBackups(); BACKUPS_LOADED=true; }catch(e){} } body.innerHTML=mgrBackupHtml(); bindMgrBackupCtrls(); }
-  else if(mgrTab==='System Health'){ body.innerHTML=`<div class="skel" style="height:120px;border-radius:16px"></div>`; const health=await computeSystemHealth(); body.innerHTML=systemHealthHtml(health); bindSystemHealthCtrls(); }
+  else if(mgrTab==='Backup & Restore'){ if(!BACKUPS_LOADED){ try{ BACKUPS_LIST=await withLoadTimeout(apiLoadBackups(),15000,'Backups'); BACKUPS_LOADED=true; }catch(e){} } body.innerHTML=mgrBackupHtml(); bindMgrBackupCtrls(); }
+  else if(mgrTab==='System Health'){
+    body.innerHTML=`<div class="skel" style="height:120px;border-radius:16px"></div>`;
+    try{ const health=await computeSystemHealth(); body.innerHTML=systemHealthHtml(health); bindSystemHealthCtrls(); }
+    catch(e){ body.innerHTML=emptyState(ic.alertTri,'Could not load System Health',(e.message||'Something went wrong')+' — pull to refresh or tap back and try again.'); }
+  }
   else if(mgrTab==='System'){ body.innerHTML=mgrSystemHtml(); bindSystemCtrls(); }
 }
 function allAgentLists(){
@@ -12129,7 +12145,7 @@ function bindPricingTargetsCtrls(){
     try{ const n=await apiBulkAdjust(plot,mode,amt);
       await apiInsertActivity({client:'(bulk)',action:'Price adjustment applied',detail:plot+' · '+(mode==='discount'?'extra discount':'price increase')+' GHS '+amt+' · '+n+' leads affected'});
       DB.activity.unshift({agentName:PROFILE.name,client:'(bulk)',action:'Price adjustment applied',at:today()+' '+nowTime()});
-      toast('Applied to '+n+' outstanding lead(s)'); await apiLoadAll(); managerView();
+      toast('Applied to '+n+' outstanding lead(s)'); await withLoadTimeout(apiLoadAll(),20000,'Refresh'); managerView();
     }catch(e){ toast('Failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Apply adjustment now';
   };
@@ -12264,7 +12280,7 @@ function bindSystemCtrls(){
   const sysRefreshBtn=document.getElementById('sysRefreshBtn');
   if(sysRefreshBtn) sysRefreshBtn.onclick=async()=>{
     sysRefreshBtn.disabled=true; sysRefreshBtn.textContent='Reloading…';
-    try{ await apiLoadAll(); toast('Data reloaded'); managerView(); }
+    try{ await withLoadTimeout(apiLoadAll(),20000,'Reload'); toast('Data reloaded'); managerView(); }
     catch(e){ toast('Reload failed: '+(e.message||e)); sysRefreshBtn.disabled=false; sysRefreshBtn.textContent='↻ Reload all data from the database now'; }
   };
   const sysBackupBtn=document.getElementById('sysBackupBtn');
@@ -12377,7 +12393,7 @@ function openRestoreConfirmModal(backupId,whenLabel){
     try{
       await apiRestoreBackupNow(backupId);
       toast('Restore complete'); ov.remove();
-      await apiLoadAll(); BACKUPS_LOADED=false; BACKUPS_LIST=await apiLoadBackups(); BACKUPS_LOADED=true;
+      await withLoadTimeout(apiLoadAll(),20000,'Restore'); BACKUPS_LOADED=false; BACKUPS_LIST=await withLoadTimeout(apiLoadBackups(),15000,'Backups'); BACKUPS_LOADED=true;
       managerView();
     }catch(e){ toast('Restore failed: '+(e.message||e)); goBtn.disabled=false; goBtn.textContent='Restore now'; }
   };
@@ -12401,11 +12417,11 @@ async function computeSystemHealth(){
   // real network, where each round trip carries fixed latency regardless of size.
   const needBackups=!DEMO_MODE && !BACKUPS_LOADED;
   const needExp=!EXP_LOADED && !DEMO_MODE;
-  const [sms,backupsResult,expResult]=await Promise.all([
+  const [sms,backupsResult,expResult]=await withLoadTimeout(Promise.all([
     apiLoadSmsHealth(),
     needBackups?apiLoadBackups().catch(()=>BACKUPS_LOADED?BACKUPS_LIST:[]):Promise.resolve(BACKUPS_LOADED?BACKUPS_LIST:[]),
     needExp?Promise.all([apiLoadExpenseCategories(),apiLoadExpenses(),apiLoadFundRequests(),apiLoadDailyBalances()]).catch(()=>null):Promise.resolve(null)
-  ]);
+  ]),15000,'System Health');
   let backups=backupsResult;
   if(needBackups){ BACKUPS_LIST=backups; BACKUPS_LOADED=true; }
   if(needExp && expResult){ [EXP_CATEGORIES_LIST,EXPENSES_LIST,FUND_REQUESTS_LIST,DAILY_BALANCES_LIST]=expResult; EXP_LOADED=true; }
@@ -12484,7 +12500,7 @@ async function apiDeleteNote(id){
 async function viewNotesApp(){
   V.innerHTML=`${back(PROFILE.role==='manager'?'mgr':'more')}<div class="pagehead"><div><div class="eyebrow">Personal</div><h2>Notes</h2><p>Quick private notes — jot something down, save it, send it, or download it.</p></div></div>
   <div id="notesBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
-  if(!NOTES_LOADED){ try{ NOTES_LIST=await apiLoadNotes(); NOTES_LOADED=true; }catch(e){ toast('Could not load notes: '+(e.message||e)); } }
+  if(!NOTES_LOADED){ try{ NOTES_LIST=await withLoadTimeout(apiLoadNotes(),15000,'Notes'); NOTES_LOADED=true; }catch(e){ toast('Could not load notes: '+(e.message||e)); } }
   const body=document.getElementById('notesBody');
   body.innerHTML=notesBodyHtml();
   bindNotesCtrls(body);
@@ -12589,7 +12605,7 @@ async function viewSmsApp(){
   SMS_MODE='staff'; SMS_SEARCH=''; SMS_SELECTED={}; SMS_SENDING=false; SMS_RESULT=null;
   V.innerHTML=`${back(PROFILE.role==='manager'?'mgr':'more')}<div class="pagehead"><div><div class="eyebrow">Broadcast</div><h2>SMS</h2><p>Send a custom text message to staff, clients, or any number.</p></div></div>
   <div id="smsBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
-  if(!SMS_STAFF_LOADED){ try{ SMS_STAFF_LIST=await apiLoadStaffContacts(); SMS_STAFF_LOADED=true; }catch(e){} }
+  if(!SMS_STAFF_LOADED){ try{ SMS_STAFF_LIST=await withLoadTimeout(apiLoadStaffContacts(),15000,'Staff contacts'); SMS_STAFF_LOADED=true; }catch(e){} }
   paintSmsBody();
 }
 function smsSelectedCount(){ return Object.keys(SMS_SELECTED).length; }
@@ -12616,13 +12632,20 @@ function smsRecipientAreaHtml(){
   if(SMS_MODE==='custom'){
     return `${fld('Phone number(s)','<textarea id="sms_custom" rows="3" placeholder="0244123456, 0501234567 — one per line or comma-separated"></textarea>','any format; normalized automatically')}`;
   }
-  const list=SMS_MODE==='staff'?SMS_STAFF_LIST:SMS_CLIENTS_LIST;
   const loaded=SMS_MODE==='staff'?SMS_STAFF_LOADED:SMS_CLIENTS_LOADED;
   if(!loaded) return `<div class="skel" style="height:60px;border-radius:12px"></div>`;
+  // The search <input> lives outside #smsResultsArea and is never re-rendered while
+  // the user types -- only the results below it get replaced on each keystroke. Wiping
+  // the input's own innerHTML (the old behavior) destroyed and recreated the element on
+  // every character, which stole focus and closed the on-screen keyboard on mobile.
+  return `${fld('Search '+SMS_MODE,'<input id="sms_search" placeholder="Search by name…" value="'+esc(SMS_SEARCH)+'"/>')}
+  <div id="smsResultsArea">${smsResultsAreaHtml()}</div>`;
+}
+function smsResultsAreaHtml(){
+  const list=SMS_MODE==='staff'?SMS_STAFF_LIST:SMS_CLIENTS_LIST;
   const q=SMS_SEARCH.trim().toLowerCase();
   const filtered=list.filter(p=>!q||(p.name||'').toLowerCase().includes(q));
-  return `${fld('Search '+SMS_MODE,'<input id="sms_search" placeholder="Search by name…" value="'+esc(SMS_SEARCH)+'"/>')}
-  <div style="display:flex;justify-content:space-between;align-items:center;margin:-6px 0 10px">
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin:-6px 0 10px">
     <button class="chip" id="smsSelectAll">Select all shown (${filtered.filter(p=>p.phone).length} with a number)</button>
     ${smsSelectedCount()?`<button class="chip" id="smsClearAll" style="color:#B91C1C">Clear selection</button>`:''}
   </div>
@@ -12646,7 +12669,20 @@ function bindSmsCtrls(){
     paintSmsBody();
   });
   const search=document.getElementById('sms_search');
-  if(search) search.oninput=debounce(()=>{ SMS_SEARCH=search.value; document.getElementById('smsRecipientArea').innerHTML=smsRecipientAreaHtml(); bindSmsCtrls(); });
+  if(search) search.oninput=debounce(()=>{
+    SMS_SEARCH=search.value;
+    const resultsArea=document.getElementById('smsResultsArea');
+    if(resultsArea){ resultsArea.innerHTML=smsResultsAreaHtml(); bindSmsResultCtrls(); }
+  });
+  bindSmsResultCtrls();
+  const msgBox=document.getElementById('sms_message');
+  if(msgBox){ msgBox.oninput=()=>{ const n=msgBox.value.length; const segs=n<=160?1:Math.ceil(n/153);
+    document.getElementById('smsCharCount').textContent=n+' characters · ≈'+segs+' SMS segment'+(segs>1?'s':''); };
+    msgBox.oninput(); }
+  const sendBtn=document.getElementById('smsSendBtn');
+  if(sendBtn) sendBtn.onclick=smsHandleSend;
+}
+function bindSmsResultCtrls(){
   document.querySelectorAll('[data-smsperson]').forEach(cb=>cb.onchange=()=>{
     const phone=cb.dataset.smsperson;
     if(cb.checked) SMS_SELECTED[phone]=cb.dataset.smsname;
@@ -12662,12 +12698,6 @@ function bindSmsCtrls(){
   };
   const clearBtn=document.getElementById('smsClearAll');
   if(clearBtn) clearBtn.onclick=()=>{ SMS_SELECTED={}; paintSmsBody(); };
-  const msgBox=document.getElementById('sms_message');
-  if(msgBox){ msgBox.oninput=()=>{ const n=msgBox.value.length; const segs=n<=160?1:Math.ceil(n/153);
-    document.getElementById('smsCharCount').textContent=n+' characters · ≈'+segs+' SMS segment'+(segs>1?'s':''); };
-    msgBox.oninput(); }
-  const sendBtn=document.getElementById('smsSendBtn');
-  if(sendBtn) sendBtn.onclick=smsHandleSend;
 }
 function paintSmsSelectionButtons(){
   const area=document.getElementById('smsRecipientArea'); if(!area) return;
@@ -12762,8 +12792,8 @@ async function viewExpensesApp(){
   <div id="expBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!EXP_LOADED){
     try{
-      [EXP_CATEGORIES_LIST,EXPENSES_LIST,FUND_REQUESTS_LIST,DAILY_BALANCES_LIST]=await Promise.all([
-        apiLoadExpenseCategories(),apiLoadExpenses(),apiLoadFundRequests(),apiLoadDailyBalances()]);
+      [EXP_CATEGORIES_LIST,EXPENSES_LIST,FUND_REQUESTS_LIST,DAILY_BALANCES_LIST]=await withLoadTimeout(Promise.all([
+        apiLoadExpenseCategories(),apiLoadExpenses(),apiLoadFundRequests(),apiLoadDailyBalances()]),15000,'Expenses');
       EXP_LOADED=true;
     }catch(e){ toast('Could not load expenses: '+(e.message||e)); }
   }
@@ -13350,7 +13380,7 @@ function buildLeaveLetterPDF(req){
 async function viewLeaveApp(){
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Leave Schedules</h2><p>Plan, apply for, and track staff leave</p></div></div>
   <div id="leaveBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
-  if(!LEAVE_REQUESTS_LOADED){ try{ DB.leaveRequests=await apiLoadLeaveRequests(); LEAVE_REQUESTS_LOADED=true; }catch(e){ toast('Could not load leave requests'); } }
+  if(!LEAVE_REQUESTS_LOADED){ try{ DB.leaveRequests=await withLoadTimeout(apiLoadLeaveRequests(),15000,'Leave requests'); LEAVE_REQUESTS_LOADED=true; }catch(e){ toast(e.message||'Could not load leave requests'); } }
   paintLeaveApp();
 }
 function paintLeaveApp(){
@@ -13787,7 +13817,7 @@ function buildMemoPDF(m){
 async function viewMemoApp(){
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Memorandum</h2><p>Write and receive company memos</p></div></div>
   <div id="memoBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
-  if(!MEMOS_LOADED){ try{ DB.memos=await apiLoadMemos(); MEMOS_LOADED=true; }catch(e){ toast('Could not load memos'); } }
+  if(!MEMOS_LOADED){ try{ DB.memos=await withLoadTimeout(apiLoadMemos(),15000,'Memos'); MEMOS_LOADED=true; }catch(e){ toast(e.message||'Could not load memos'); } }
   if(memoComposeSeed) memoAppTab='compose';
   paintMemoApp();
 }
@@ -14019,8 +14049,8 @@ let BANNER_LEAD_COUNTS={};
 async function viewBannerApp(){
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Banner Tracking</h2><p>Add, track, and route to every banner placement</p></div></div>
   <div id="bannerBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
-  if(!BANNERS_LOADED){ try{ DB.banners=await apiLoadBanners(); BANNERS_LOADED=true; }catch(e){ toast('Could not load banners'); } }
-  try{ BANNER_LEAD_COUNTS=await apiLoadLeadBannerCounts(); }catch(e){}
+  if(!BANNERS_LOADED){ try{ DB.banners=await withLoadTimeout(apiLoadBanners(),15000,'Banners'); BANNERS_LOADED=true; }catch(e){ toast(e.message||'Could not load banners'); } }
+  try{ BANNER_LEAD_COUNTS=await withLoadTimeout(apiLoadLeadBannerCounts(),15000,'Banner lead counts'); }catch(e){}
   paintBannerApp();
 }
 function paintBannerApp(){
