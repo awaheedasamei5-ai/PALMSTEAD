@@ -10397,24 +10397,28 @@ function pdfContractCheckRow(doc,x,y,pageW,options,selected){
 // become bold sub-headings, and "N.N.N" / roman-numeral / lettered paragraphs
 // become hanging-indent list items -- so Management's edits keep typesetting
 // correctly without a code change.
-function pdfContractBody(doc,y,n,text){
+//
+// The reference document itself is NOT uniformly dense -- pages 5-8 (the opening
+// paragraphs, WHEREAS preamble, Section 1 Definitions, 1.3 Transaction, and Section
+// 2's Vendor/Purchaser warranties) all sit at a roomier ~50-90% page fill, while
+// Section 3-6 on page 9 is visibly denser to fit everything before the signature
+// page. Both tiers below were tuned against the real reference page-by-page (fill
+// percentage measured off the actual images) rather than guessed.
+const CONTRACT_SPACING_ROOMY={lineH:5.2,itemGap:2.4,headLineH:6.6,headLead:3,headGap:3,subheadGap:6.5,paraGap:3.2};
+const CONTRACT_SPACING_TIGHT={lineH:4.4,itemGap:0.8,headLineH:5.4,headLead:1.2,headGap:1.8,subheadGap:4.5,paraGap:1.8};
+function pdfContractBody(doc,y,n,text,dense){
   const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
   const marginR=pageW-14;
-  // Spacing tightened to match the reference document's actual density -- the original
-  // looser values (5.6mm line height, 3-4mm gaps between every clause) rendered Section
-  // 3-6 roughly 50% taller than the reference's single page 9, spilling onto an extra
-  // page and pushing the signature page from page 10 to page 11. These values were
-  // tuned against the reference's own page 9 (26 clauses + 3 full paragraphs fitting on
-  // one page) until the same content fit on one page with comparable margin.
+  const sp=dense?CONTRACT_SPACING_TIGHT:CONTRACT_SPACING_ROOMY;
   function ensure(need){ if(y+need>pageH-20){ n++; y=pdfContractNewPage(doc,n); } }
   function listItem(markerX,bodyX,marker,body,boldMarker){
-    const w=marginR-bodyX, lines=doc.splitTextToSize(body,w), h=Math.max(lines.length*4.4,4.4);
-    ensure(h+0.8);
+    const w=marginR-bodyX, lines=doc.splitTextToSize(body,w), h=Math.max(lines.length*sp.lineH,sp.lineH);
+    ensure(h+sp.itemGap);
     doc.setFont('times',boldMarker?'bold':'normal'); doc.setFontSize(10); doc.setTextColor(...CONTRACT_INK);
     doc.text(marker,markerX,y);
     doc.setFont('times','normal'); doc.setFontSize(10);
     doc.text(body,bodyX,y,{maxWidth:w,align:'justify'});
-    y+=h+0.8;
+    y+=h+sp.itemGap;
   }
   String(text||'').split(/\n\s*\n/).forEach(raw=>{
     const para=raw.trim(); if(!para) return;
@@ -10426,8 +10430,8 @@ function pdfContractBody(doc,y,n,text){
     if(isSectionHeading){
       doc.setFont('times','bold'); doc.setFontSize(12.5);
       const hLines=doc.splitTextToSize(para,marginR-14);
-      ensure(hLines.length*5.4+2.4); y+=1.2;
-      doc.text(hLines,14,y); y+=hLines.length*5.4+1.8;
+      ensure(hLines.length*sp.headLineH+sp.headLead*2); y+=sp.headLead;
+      doc.text(hLines,14,y); y+=hLines.length*sp.headLineH+sp.headGap;
     } else if(threeLevel){
       listItem(20,38,threeLevel[1],threeLevel[2],false);
     } else if(romanOrLetter){
@@ -10435,18 +10439,18 @@ function pdfContractBody(doc,y,n,text){
     } else if(twoLevel){
       const bodyIsHeading=twoLevel[2]===twoLevel[2].toUpperCase() && twoLevel[2].length<40;
       if(bodyIsHeading){
-        ensure(4.5);
+        ensure(sp.subheadGap);
         doc.setFont('times','bold'); doc.setFontSize(11);
-        doc.text(twoLevel[1]+'  '+twoLevel[2],14,y); y+=4.5;
+        doc.text(twoLevel[1]+'  '+twoLevel[2],14,y); y+=sp.subheadGap;
       } else {
         listItem(14,30,twoLevel[1],twoLevel[2],true);
       }
     } else {
-      const w=marginR-14, lines=doc.splitTextToSize(para,w), h=lines.length*4.4;
-      ensure(h+1.8);
+      const w=marginR-14, lines=doc.splitTextToSize(para,w), h=lines.length*sp.lineH;
+      ensure(h+sp.paraGap);
       doc.setFont('times','normal'); doc.setFontSize(10);
       doc.text(para,14,y,{maxWidth:w,align:'justify'});
-      y+=h+1.8;
+      y+=h+sp.paraGap;
     }
   });
   return {y,n};
@@ -10456,6 +10460,57 @@ function pdfContractBody(doc,y,n,text){
 function contractAcres(lead){
   const perPlot=lead.plotType==='Half Plot'?0.0804:0.1607;
   return Math.round(perPlot*(num(lead.noPlots)||1)*100)/100;
+}
+// The reference document underlines the Purchaser's name+address specifically ("NAME
+// of ADDRESS herein called...") -- jsPDF has no per-substring rich-text within a
+// single text() call, so this renders the paragraph left-aligned (not justified,
+// unlike the surrounding body text) specifically so the underlined portion's width
+// can be measured accurately and drawn beneath it, line by line if it wraps.
+function pdfContractUnderlinedPara(doc,y,n,underlinedText,restText){
+  const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
+  const w=pageW-28, lineH=CONTRACT_SPACING_ROOMY.lineH;
+  const fullText=underlinedText+restText;
+  doc.setFont('times','normal'); doc.setFontSize(10); doc.setTextColor(...CONTRACT_INK);
+  const lines=doc.splitTextToSize(fullText,w);
+  if(y+lines.length*lineH+CONTRACT_SPACING_ROOMY.paraGap>pageH-20){ n++; y=pdfContractNewPage(doc,n); }
+  let remaining=underlinedText.length;
+  lines.forEach((line,i)=>{
+    doc.text(line,14,y+i*lineH);
+    if(remaining>0){
+      const take=Math.min(remaining,line.length);
+      const uw=doc.getTextWidth(line.slice(0,take));
+      doc.setDrawColor(...CONTRACT_INK); doc.setLineWidth(0.25);
+      doc.line(14,y+i*lineH+1,14+uw,y+i*lineH+1);
+      remaining-=take;
+    }
+  });
+  return {y:y+lines.length*lineH+CONTRACT_SPACING_ROOMY.paraGap,n};
+}
+// A handful of paragraphs in the reference have a bold lead-in phrase followed by
+// normal-weight text (e.g. "NOW THEREFORE," ...), or are bold in full (e.g. the
+// "Parties"/"a party" defined-terms line) -- same left-aligned, width-measured
+// approach as pdfContractUnderlinedPara so the bold/normal split lands correctly.
+function pdfContractLeadBoldPara(doc,y,n,boldLead,rest,dense){
+  const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
+  const w=pageW-28, sp=dense?CONTRACT_SPACING_TIGHT:CONTRACT_SPACING_ROOMY;
+  const fullText=boldLead+rest;
+  doc.setFont('times','normal'); doc.setFontSize(10); doc.setTextColor(...CONTRACT_INK);
+  const lines=doc.splitTextToSize(fullText,w);
+  if(y+lines.length*sp.lineH+sp.paraGap>pageH-20){ n++; y=pdfContractNewPage(doc,n); }
+  let remaining=boldLead.length;
+  lines.forEach((line,i)=>{
+    if(remaining>0){
+      const take=Math.min(remaining,line.length);
+      const boldPart=line.slice(0,take), restPart=line.slice(take);
+      doc.setFont('times','bold'); doc.text(boldPart,14,y+i*sp.lineH);
+      const bw=doc.getTextWidth(boldPart);
+      doc.setFont('times','normal'); doc.text(restPart,14+bw,y+i*sp.lineH);
+      remaining-=take;
+    } else {
+      doc.setFont('times','normal'); doc.text(line,14,y+i*sp.lineH);
+    }
+  });
+  return {y:y+lines.length*sp.lineH+sp.paraGap,n};
 }
 async function ensureContractAssets(){
   if(!CONTRACT_COVER_IMG) CONTRACT_COVER_IMG=await loadImageAsync(CONFIG.contractCoverImage||'./contract-cover.jpg');
@@ -10556,7 +10611,7 @@ async function buildContractOfSalePDF(lead){
 
   // ---- Page 5: Contract of Sale opening + WHEREAS ----
   n=5; y=pdfContractNewPage(doc,n);
-  doc.setFont('times','bold'); doc.setFontSize(12);
+  doc.setFont('times','normal'); doc.setFontSize(12);
   doc.text('CONTRACT OF SALE',pageW/2,y,{align:'center'});
   doc.setLineWidth(0.3); doc.setDrawColor(...CONTRACT_INK);
   const tw=doc.getTextWidth('CONTRACT OF SALE');
@@ -10568,12 +10623,14 @@ async function buildContractOfSalePDF(lead){
   ({y,n}=pdfContractBody(doc,y,n,'BETWEEN'));
   ({y,n}=pdfContractBody(doc,y,n,vendorName+' of P.O. BOX CO3644, Tema represented by its CEO, '+ceo+' (herein called "the Vendor" which expression shall where the context so requires, include its successors or assigns) on one part.'));
   ({y,n}=pdfContractBody(doc,y,n,'AND'));
-  ({y,n}=pdfContractBody(doc,y,n,String(lead.name||'').toUpperCase()+' of '+(lead.address||'…………………………………………..')+' herein called "the Purchaser", which expression shall, where the context so requires, include his legal heirs, successors, successors-in-interest, executors, legal representatives, and/or assigns) of the other part.'));
-  ({y,n}=pdfContractBody(doc,y,n,'The Purchaser and the Vendor shall where the context so require be referred as "the Parties" and individually as "a party"'));
+  ({y,n}=pdfContractUnderlinedPara(doc,y,n,
+    String(lead.name||'').toUpperCase()+' of '+(lead.address||'…………………………………………..'),
+    ' herein called "the Purchaser", which expression shall, where the context so requires, include his legal heirs, successors, successors-in-interest, executors, legal representatives, and/or assigns) of the other part.'));
+  ({y,n}=pdfContractLeadBoldPara(doc,y,n,'The Purchaser and the Vendor shall where the context so require be referred as "the Parties" and individually as "a party"',''));
   doc.setFont('times','normal'); doc.setFontSize(10.5); doc.setTextColor(...CONTRACT_INK);
   doc.text('WHEREAS;',14,y); y+=8;
   ({y,n}=pdfContractBody(doc,y,n,(CONFIG.contractPreamble||'').replace('{ACRES}',acres)));
-  ({y,n}=pdfContractBody(doc,y,n,'NOW THEREFORE, in consideration of the foregoing and the terms set forth in this Agreement, the receipt and sufficiency of which is hereby acknowledged, and intending to be legally bound hereby, the Parties agree as follows:'));
+  ({y,n}=pdfContractLeadBoldPara(doc,y,n,'NOW THEREFORE,',' in consideration of the foregoing and the terms set forth in this Agreement, the receipt and sufficiency of which is hereby acknowledged, and intending to be legally bound hereby, the Parties agree as follows:'));
 
   // ---- 1. Definitions and Interpretation (editable, static) ----
   // Reference document starts Section 1 on its own fresh page (page 6) even though
@@ -10611,7 +10668,7 @@ async function buildContractOfSalePDF(lead){
   if(termsChunks[1]){ n++; y=pdfContractNewPage(doc,n); ({y,n}=pdfContractBody(doc,y,n,termsChunks[1])); }
   if(termsChunks[2]){
     n++; y=pdfContractNewPage(doc,n);
-    ({y,n}=pdfContractBody(doc,y,n,termsChunks[2]));
+    ({y,n}=pdfContractBody(doc,y,n,termsChunks[2],true));
     y+=8; if(y>pageH-24){ n++; y=pdfContractNewPage(doc,n); }
     doc.setFont('times','bold'); doc.setFontSize(11); doc.setTextColor(...CONTRACT_INK);
     doc.text('{SIGNATURE PAGE TO FOLLOW}',pageW/2,y,{align:'center'});
