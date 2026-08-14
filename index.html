@@ -3232,9 +3232,10 @@ function clientDatabaseListHtml(){
   const q=CLIENTDB_QUERY.toLowerCase();
   const filtered=CLIENTDB_LIST.filter(l=>!q||(l.name||'').toLowerCase().includes(q)||String(l.contact||'').includes(q));
   if(!filtered.length) return emptyState(ic.lead,'No clients found','Try a different name or phone number.');
-  return filtered.map(l=>{
+  return filtered.map((l,i)=>{
     const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0);
-    return `<button class="rowcard" style="text-align:left;width:100%" data-cdbopen="${esc(l.id)}"><div class="top"><div><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'')} · agent ${esc(l.agent||'—')} · stage ${esc(l.stage||'')}</div></div><div style="text-align:right"><div class="amt">${bal>0?ghs(bal):'Paid'}</div><div class="meta">${bal>0?'balance':'in full'}</div></div></div></button>`;
+    const initials=(l.name||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    return `<button class="rowcard pipeCard stage-${esc(l.stage||'')}" style="text-align:left;width:100%;animation-delay:${Math.min(i*25,250)}ms" data-cdbopen="${esc(l.id)}"><div class="top"><div class="pipeAvatar">${esc(initials)}</div><div style="flex:1;min-width:0"><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'')} · agent ${esc(soldByLabel(l.agent)||l.agent||'—')} · stage ${esc(l.stage||'')}</div></div><div style="text-align:right"><div class="amt">${bal>0?ghs(bal):'Paid'}</div><div class="meta">${bal>0?'balance':'in full'}</div></div></div></button>`;
   }).join('');
 }
 function bindClientDatabaseCtrls(container){
@@ -3263,16 +3264,17 @@ function bindClientDbRows(container){
   container.querySelectorAll('[data-cdbopen]').forEach(b=>b.onclick=()=>route('updateOne',b.dataset.cdbopen));
 }
 function clientDatabaseBodyHtml(){
-  return `<div style="margin-bottom:14px"><button class="btn primary" id="cdbAddBtn" style="width:100%">+ Add new client</button></div>
-  <div class="rowcard" style="margin-bottom:14px;padding:14px 16px">
-    <div style="font-weight:700;font-size:13.5px;margin-bottom:4px">Bulk-import historical clients</div>
-    <p class="mini" style="margin-bottom:10px">Download the blank template, fill in one row per client (same columns as your pipeline export), then upload it here. Matches by name + contact, so re-uploading the same file only updates what changed — nothing gets duplicated. To attribute rows to a specific agent, prefix that row's Notes with "[Agent Name] " (exactly as Master Pipeline exports do); unmarked rows are attributed to you.</p>
+  return `${clientDatabaseStatStripHtml()}
+  <div style="margin-bottom:14px"><button class="btn primary" id="cdbAddBtn" style="width:100%">+ Add new client</button></div>
+  <details class="rowcard" style="margin-bottom:14px;padding:14px 16px">
+    <summary style="font-weight:700;font-size:13.5px;cursor:pointer">Bulk-import historical clients</summary>
+    <p class="mini" style="margin:10px 0">Download the blank template, fill in one row per client (same columns as your pipeline export), then upload it here. Matches by name + contact, so re-uploading the same file only updates what changed — nothing gets duplicated. To attribute rows to a specific agent, prefix that row's Notes with "[Agent Name] " (exactly as Master Pipeline exports do); unmarked rows are attributed to you.</p>
     <div class="grid2">
       <button class="btn ghost" id="cdbTemplateBtn">⬇ Blank template</button>
       <button class="btn ghost" id="cdbImportBtn">⬆ Upload &amp; import</button>
     </div>
     <input type="file" id="cdbImportFile" accept=".xlsx" style="display:none"/>
-  </div>
+  </details>
   <div class="searchbar"><input id="cdbq" placeholder="Search name or contact…" value="${esc(CLIENTDB_QUERY)}"/></div>
   <div class="list" id="cdbList">${clientDatabaseListHtml()}</div>`;
 }
@@ -3331,6 +3333,11 @@ async function viewClientDatabase(){
   const body=document.getElementById('cdbBody');
   body.innerHTML=clientDatabaseBodyHtml();
   bindClientDatabaseCtrls(body);
+}
+function clientDatabaseStatStripHtml(){
+  const totalBal=CLIENTDB_LIST.reduce((s,l)=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; return s+Math.max(g-num(l.amtPaid),0); },0);
+  const paidCount=CLIENTDB_LIST.filter(l=>isFullyPaid(l)).length;
+  return `<div class="pipeStatStrip"><div class="pipeStat"><div class="v">${CLIENTDB_LIST.length}</div><div class="l">Clients</div></div><div class="pipeStat"><div class="v">${paidCount}</div><div class="l">Paid in full</div></div><div class="pipeStat"><div class="v">${ghs(totalBal)}</div><div class="l">Outstanding</div></div></div>`;
 }
 const LEAD_SOURCES=['Social Media','Radio','TV','Recommendation','Banner'];
 function companyLeadsListHtml(){
