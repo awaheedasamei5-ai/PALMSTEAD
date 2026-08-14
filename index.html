@@ -10362,6 +10362,7 @@ async function managerView(){
   else if(mgrTab==='Staff Settings'){ TEAM_ROSTER=await apiLoadFullRoster(); INVITE_LIST=await apiListInvites().catch(()=>[]); body.innerHTML=mgrStaffSettingsHtml(); bindStaffSettingsCtrls(); }
   else if(mgrTab==='Company Settings'){ body.innerHTML=mgrCompanySettingsHtml(); bindCompanySettingsCtrls(); }
   else if(mgrTab==='Backup & Restore'){ if(!BACKUPS_LOADED){ try{ BACKUPS_LIST=await apiLoadBackups(); BACKUPS_LOADED=true; }catch(e){} } body.innerHTML=mgrBackupHtml(); bindMgrBackupCtrls(); }
+  else if(mgrTab==='System Health'){ body.innerHTML=`<div class="skel" style="height:120px;border-radius:16px"></div>`; const health=await computeSystemHealth(); body.innerHTML=systemHealthHtml(health); bindSystemHealthCtrls(); }
   else if(mgrTab==='System'){ body.innerHTML=mgrSystemHtml(); bindSystemCtrls(); }
 }
 function allAgentLists(){
@@ -11317,6 +11318,7 @@ const SETTINGS_APPS=[
   {key:'Staff Settings',fic:'briefcase',label:'Staff Settings',section:'settingshub'},
   {key:'Company Settings',fic:'location',label:'Company Settings',section:'settingshub'},
   {key:'Backup & Restore',fic:'backup',label:'Backup & Restore',section:'settingshub'},
+  {key:'System Health',fic:'alert',label:'System Health',section:'settingshub'},
   {key:'System',fic:'settings',label:'System',section:'settingshub'}
 ];
 function mgrSettingsHubHtml(){
@@ -11666,6 +11668,74 @@ function openRestoreConfirmModal(backupId,whenLabel){
       await apiLoadAll(); BACKUPS_LOADED=false; BACKUPS_LIST=await apiLoadBackups(); BACKUPS_LOADED=true;
       managerView();
     }catch(e){ toast('Restore failed: '+(e.message||e)); goBtn.disabled=false; goBtn.textContent='Restore now'; }
+  };
+}
+/* System Health -- Management-only snapshot of things that can silently fail:
+   SMS delivery, scheduled backups, data-integrity issues, and stuck approvals.
+   Every signal here is read from data already tracked elsewhere in the app --
+   nothing new is logged just for this screen. */
+async function apiLoadSmsHealth(){
+  if(DEMO_MODE) return {sent:0,failed:0,lastFailure:null,total:0};
+  const since=isoPlusDays(today(),-7);
+  const {data,error}=await sb.from('sms_log').select('status,error,created_at').gte('created_at',since).order('created_at',{ascending:false});
+  if(error||!data) return {sent:0,failed:0,lastFailure:null,total:0};
+  const failed=data.filter(r=>r.status==='failed');
+  return {sent:data.filter(r=>r.status==='sent').length,failed:failed.length,total:data.length,
+    lastFailure:failed[0]||null};
+}
+async function computeSystemHealth(){
+  const sms=await apiLoadSmsHealth();
+  let backups=BACKUPS_LOADED?BACKUPS_LIST:[];
+  if(!DEMO_MODE && !BACKUPS_LOADED){ try{ backups=await apiLoadBackups(); BACKUPS_LIST=backups; BACKUPS_LOADED=true; }catch(e){} }
+  const last7dBackups=backups.filter(b=>b.created_at>=isoPlusDays(today(),-7)+'T00:00:00');
+  const mostRecentBackup=backups[0]||null;
+  const hoursSinceBackup=mostRecentBackup?Math.round((Date.now()-new Date(mostRecentBackup.created_at).getTime())/3600000):null;
+  const integrityIssues=DEMO_MODE?[]:runDataIntegrityCheck();
+  if(!EXP_LOADED && !DEMO_MODE){ try{ [EXP_CATEGORIES_LIST,EXPENSES_LIST,FUND_REQUESTS_LIST,DAILY_BALANCES_LIST]=await Promise.all([apiLoadExpenseCategories(),apiLoadExpenses(),apiLoadFundRequests(),apiLoadDailyBalances()]); EXP_LOADED=true; }catch(e){} }
+  const pendingPayments=(DB.pendingPayments||[]);
+  const pendingExpenses=(EXPENSES_LIST||[]).filter(e=>e.status==='pending');
+  const pendingFunds=(FUND_REQUESTS_LIST||[]).filter(f=>f.status==='pending');
+  const oldestPendingAgeDays=(list,dateKey)=>{ if(!list.length) return null; const oldest=list.reduce((a,b)=>(a[dateKey]||'')<(b[dateKey]||'')?a:b); const d=new Date(oldest[dateKey]||oldest.createdAt||Date.now()); return Math.round((Date.now()-d.getTime())/86400000); };
+  return {sms,backups,last7dBackups,mostRecentBackup,hoursSinceBackup,integrityIssues,
+    pendingPayments,pendingExpenses,pendingFunds,
+    oldestPendingPaymentDays:oldestPendingAgeDays(pendingPayments,'createdAt'),
+    oldestPendingExpenseDays:oldestPendingAgeDays(pendingExpenses,'createdAt'),
+    oldestPendingFundDays:oldestPendingAgeDays(pendingFunds,'createdAt')};
+}
+function healthTag(ok,warnLabel,okLabel){ return ok?`<span class="tag ok">${okLabel||'Healthy'}</span>`:`<span class="tag dgr">${warnLabel||'Needs attention'}</span>`; }
+function systemHealthHtml(h){
+  if(DEMO_MODE) return `<div class="formwrap">${emptyState(ic.alert,'Only meaningful live','System Health reads real SMS/backup/approval data — connect to Supabase to use it.')}</div>`;
+  const smsOk=h.sms.total===0||h.sms.failed===0;
+  const backupOk=h.hoursSinceBackup!=null&&h.hoursSinceBackup<12;
+  const integrityOk=h.integrityIssues.length===0;
+  const pendingTotal=h.pendingPayments.length+h.pendingExpenses.length+h.pendingFunds.length;
+  const oldestPendingDays=Math.max(h.oldestPendingPaymentDays||0,h.oldestPendingExpenseDays||0,h.oldestPendingFundDays||0);
+  const pendingOk=pendingTotal===0||oldestPendingDays<2;
+  return `<div id="systemHealthBody">
+  <div class="formwrap" style="padding:6px 15px">
+    <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">SMS delivery</div><div class="mini">${h.sms.total?`${h.sms.sent} sent · ${h.sms.failed} failed (last 7 days)`:'No SMS activity in the last 7 days'}${h.sms.lastFailure?' · last failure '+esc((h.sms.lastFailure.created_at||'').slice(0,16).replace('T',' ')):''}</div></div></div>${healthTag(smsOk,'Failures detected')}</div>
+    <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Scheduled backups</div><div class="mini">${h.mostRecentBackup?`Last backup ${h.hoursSinceBackup}h ago · ${h.last7dBackups.length} in the last 7 days`:'No backups found yet'}</div></div></div>${healthTag(backupOk,'Overdue')}</div>
+    <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Data integrity</div><div class="mini">${h.integrityIssues.length?h.integrityIssues.length+' pricing/payment issue(s) flagged':'No pricing/payment inconsistencies found'}</div></div></div>${healthTag(integrityOk,h.integrityIssues.length+' issue(s)')}</div>
+    <div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">Pending approvals</div><div class="mini">${pendingTotal?`${h.pendingPayments.length} payment(s) · ${h.pendingExpenses.length} expense(s) · ${h.pendingFunds.length} fund request(s)${oldestPendingDays?' · oldest '+oldestPendingDays+'d':''}`:'Nothing waiting on a decision'}</div></div></div>${healthTag(pendingOk,'Stuck items')}</div>
+  </div>
+  <div class="formactions" style="flex-direction:column;gap:8px;margin-top:6px">
+    ${h.integrityIssues.length?`<button class="chip" id="healthGoIntegrity" style="width:100%">Review data integrity issues →</button>`:''}
+    ${h.pendingPayments.length?`<button class="chip" id="healthGoPayments" style="width:100%">Review pending payments →</button>`:''}
+    ${(h.pendingExpenses.length+h.pendingFunds.length)?`<button class="chip" id="healthGoExpenses" style="width:100%">Review pending expenses/funds →</button>`:''}
+    <button class="chip" id="healthRefresh" style="width:100%">↻ Refresh</button>
+  </div>
+  <p class="mini" style="margin:14px 15px 0">SMS delivery uses the last 7 days of sms_log entries. Backups are considered overdue after 12 hours (scheduled 3x/day). Pending approvals are flagged once the oldest item has waited 2+ days.</p>
+  </div>`;
+}
+function bindSystemHealthCtrls(){
+  const goIntegrity=document.getElementById('healthGoIntegrity'); if(goIntegrity) goIntegrity.onclick=()=>route('myDataCheck');
+  const goPayments=document.getElementById('healthGoPayments'); if(goPayments) goPayments.onclick=()=>route('logpayment');
+  const goExpenses=document.getElementById('healthGoExpenses'); if(goExpenses) goExpenses.onclick=()=>route('expenses');
+  const refresh=document.getElementById('healthRefresh'); if(refresh) refresh.onclick=async()=>{
+    refresh.disabled=true; refresh.textContent='Refreshing…';
+    const health=await computeSystemHealth();
+    const container=document.getElementById('systemHealthBody');
+    if(container){ container.outerHTML=systemHealthHtml(health); bindSystemHealthCtrls(); }
   };
 }
 /* Notes app -- simple private jot-down/save/send/download tool. Each agent/manager only
