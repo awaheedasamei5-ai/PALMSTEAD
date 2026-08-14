@@ -12560,6 +12560,7 @@ async function viewExpensesApp(){
   if(DEMO_MODE){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Only available live','Expenses track real money and receipts — connect to Supabase (Portal settings) to use it.'); return; }
   EXP_TAB='log';
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Operations</div><h2>Expenses</h2><p>Log spending, request funds, and track the daily cash/MoMo/bank position.</p></div></div>
+  <div class="pipeStatStrip" id="expStatStrip"></div>
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap" id="expTabs"></div>
   <div id="expBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!EXP_LOADED){
@@ -12574,6 +12575,12 @@ async function viewExpensesApp(){
 function expPendingCount(){ return EXPENSES_LIST.filter(e=>e.status==='pending').length + FUND_REQUESTS_LIST.filter(f=>f.status==='pending').length; }
 function paintExpensesApp(){
   const isMgr=PROFILE.role==='manager';
+  const stripEl=document.getElementById('expStatStrip');
+  if(stripEl){
+    const thisMonth=today().slice(0,7);
+    const monthSpent=EXPENSES_LIST.filter(e=>e.status==='approved'&&(e.date||'').slice(0,7)===thisMonth).reduce((s,e)=>s+num(e.amount),0);
+    stripEl.innerHTML=`<div class="pipeStat"><div class="v">${ghs(monthSpent)}</div><div class="l">Spent this month</div></div><div class="pipeStat"><div class="v">${expPendingCount()}</div><div class="l">Pending</div></div>`;
+  }
   const tabs=document.getElementById('expTabs');
   const pc=expPendingCount();
   tabs.innerHTML=[
