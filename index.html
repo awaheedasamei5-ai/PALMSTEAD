@@ -14317,7 +14317,36 @@ async function checkMonthlyCommissionReport(){
 }
 
 /* ================= BOOT ================= */
-if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{})); }
+// The in-app "refresh" button only re-fetches DATA (apiLoadAll) -- it can never pick
+// up new code, since this is a single JS file already parsed and running. The only
+// way to get new features is a real reload, which is why "refresh doesn't show new
+// stuff" kept happening until someone signed out and back in (which does reload).
+// This actively checks for a new deployed version and offers a one-tap reload
+// instead of leaving staff to discover that by accident.
+function showUpdateBanner(){
+  if(document.getElementById('updateBanner')) return;
+  const b=document.createElement('div'); b.id='updateBanner';
+  b.style.cssText='position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:500;background:var(--ink);color:#fff;border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 12px 32px rgba(0,0,0,.35);animation:fadeUp .3s ease both';
+  b.innerHTML='<span style="flex:1;font-size:12.5px;font-weight:600">A new version of Palmstead is ready.</span><button style="background:var(--green);color:#fff;border:none;border-radius:100px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">Reload</button>';
+  b.querySelector('button').onclick=()=>window.location.reload();
+  document.body.appendChild(b);
+}
+if('serviceWorker' in navigator){
+  window.addEventListener('load',async()=>{
+    try{
+      const reg=await navigator.serviceWorker.register('./sw.js');
+      if(reg.waiting && navigator.serviceWorker.controller) showUpdateBanner();
+      reg.addEventListener('updatefound',()=>{
+        const installing=reg.installing; if(!installing) return;
+        installing.addEventListener('statechange',()=>{
+          if(installing.state==='installed' && navigator.serviceWorker.controller) showUpdateBanner();
+        });
+      });
+      setInterval(()=>reg.update().catch(()=>{}),5*60*1000);
+      document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') reg.update().catch(()=>{}); });
+    }catch(e){}
+  });
+}
 function hideBoot(){
   const b=document.getElementById('boot');
   b.classList.add('fade');
