@@ -3032,7 +3032,7 @@ function bindClientDatabaseCtrls(container){
     importBtn.onclick=()=>importFile.click();
     importFile.onchange=e=>{
       if(!e.target.files[0]){ return; }
-      importPipelineExcel(e.target.files[0],{companyWide:true,onDone:async()=>{
+      startPipelineImport(e.target.files[0],{companyWide:true,onDone:async()=>{
         CLIENTDB_LOADED=false; try{ await apiLoadClientDatabase(); }catch(err){ toast('Could not refresh client list: '+(err.message||err)); }
         const body=document.getElementById('cdbBody'); if(body){ body.innerHTML=clientDatabaseBodyHtml(); bindClientDatabaseCtrls(body); }
       }});
@@ -5363,7 +5363,7 @@ function viewPipeline(){
   V.querySelectorAll('[data-recentcust]').forEach(b=>b.onclick=()=>route('customer',{name:b.dataset.recentcust,contact:b.dataset.recentcontact}));
   document.getElementById('xlMyPipelineBtn').onclick=downloadAgentPipelineExcel;
   document.getElementById('xlImportBtn').onclick=()=>document.getElementById('xlImportFile').click();
-  document.getElementById('xlImportFile').onchange=e=>{ if(e.target.files[0]) importPipelineExcel(e.target.files[0]); e.target.value=''; };
+  document.getElementById('xlImportFile').onchange=e=>{ if(e.target.files[0]) startPipelineImport(e.target.files[0]); e.target.value=''; };
   if(PROFILE.role==='manager'){
     document.getElementById('pipeBackupBtn').onclick=openPipelineBackupModal;
     document.getElementById('pipeRestoreBtn').onclick=()=>document.getElementById('pipeRestoreFile').click();
@@ -10743,8 +10743,37 @@ function bindLeagueCtrls(){
 }
 
 /* ================= REPORTS (Excel workbook + CSV) ================= */
+let REPORTS_SEARCH='';
+function reportsSearchResults(){
+  const q=REPORTS_SEARCH.trim().toLowerCase(); if(!q) return [];
+  const qDigits=normContact(q);
+  return allAgentLists().flatMap(a=>a.list.map(l=>({...l,agentName:a.name})))
+    .filter(l=>(l.name||'').toLowerCase().includes(q)||(qDigits&&normContact(l.contact).includes(qDigits))).slice(0,25);
+}
+function reportsSearchResultsHtml(){
+  const q=REPORTS_SEARCH.trim(); if(!q) return '';
+  const results=reportsSearchResults();
+  return `<div class="list" style="margin-bottom:20px">${results.length?results.map(l=>{
+    const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand;
+    return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'—')} · ${esc(l.agentName)} · stage ${esc(l.stage||'')}</div></div><div class="amt">${ghs(g)}</div></div>
+    <div class="foot" style="gap:8px"><button class="chip" data-reportsdlone="${esc(l.id)}">⬇ Download this client (CSV)</button></div></div>`;
+  }).join(''):emptyState(ic.doc,'No matches','Try a different name or number.')}</div>`;
+}
+function bindReportsSearchResultRows(){
+  document.querySelectorAll('[data-reportsdlone]').forEach(b=>b.onclick=()=>{
+    const l=reportsSearchResults().find(x=>x.id===b.dataset.reportsdlone); if(!l) return;
+    const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand;
+    exportCSV([{...l,agentName:l.agentName,grand:g,bal:Math.max(g-num(l.amtPaid),0)}],[
+      ['Agent','agentName'],['Client','name'],['Contact','contact'],['Date Added','date'],['Stage','stage'],
+      ['Plot Type','plotType'],['No. Plots','noPlots'],['Grand Total','grand'],['Amount Paid',r=>num(r.amtPaid)],
+      ['Balance','bal'],['Priority','priority'],['Next Action','nextAction']
+    ],'Client_'+l.name.replace(/\s+/g,'_')+'_'+today()+'.csv');
+  });
+}
 function mgrReports(){
   return `<div class="pagehead" style="margin-bottom:6px"><div><div class="eyebrow">Reports</div><h2>Download company data</h2><p>Live figures, exported on demand — nothing pre-generated or stale.</p></div></div>
+  <div class="searchbar" style="margin-bottom:10px"><input id="reportsSearchInput" placeholder="Search a client by name or contact…" value="${esc(REPORTS_SEARCH)}"/></div>
+  <div id="reportsSearchResults">${reportsSearchResultsHtml()}</div>
   <div class="formwrap" style="margin-bottom:20px">
     <div class="nm" style="font-size:15.5px;margin-bottom:4px">Company Report — Excel</div>
     <div class="meta" style="margin-bottom:14px">One styled workbook: Summary · Agent performance · Leads · Enquiries · Complaints · Site visits</div>
@@ -10792,6 +10821,8 @@ async function downloadMasterPipelineExcel(){
   btn.disabled=false; btn.textContent='⬇ Download Master Pipeline (.xlsx)';
 }
 function bindReportCtrls(){
+  document.getElementById('reportsSearchInput').oninput=e=>{ REPORTS_SEARCH=e.target.value; document.getElementById('reportsSearchResults').innerHTML=reportsSearchResultsHtml(); bindReportsSearchResultRows(); };
+  bindReportsSearchResultRows();
   document.getElementById('xlCompanyBtn').onclick=downloadCompanyExcel;
   document.getElementById('xlMasterBtn').onclick=downloadMasterPipelineExcel;
   document.getElementById('viewAgentFilterBtn').onclick=()=>route('agentDetail',document.getElementById('agentFilterSel').value);
@@ -10974,6 +11005,91 @@ function resolveImportColumns(ws){
   // (e.g. someone renamed a header slightly) so a partial edit still mostly works
   Object.keys(PL_INPUT_COLS).forEach(key=>{ if(!found[key]) found[key]=PL_INPUT_COLS[key]; });
   return found;
+}
+/* Read-only pre-import scan: mirrors importPipelineExcel's row matching/validation
+   WITHOUT writing anything, so a bad file can be caught and reviewed before it ever
+   touches real client data. Deliberately duplicates a bit of the matching logic
+   rather than refactoring the (already hard-won, bug-fixed) commit path itself --
+   the existing commit function was left untouched to avoid regressing it. */
+async function scanImportFile(file,opts){
+  opts=opts||{};
+  if(typeof ExcelJS==='undefined') throw new Error('Import library failed to load — check your connection.');
+  const buf=await file.arrayBuffer();
+  const wb=new ExcelJS.Workbook(); await wb.xlsx.load(buf);
+  const ws=wb.getWorksheet('💼 Pipeline')||wb.getWorksheet('Pipeline')||wb.worksheets[0];
+  if(!ws) throw new Error('Could not find the Pipeline sheet in that file');
+  const cols=resolveImportColumns(ws);
+  const isManagerImport=opts.companyWide||PROFILE.role==='manager';
+  let freshLeads;
+  if(DEMO_MODE){ freshLeads=DB.leads.slice(); }
+  else{
+    let lq=sb.from('leads').select('*');
+    if(!isManagerImport) lq=lq.eq('agent_key',PROFILE.agent_key);
+    const {data,error}=await lq; if(error) throw error;
+    freshLeads=(data||[]).map(mapLead);
+  }
+  let toAdd=0,toUpdate=0,skipped=0; const warnings=[]; const seenInFile=new Set();
+  let r=PL_DATA_START;
+  while(r<=Math.max(ws.rowCount,PL_DATA_END)+1){
+    const row=ws.getRow(r);
+    const get=(key)=>row.getCell(cols[key]).value;
+    const name=xlCellText(get('name'));
+    const leadId=xlCellText(get('leadId'));
+    if(!name && !leadId){ r++; if(r>PL_DATA_END+5) break; continue; }
+    if(!name){ skipped++; r++; continue; }
+    const rowLabel='Row '+r+' ('+name+')';
+    const contact=xlCellText(get('contact'));
+    const dateRaw=get('date'); const dateParsed=xlCellDate(dateRaw);
+    if(dateRaw && !dateParsed) warnings.push(rowLabel+': date could not be read — will default to today');
+    const contactDigits=contact?normContact(contact):'';
+    if(contact && contactDigits.length<7) warnings.push(rowLabel+': contact number looks too short to be valid ("'+contact+'")');
+    const stageRaw=xlCellText(get('stage'));
+    if(stageRaw && !STAGES.includes(stageRaw)) warnings.push(rowLabel+': unrecognized stage "'+stageRaw+'" — will default to stage 1');
+    const discount=xlCellNum(get('discount'));
+    if(discount!=null && discount<0) warnings.push(rowLabel+': negative discount ('+discount+')');
+    const amtPaid=xlCellNum(get('amtPaid'));
+    if(amtPaid!=null && amtPaid<0) warnings.push(rowLabel+': negative amount paid ('+amtPaid+')');
+    const noPlots=xlCellNum(get('noPlots'));
+    if(noPlots!=null && noPlots<=0) warnings.push(rowLabel+': plot count is zero or negative');
+    const dupKey=name.trim().toLowerCase()+'|'+contactDigits;
+    if(contact && seenInFile.has(dupKey)) warnings.push(rowLabel+': appears more than once in this file (same name + contact)');
+    seenInFile.add(dupKey);
+    let existing=null;
+    if(contact) existing=freshLeads.find(x=>(x.name||'').trim().toLowerCase()===name.trim().toLowerCase() && normContact(x.contact)===contactDigits);
+    if(!existing && leadId) existing=freshLeads.find(x=>x.id===leadId);
+    if(!existing && !contact) existing=freshLeads.find(x=>(x.name||'').trim().toLowerCase()===name.trim().toLowerCase());
+    if(existing) toUpdate++; else toAdd++;
+    r++;
+  }
+  return {toAdd,toUpdate,skipped,warnings};
+}
+function openImportPreviewModal(file,opts,scan){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  const warnHtml=scan.warnings.length?`<div class="mini" style="margin:10px 0 4px;font-weight:700;color:#B45309">${scan.warnings.length} warning${scan.warnings.length===1?'':'s'} — review before continuing</div>
+    <div style="max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:4px">${scan.warnings.slice(0,50).map(w=>`<div class="mini" style="margin-bottom:6px">⚠ ${esc(w)}</div>`).join('')}${scan.warnings.length>50?`<div class="mini">…and ${scan.warnings.length-50} more</div>`:''}</div>`:'';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Review before importing</div><button id="closeImportPreview" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="kpis" style="margin-bottom:6px">${kpi('New clients',scan.toAdd)}${kpi('Existing (may update)',scan.toUpdate)}${kpi('Skipped (blank)',scan.skipped)}</div>
+    ${warnHtml}
+    <div class="mini" style="margin:10px 0 14px">Existing clients only change if a value actually differs — matching by name + contact never duplicates on re-upload.</div>
+    <div class="formactions"><button class="btn primary" id="ip_confirm" style="width:100%">${scan.warnings.length?'Import anyway':'Import now'}</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeImportPreview').onclick=()=>ov.remove();
+  document.getElementById('ip_confirm').onclick=async()=>{
+    const btn=document.getElementById('ip_confirm'); btn.disabled=true; btn.textContent='Importing…';
+    ov.remove();
+    await importPipelineExcel(file,opts);
+  };
+}
+async function startPipelineImport(file,opts){
+  toast('Checking file…');
+  try{
+    const scan=await scanImportFile(file,opts);
+    openImportPreviewModal(file,opts,scan);
+  }catch(e){ toast('Could not read that file: '+(e.message||e)); }
 }
 async function importPipelineExcel(file,opts){
   opts=opts||{};
