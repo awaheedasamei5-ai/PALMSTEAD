@@ -15,9 +15,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="preconnect" href="https://lrahgcnftetnyxunaljs.supabase.co">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
 <style>
 :root{
   --user-font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
@@ -847,6 +844,9 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 .greetScreen .gSub{font-size:13px;color:#9DB2CC;letter-spacing:.02em;max-width:300px;text-align:center;line-height:1.5;opacity:0;animation:fadeUp .6s .5s ease forwards}
 .greetScreen .gTap{position:absolute;bottom:34px;font-size:10.5px;color:#5E7396;opacity:0;animation:fadeIn .6s 1.1s ease forwards;letter-spacing:.1em;text-transform:uppercase}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
 </head>
 <body>
 
@@ -2228,25 +2228,23 @@ async function apiLoadBadgeCounts(){
     if(canManageContracts()){ try{ const d=await demoLoad(); counts.contractRequest=(d.contractRequests||[]).filter(r=>r.status==='pending').length; }catch(e){} }
     return counts;
   }
-  try{
-    const [{count:toCount},{count:ccCount}]=await Promise.all([
+  // These three groups don't depend on each other -- run them as one wave instead of
+  // three back-to-back round trips, since this function fires on every single sign-in.
+  const canContracts=canManageContracts(), isManager=PROFILE.role==='manager';
+  const [memoRes,contractRes,approvalsRes]=await Promise.all([
+    Promise.all([
       sb.from('memos').select('id',{count:'exact',head:true}).eq('to_key',PROFILE.agent_key).eq('read',false),
       sb.from('memo_recipients').select('id',{count:'exact',head:true}).eq('staff_key',PROFILE.agent_key).eq('read',false)
-    ]);
-    counts.memo=(toCount||0)+(ccCount||0);
-  }catch(e){}
-  if(canManageContracts()){
-    try{ const {count}=await sb.from('contract_requests').select('id',{count:'exact',head:true}).eq('status','pending'); counts.contractRequest=count||0; }catch(e){}
-  }
-  if(PROFILE.role==='manager'){
-    try{
-      const [{count:expCount},{count:fundCount}]=await Promise.all([
-        sb.from('expenses').select('id',{count:'exact',head:true}).eq('status','pending'),
-        sb.from('fund_requests').select('id',{count:'exact',head:true}).eq('status','pending')
-      ]);
-      counts.approvals=(expCount||0)+(fundCount||0);
-    }catch(e){}
-  }
+    ]).catch(()=>null),
+    canContracts?Promise.resolve(sb.from('contract_requests').select('id',{count:'exact',head:true}).eq('status','pending')).catch(()=>null):Promise.resolve(null),
+    isManager?Promise.all([
+      sb.from('expenses').select('id',{count:'exact',head:true}).eq('status','pending'),
+      sb.from('fund_requests').select('id',{count:'exact',head:true}).eq('status','pending')
+    ]).catch(()=>null):Promise.resolve(null)
+  ]);
+  if(memoRes){ const [{count:toCount},{count:ccCount}]=memoRes; counts.memo=(toCount||0)+(ccCount||0); }
+  if(contractRes) counts.contractRequest=contractRes.count||0;
+  if(approvalsRes){ const [{count:expCount},{count:fundCount}]=approvalsRes; counts.approvals=(expCount||0)+(fundCount||0); }
   return counts;
 }
 async function apiInsertLead(l,c,agentKeyOverride){
@@ -3247,8 +3245,12 @@ async function setupPushNotifications(){
 let CLIENTDB_LOADED=false, CLIENTDB_LIST=[], CLIENTDB_QUERY='';
 async function apiLoadClientDatabase(){
   if(DEMO_MODE){ CLIENTDB_LIST=DB.leads.slice(); CLIENTDB_LOADED=true; return CLIENTDB_LIST; }
-  const {data:leadsData,error:le}=await sb.from('leads').select('*').order('name'); if(le) throw le;
-  const {data:paymentsData,error:pe}=await sb.from('payments').select('*').order('payment_date',{ascending:false}); if(pe) throw pe;
+  const [leadsRes,paymentsRes]=await Promise.all([
+    sb.from('leads').select('*').order('name'),
+    sb.from('payments').select('*').order('payment_date',{ascending:false})
+  ]);
+  const {data:leadsData,error:le}=leadsRes; if(le) throw le;
+  const {data:paymentsData,error:pe}=paymentsRes; if(pe) throw pe;
   CLIENTDB_LIST=(leadsData||[]).map(mapLead);
   const mappedPay=(paymentsData||[]).map(r=>({id:r.id,leadId:r.lead_id,agentKey:r.agent_key,clientName:r.client_name,amount:r.amount,date:r.payment_date,method:r.payment_method||'',createdAt:(r.created_at||'').slice(0,16).replace('T',' ')}));
   const existingPayIds=new Set(DB.payments.map(p=>p.id));
@@ -6745,7 +6747,7 @@ function readFileAsB64(file,maxBytes){
 function b64SizeKB(dataUrl){ return dataUrl? Math.round((dataUrl.length*0.75)/1024) : 0; }
 function attachmentBubble(m){
   if(m.attachType==='image'){
-    return `<img src="${m.attachData}" class="chatImg" data-viewimg="${m.id}"/>`;
+    return `<img src="${m.attachData}" class="chatImg" data-viewimg="${m.id}" loading="lazy"/>`;
   }
   if(m.attachType==='audio'){
     return `<div class="voiceCard"><span class="voiceIcon">${ic.mic}</span><audio controls src="${m.attachData}" style="height:34px;flex:1;min-width:160px"></audio></div>`;
@@ -12389,14 +12391,23 @@ async function apiLoadSmsHealth(){
     lastFailure:failed[0]||null};
 }
 async function computeSystemHealth(){
-  const sms=await apiLoadSmsHealth();
-  let backups=BACKUPS_LOADED?BACKUPS_LIST:[];
-  if(!DEMO_MODE && !BACKUPS_LOADED){ try{ backups=await apiLoadBackups(); BACKUPS_LIST=backups; BACKUPS_LOADED=true; }catch(e){} }
+  // These three fetches are independent of each other -- firing them together instead
+  // of one-after-another cuts System Health's load time by roughly a third on a
+  // real network, where each round trip carries fixed latency regardless of size.
+  const needBackups=!DEMO_MODE && !BACKUPS_LOADED;
+  const needExp=!EXP_LOADED && !DEMO_MODE;
+  const [sms,backupsResult,expResult]=await Promise.all([
+    apiLoadSmsHealth(),
+    needBackups?apiLoadBackups().catch(()=>BACKUPS_LOADED?BACKUPS_LIST:[]):Promise.resolve(BACKUPS_LOADED?BACKUPS_LIST:[]),
+    needExp?Promise.all([apiLoadExpenseCategories(),apiLoadExpenses(),apiLoadFundRequests(),apiLoadDailyBalances()]).catch(()=>null):Promise.resolve(null)
+  ]);
+  let backups=backupsResult;
+  if(needBackups){ BACKUPS_LIST=backups; BACKUPS_LOADED=true; }
+  if(needExp && expResult){ [EXP_CATEGORIES_LIST,EXPENSES_LIST,FUND_REQUESTS_LIST,DAILY_BALANCES_LIST]=expResult; EXP_LOADED=true; }
   const last7dBackups=backups.filter(b=>b.created_at>=isoPlusDays(today(),-7)+'T00:00:00');
   const mostRecentBackup=backups[0]||null;
   const hoursSinceBackup=mostRecentBackup?Math.round((Date.now()-new Date(mostRecentBackup.created_at).getTime())/3600000):null;
   const integrityIssues=DEMO_MODE?[]:runDataIntegrityCheck();
-  if(!EXP_LOADED && !DEMO_MODE){ try{ [EXP_CATEGORIES_LIST,EXPENSES_LIST,FUND_REQUESTS_LIST,DAILY_BALANCES_LIST]=await Promise.all([apiLoadExpenseCategories(),apiLoadExpenses(),apiLoadFundRequests(),apiLoadDailyBalances()]); EXP_LOADED=true; }catch(e){} }
   const pendingPayments=(DB.pendingPayments||[]);
   const pendingExpenses=(EXPENSES_LIST||[]).filter(e=>e.status==='pending');
   const pendingFunds=(FUND_REQUESTS_LIST||[]).filter(f=>f.status==='pending');
