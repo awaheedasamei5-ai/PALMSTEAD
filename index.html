@@ -21,14 +21,18 @@
 <style>
 :root{
   --user-font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-  --ink:#0B1E3D; --ink2:#0F2A52; --green:#1D4ED8; --green2:#2563EB; --leaf:#3B82F6;
-  --gold:#84CC16; --gold2:#BEF264; --paper:#F4F6F5; --card:#FFFFFF; --line:#E2E7ED;
-  --text:#111827; --muted:#647085; --danger:#B4472F; --warn:#B8791E; --info:#2E6E8E; --ok:#16A34A;
+  /* Premium navy -> teal palette (matches the wave-gradient reference): one cool anchor
+     + one accent hue family throughout, warm gold reserved only for medals/leader highlights. */
+  --ink:#0B1E3D; --ink2:#0F2A52; --green:#0C7A93; --green2:#0EA5B7; --leaf:#22D3EE;
+  --gold:#0EA5B7; --gold2:#67E8F9; --premium:#C9A227; --premium2:#E8C766;
+  --paper:#F2F6F7; --card:#FFFFFF; --line:#DEE6EA;
+  --text:#101820; --muted:#5C7280; --danger:#B4472F; --warn:#B8791E; --info:#0C7A93; --ok:#16A34A;
   --shadow:0 1px 2px rgba(11,30,61,.06),0 10px 28px rgba(11,30,61,.08);
   --shadow-lg:0 18px 44px rgba(11,30,61,.18);
-  --glow-lime:0 0 0 1px rgba(132,204,22,.18),0 8px 24px rgba(132,204,22,.14);
-  --glow-blue:0 0 0 1px rgba(59,130,246,.16),0 8px 24px rgba(59,130,246,.12);
+  --glow-lime:0 0 0 1px rgba(14,165,183,.18),0 8px 24px rgba(14,165,183,.14);
+  --glow-blue:0 0 0 1px rgba(34,211,238,.18),0 8px 24px rgba(34,211,238,.14);
   --glass:rgba(255,255,255,.68);
+  --wave:linear-gradient(180deg,#050B14 0%,#0A2A3A 32%,#0C7A93 58%,#67E8F9 78%,#F2F6F7 100%);
   --r:20px;
 }
 body.dark{
@@ -4285,9 +4289,10 @@ Object.assign(ic,{
 /* ---- dimensional feature-chip icons (premium, gradient) ---- */
 const FIC_DEFS='<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>'
  +'<linearGradient id="fic-gNavy" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e4278"/><stop offset="1" stop-color="#0B1E3D"/></linearGradient>'
- +'<linearGradient id="fic-gBlue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4c95f0"/><stop offset="1" stop-color="#1D4ED8"/></linearGradient>'
- +'<linearGradient id="fic-gLime" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a7e635"/><stop offset="1" stop-color="#4D7C0F"/></linearGradient>'
- +'<linearGradient id="fic-gGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FCD34D"/><stop offset="1" stop-color="#D4880C"/></linearGradient>'
+ +'<linearGradient id="fic-gBlue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4DD8E8"/><stop offset="1" stop-color="#0C7A93"/></linearGradient>'
+ +'<linearGradient id="fic-gLime" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5EEAD4"/><stop offset="1" stop-color="#0F766E"/></linearGradient>'
+ +'<linearGradient id="fic-gGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F0D998"/><stop offset="1" stop-color="#B8860B"/></linearGradient>'
+ +'<linearGradient id="fic-gSlate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6B7C93"/><stop offset="1" stop-color="#3A4A63"/></linearGradient>'
  +'<radialGradient id="fic-hi" cx="0.5" cy="0.05" r="0.9"><stop offset="0" stop-color="#fff" stop-opacity="0.38"/><stop offset="0.55" stop-color="#fff" stop-opacity="0"/></radialGradient>'
  +'<filter id="fic-soft" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="3" stdDeviation="3.2" flood-color="#0B1E3D" flood-opacity="0.42"/></filter>'
  +'</defs></svg>';
@@ -4299,21 +4304,46 @@ const FIC_GLYPHS={
  target:{g:'gLime',p:'<circle cx="28" cy="27" r="11" fill="none" stroke="#fff" stroke-width="2.6"/><circle cx="28" cy="27" r="5.6" fill="none" stroke="#fff" stroke-width="2.6"/><circle cx="28" cy="27" r="1.9" fill="#fff"/>'},
  analytics:{g:'gBlue',p:'<rect x="16" y="30" width="5.5" height="10" rx="1.4" fill="#fff"/><rect x="25.2" y="23" width="5.5" height="17" rx="1.4" fill="#fff"/><rect x="34.5" y="17" width="5.5" height="23" rx="1.4" fill="#fff"/>'},
  allocation:{g:'gNavy',p:'<path d="M16.5 28l11.5-10.5L39.5 28" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/><path d="M20 27.5v11.5h16V27.5" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round"/><path d="M25.5 39v-6.5h5V39" fill="none" stroke="#fff" stroke-width="2.4"/>'},
- chat:{g:'gBlue',p:'<path d="M16 21h24a3 3 0 013 3v10a3 3 0 01-3 3H27l-7 5.5V37h-4a3 3 0 01-3-3V24a3 3 0 013-3z" fill="#fff"/><circle cx="23" cy="29" r="1.9" fill="#1D4ED8"/><circle cx="30" cy="29" r="1.9" fill="#1D4ED8"/><circle cx="37" cy="29" r="1.9" fill="#1D4ED8"/>'},
- datacheck:{g:'gNavy',p:'<path d="M28 15l11 4v8c0 7.2-4.8 11.4-11 13.4C21.8 38.4 17 34.2 17 27v-8z" fill="#fff"/><path d="M23 27.5l3.8 3.8L34 23.5" fill="none" stroke="#84CC16" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'},
+ chat:{g:'gBlue',p:'<path d="M16 21h24a3 3 0 013 3v10a3 3 0 01-3 3H27l-7 5.5V37h-4a3 3 0 01-3-3V24a3 3 0 013-3z" fill="#fff"/><circle cx="23" cy="29" r="1.9" fill="var(--green2)"/><circle cx="30" cy="29" r="1.9" fill="var(--green2)"/><circle cx="37" cy="29" r="1.9" fill="var(--green2)"/>'},
+ datacheck:{g:'gNavy',p:'<path d="M28 15l11 4v8c0 7.2-4.8 11.4-11 13.4C21.8 38.4 17 34.2 17 27v-8z" fill="#fff"/><path d="M23 27.5l3.8 3.8L34 23.5" fill="none" stroke="var(--green2)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'},
  access:{g:'gGold',p:'<circle cx="24" cy="24" r="6.4" fill="none" stroke="#fff" stroke-width="3.2"/><path d="M28.5 28.5L39 39" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/><path d="M35 35l3-3M38.5 38.5l2.5-2.5" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>'},
- location:{g:'gBlue',p:'<path d="M28 16c-6 0-10 4.4-10 10 0 7 10 15 10 15s10-8 10-15c0-5.6-4-10-10-10z" fill="#fff"/><circle cx="28" cy="26" r="4.2" fill="#1D4ED8"/>'},
- calendar:{g:'gNavy',p:'<rect x="16" y="19" width="24" height="21" rx="3.5" fill="#fff"/><rect x="16" y="19" width="24" height="7" rx="3.5" fill="#84CC16"/><rect x="22" y="15" width="3" height="7" rx="1.5" fill="#fff"/><rect x="31" y="15" width="3" height="7" rx="1.5" fill="#fff"/><rect x="21" y="30" width="4" height="4" rx="1" fill="#0B1E3D"/><rect x="31" y="30" width="4" height="4" rx="1" fill="#0B1E3D"/>'},
+ location:{g:'gBlue',p:'<path d="M28 16c-6 0-10 4.4-10 10 0 7 10 15 10 15s10-8 10-15c0-5.6-4-10-10-10z" fill="#fff"/><circle cx="28" cy="26" r="4.2" fill="var(--green2)"/>'},
+ calendar:{g:'gNavy',p:'<rect x="16" y="19" width="24" height="21" rx="3.5" fill="#fff"/><rect x="16" y="19" width="24" height="7" rx="3.5" fill="var(--green2)"/><rect x="22" y="15" width="3" height="7" rx="1.5" fill="#fff"/><rect x="31" y="15" width="3" height="7" rx="1.5" fill="#fff"/><rect x="21" y="30" width="4" height="4" rx="1" fill="#0B1E3D"/><rect x="31" y="30" width="4" height="4" rx="1" fill="#0B1E3D"/>'},
  document:{g:'gNavy',p:'<path d="M21 16h9l7 7v17a1.5 1.5 0 01-1.5 1.5h-14A1.5 1.5 0 0120 40V17.5A1.5 1.5 0 0121.5 16z" fill="#fff"/><path d="M30 16v7h7" fill="none" stroke="#0B1E3D" stroke-width="2" stroke-linejoin="round"/><path d="M24 29h9M24 33h9M24 37h6" stroke="#0B1E3D" stroke-width="2" stroke-linecap="round"/>'},
- savings:{g:'gLime',p:'<path d="M18 24a10 8 0 0120 0v8a2 2 0 01-2 2h-2v3h-4v-3h-4v3h-4v-3a10 8 0 01-4-6z" fill="#fff"/><circle cx="24" cy="26" r="1.8" fill="#4D7C0F"/><rect x="30" y="20" width="7" height="3" rx="1.5" fill="#fff"/>'},
- map:{g:'gBlue',p:'<path d="M22 16l-6 3v21l6-3 12 3 6-3V16l-6 3-12-3z" fill="#fff"/><path d="M22 16v21M34 19v21" fill="none" stroke="#1D4ED8" stroke-width="2"/>'},
- clipboard:{g:'gNavy',p:'<rect x="18" y="18" width="20" height="23" rx="3" fill="#fff"/><rect x="23" y="15" width="10" height="6" rx="2" fill="#84CC16"/><path d="M23 28h10M23 33h10M23 38h6" stroke="#0B1E3D" stroke-width="2" stroke-linecap="round"/>'},
- briefcase:{g:'gNavy',p:'<rect x="15" y="23" width="26" height="17" rx="3" fill="#fff"/><path d="M23 23v-3a2 2 0 012-2h6a2 2 0 012 2v3" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M15 30h26" stroke="#0B1E3D" stroke-width="2"/><rect x="25" y="29" width="6" height="3" rx="1" fill="#84CC16"/>'},
+ savings:{g:'gLime',p:'<path d="M18 24a10 8 0 0120 0v8a2 2 0 01-2 2h-2v3h-4v-3h-4v3h-4v-3a10 8 0 01-4-6z" fill="#fff"/><circle cx="24" cy="26" r="1.8" fill="var(--green)"/><rect x="30" y="20" width="7" height="3" rx="1.5" fill="#fff"/>'},
+ map:{g:'gBlue',p:'<path d="M22 16l-6 3v21l6-3 12 3 6-3V16l-6 3-12-3z" fill="#fff"/><path d="M22 16v21M34 19v21" fill="none" stroke="var(--green2)" stroke-width="2"/>'},
+ clipboard:{g:'gNavy',p:'<rect x="18" y="18" width="20" height="23" rx="3" fill="#fff"/><rect x="23" y="15" width="10" height="6" rx="2" fill="var(--green2)"/><path d="M23 28h10M23 33h10M23 38h6" stroke="#0B1E3D" stroke-width="2" stroke-linecap="round"/>'},
+ briefcase:{g:'gNavy',p:'<rect x="15" y="23" width="26" height="17" rx="3" fill="#fff"/><path d="M23 23v-3a2 2 0 012-2h6a2 2 0 012 2v3" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M15 30h26" stroke="#0B1E3D" stroke-width="2"/><rect x="25" y="29" width="6" height="3" rx="1" fill="var(--green2)"/>'},
  backup:{g:'gLime',p:'<ellipse cx="28" cy="20" rx="11" ry="4" fill="#fff"/><path d="M17 20v6c0 2.2 5 4 11 4s11-1.8 11-4v-6" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M17 26v6c0 2.2 5 4 11 4s11-1.8 11-4v-6" fill="none" stroke="#fff" stroke-width="2.6"/>'},
  alert:{g:'gGold',p:'<path d="M28 16l12 21a1.5 1.5 0 01-1.3 2.3H17.3A1.5 1.5 0 0116 37l12-21z" fill="#fff"/><path d="M28 25v6" stroke="#B45309" stroke-width="2.8" stroke-linecap="round"/><circle cx="28" cy="35" r="1.8" fill="#B45309"/>'},
  settings:{g:'gNavy',p:'<circle cx="28" cy="27" r="4" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M28 15v4M28 35v4M16 27h4M36 27h4M19.5 18.5l2.8 2.8M33.7 32.7l2.8 2.8M36.5 18.5l-2.8 2.8M22.3 32.7l-2.8 2.8" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>'},
- enquiry:{g:'gBlue',p:'<path d="M16 21h24a3 3 0 013 3v10a3 3 0 01-3 3H27l-7 5.5V37h-4a3 3 0 01-3-3V24a3 3 0 013-3z" fill="#fff"/><path d="M25 27a3 3 0 116 0c0 2-3 2-3 4M28 35h.01" stroke="#1D4ED8" stroke-width="2.4" stroke-linecap="round"/>'},
- addlead:{g:'gLime',p:'<circle cx="28" cy="27" r="12" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M28 21v12M22 27h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>'}
+ enquiry:{g:'gBlue',p:'<path d="M16 21h24a3 3 0 013 3v10a3 3 0 01-3 3H27l-7 5.5V37h-4a3 3 0 01-3-3V24a3 3 0 013-3z" fill="#fff"/><path d="M25 27a3 3 0 116 0c0 2-3 2-3 4M28 35h.01" stroke="var(--green)" stroke-width="2.4" stroke-linecap="round"/>'},
+ addlead:{g:'gLime',p:'<circle cx="28" cy="27" r="12" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M28 21v12M22 27h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>'},
+ /* --- added for the icon overhaul: every app below used to share a glyph with 1-5 others
+    (document alone covered five unrelated apps) -- each now gets its own distinct mark. */
+ pipeline:{g:'gBlue',p:'<path d="M15 18h26l-9 12v10l-8 3V30z" fill="#fff"/>'},
+ editpipeline:{g:'gGold',p:'<path d="M15 18h26l-9 12v10l-8 3V30z" fill="#fff" fill-opacity="0.9"/><path d="M35 32l6-6 3 3-6 6h-3v-3z" fill="#fff" stroke="var(--ink)" stroke-width="1.2" stroke-linejoin="round"/>'},
+ plotrequest:{g:'gLime',p:'<rect x="16" y="18" width="17" height="17" rx="2" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M16 24.5h17M22.5 18v17" stroke="#fff" stroke-width="1.6" stroke-opacity="0.7"/><circle cx="37" cy="20" r="6.5" fill="var(--green)" stroke="#fff" stroke-width="2"/><path d="M37 17v6M34 20h6" stroke="#fff" stroke-width="2" stroke-linecap="round"/>'},
+ clientdb:{g:'gLime',p:'<rect x="15" y="17" width="20" height="14" rx="2.5" fill="#fff" fill-opacity=".55"/><rect x="19" y="21" width="20" height="14" rx="2.5" fill="#fff"/><circle cx="26" cy="26.5" r="2.6" fill="var(--green)"/><path d="M22 32.5c0-2.2 1.8-3.5 4-3.5s4 1.3 4 3.5" fill="none" stroke="var(--green)" stroke-width="1.8" stroke-linecap="round"/>'},
+ feedback:{g:'gBlue',p:'<path d="M16 20h24a3 3 0 013 3v9a3 3 0 01-3 3H27l-7 5.5V35h-4a3 3 0 01-3-3v-9a3 3 0 013-3z" fill="#fff"/><path d="M28 30.5c-3.6-2.4-5.5-4.3-5.5-6.4a2.9 2.9 0 015.5-1.3 2.9 2.9 0 015.5 1.3c0 2.1-1.9 4-5.5 6.4z" fill="var(--green)"/>'},
+ memo:{g:'gNavy',p:'<path d="M21 16h14l4 4v20a1.5 1.5 0 01-1.5 1.5h-16A1.5 1.5 0 0120 40V17.5A1.5 1.5 0 0121.5 16z" fill="#fff"/><path d="M21 16v4a1.5 1.5 0 001.5 1.5H27" fill="none" stroke="#0B1E3D" stroke-width="1.6"/><path d="M24 27h10M24 31h10M24 35h6" stroke="#0B1E3D" stroke-width="2" stroke-linecap="round"/>'},
+ billboard:{g:'gBlue',p:'<rect x="14" y="16" width="28" height="14" rx="2" fill="#fff"/><path d="M20 16v-3M36 16v-3" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M23 30v10M33 30v10" stroke="var(--green)" stroke-width="2.8" stroke-linecap="round"/><path d="M19 23h18" stroke="var(--green2)" stroke-width="2" stroke-opacity=".6"/>'},
+ sitevisitauth:{g:'gNavy',p:'<rect x="16" y="19" width="24" height="21" rx="3.5" fill="#fff"/><rect x="16" y="19" width="24" height="7" rx="3.5" fill="var(--green2)"/><rect x="22" y="15" width="3" height="7" rx="1.5" fill="#fff"/><rect x="31" y="15" width="3" height="7" rx="1.5" fill="#fff"/><path d="M22.5 32.5l3 3 7-7" fill="none" stroke="var(--green)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'},
+ contract:{g:'gGold',p:'<path d="M20 16h11l7 7v16a1.5 1.5 0 01-1.5 1.5h-16.5A1.5 1.5 0 0119 39V17.5A1.5 1.5 0 0120.5 16z" fill="#fff"/><path d="M31 16v6.5A1.5 1.5 0 0032.5 24H38" fill="none" stroke="#B8860B" stroke-width="1.6"/><path d="M23 29h11M23 33h7" stroke="#B8860B" stroke-width="1.8" stroke-linecap="round"/><path d="M23 37.5c3-2.5 5-2.5 8 0" fill="none" stroke="#B8860B" stroke-width="1.8" stroke-linecap="round"/>'},
+ payment:{g:'gLime',p:'<rect x="14" y="20" width="28" height="18" rx="3.5" fill="#fff"/><rect x="14" y="24" width="28" height="4" fill="var(--green)"/><circle cx="34" cy="33" r="4.5" fill="var(--green)"/><path d="M32.2 33l1.3 1.3 2.3-2.6" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'},
+ expense:{g:'gGold',p:'<path d="M16 20a3 3 0 013-3h17a2 2 0 012 2v3H19a3 3 0 01-3-3z" fill="#fff" fill-opacity=".85"/><rect x="16" y="22" width="24" height="16" rx="3" fill="#fff"/><circle cx="34" cy="30" r="4" fill="#B8860B"/><path d="M32 30h4" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>'},
+ commission:{g:'gGold',p:'<circle cx="24" cy="24" r="7" fill="none" stroke="#fff" stroke-width="2.6"/><circle cx="34" cy="34" r="7" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M20 38L38 18" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>'},
+ downloads:{g:'gBlue',p:'<path d="M28 16v14" stroke="#fff" stroke-width="2.8" stroke-linecap="round"/><path d="M22 25l6 6 6-6" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><rect x="16" y="34" width="24" height="6" rx="2" fill="var(--green2)"/>'},
+ notes:{g:'gNavy',p:'<rect x="17" y="18" width="22" height="22" rx="3" fill="#fff"/><circle cx="22" cy="18" r="1.6" fill="var(--paper)"/><circle cx="28" cy="18" r="1.6" fill="var(--paper)"/><circle cx="34" cy="18" r="1.6" fill="var(--paper)"/><path d="M21 25h14M21 29h14M21 33h9" stroke="#0B1E3D" stroke-width="1.8" stroke-linecap="round"/>'},
+ sms:{g:'gLime',p:'<rect x="20" y="14" width="16" height="26" rx="3.5" fill="#fff"/><rect x="22.5" y="18" width="11" height="15" rx="1.5" fill="var(--green)"/><circle cx="28" cy="36" r="1.4" fill="var(--green)"/><path d="M25 22h6M25 25h4" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>'},
+ quote:{g:'gLime',p:'<path d="M18 16h20v20l-3-2.3-3 2.3-3-2.3-3 2.3-3-2.3-3 2.3-2-1.5z" fill="#fff"/><path d="M28 22.5v7M25.3 24.2c0-1.3 1.2-2.2 2.7-2.2s2.7.9 2.7 2c0 2.6-5.4 1.8-5.4 4.4 0 1.1 1.2 2 2.7 2s2.7-.9 2.7-2.2" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round"/>'},
+ staffteam:{g:'gNavy',p:'<circle cx="22" cy="21" r="4.5" fill="#fff"/><circle cx="33" cy="23" r="3.6" fill="#fff" fill-opacity=".75"/><path d="M14.5 37c0-4.7 3.4-7.5 7.5-7.5s7.5 2.8 7.5 7.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M31 30.5c3.3.4 5.5 2.7 5.5 6.5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-opacity=".8"/><circle cx="37" cy="36" r="4" fill="var(--green2)" stroke="#fff" stroke-width="1.6"/><path d="M35.6 36h2.8M37 34.6v2.8" stroke="#0B1E3D" stroke-width="1.3" stroke-linecap="round"/>'},
+ building:{g:'gBlue',p:'<rect x="18" y="16" width="20" height="24" rx="1.5" fill="#fff"/><rect x="22" y="20" width="3.5" height="3.5" fill="var(--green)"/><rect x="29" y="20" width="3.5" height="3.5" fill="var(--green)"/><rect x="22" y="27" width="3.5" height="3.5" fill="var(--green)"/><rect x="29" y="27" width="3.5" height="3.5" fill="var(--green)"/><rect x="24.5" y="34" width="7" height="6" fill="var(--green)"/>'},
+ serverconfig:{g:'gSlate',p:'<rect x="17" y="16" width="22" height="8" rx="2" fill="#fff"/><rect x="17" y="26" width="22" height="8" rx="2" fill="#fff" fill-opacity=".8"/><circle cx="22" cy="20" r="1.4" fill="var(--green2)"/><circle cx="22" cy="30" r="1.4" fill="var(--green2)"/><circle cx="34" cy="38" r="5" fill="var(--green2)" stroke="#fff" stroke-width="1.6"/><path d="M34 35.5v1.2M34 39.3v1.2M31.5 38h1.2M35.3 38h1.2" stroke="#0B1E3D" stroke-width="1.1" stroke-linecap="round"/>'},
+ pulse:{g:'gGold',p:'<circle cx="28" cy="27" r="12" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M18 27h4l2.5-6 3.5 11 3-8 2 3h5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'},
+ companyleads:{g:'gSlate',p:'<rect x="19" y="20" width="18" height="20" rx="1.5" fill="#fff"/><rect x="24" y="30" width="8" height="10" fill="var(--ink)"/><rect x="23" y="24" width="3" height="3" fill="var(--green2)"/><rect x="30" y="24" width="3" height="3" fill="var(--green2)"/><path d="M15 22l6-6 6 6" fill="none" stroke="var(--green2)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 16v7" stroke="var(--green2)" stroke-width="2.4" stroke-linecap="round"/>'},
+ reportdoc:{g:'gBlue',p:'<path d="M20 16h10l6 6v16a1.5 1.5 0 01-1.5 1.5h-14.5A1.5 1.5 0 0118.5 38V17.5A1.5 1.5 0 0120 16z" fill="#fff"/><rect x="22" y="28" width="3" height="6" fill="var(--green)"/><rect x="26.5" y="24" width="3" height="10" fill="var(--green)"/><rect x="31" y="30" width="3" height="4" fill="var(--green)"/>'},
+ pricetag:{g:'gGold',p:'<path d="M18 18h10l12 12-10 10-12-12V18z" fill="#fff"/><circle cx="23" cy="23" r="2.2" fill="#B8860B"/><path d="M25 30.5l6-6" stroke="#B8860B" stroke-width="1.6" stroke-linecap="round"/>'}
 };
 function fic(name,size){size=size||44;var G=FIC_GLYPHS[name];if(!G)return '';return '<svg class="fic" width="'+size+'" height="'+size+'" viewBox="0 0 56 56" style="vertical-align:middle;flex:0 0 auto">'+ficChip(G.g)+G.p+'</svg>';}
 const KPI_STYLE={
@@ -4381,10 +4411,10 @@ function bindTasks(){ V.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>ro
 const AGENT_HUBS={
   salesdesk:{title:'Sales Desk',items:[
     {r:'addlead',fic:'addlead',label:'New lead'},
-    {r:'update',fic:'analytics',label:'Update pipeline'},
+    {r:'update',fic:'editpipeline',label:'Update pipeline'},
     {r:'myDataCheck',fic:'datacheck',label:'Data check'},
     {r:'plots',fic:'map',label:'Plot availability'},
-    {r:'pipeline',fic:'document',label:'My pipeline'}
+    {r:'pipeline',fic:'pipeline',label:'My pipeline'}
   ]}
 };
 // Small red count badge overlaid on an appGrid tile -- data-badgekind lets
@@ -4409,9 +4439,9 @@ function viewSalesDesk(){
     {r:'sitevisit',fic:'location',label:'Site visit',badgeKind:'sitevisit'},
     {r:'enquiry',fic:'enquiry',label:'Client enquiry',badgeKind:'enquiry'},
     {r:'complaint',fic:'alert',label:'Client feedback',badgeKind:'complaint'},
-    {r:'plotrequests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest'},
+    {r:'plotrequests',fic:'plotrequest',label:'Plot Requests',badgeKind:'plotrequest'},
     ...(canManagePlots()?[{r:'allocations',fic:'allocation',label:'Allocations'}]:[]),
-    ...(canViewClientDatabase()?[{r:'clientdb',fic:'savings',label:'Client Database'}]:[])
+    ...(canViewClientDatabase()?[{r:'clientdb',fic:'clientdb',label:'Client Database'}]:[])
   ];
   V.innerHTML=`<div class="pagehead"><div><h2>Sales Desk</h2><p>Leads, pipeline, plots &amp; client touchpoints — everything for your book of clients</p></div></div>
   <div class="appGrid">${items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`;
@@ -4463,18 +4493,18 @@ function viewOfficeDesk(){
   const showCompanyLeads=isMgr||canViewClientDatabase();
   const items=[
     {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
-    {key:'Feedback',fic:'chat',label:'Team Feedback'},
+    {key:'Feedback',fic:'feedback',label:'Team Feedback'},
     {key:'Leave Schedules',fic:'calendar',label:'Leave Schedules'},
-    {key:'Memorandum',fic:'document',label:'Memorandum'},
-    {key:'Banner Tracking',fic:'map',label:'Banner Tracking'},
-    ...(showCompanyLeads?[{key:'Site Visit Auth',fic:'clipboard',label:'Site Visit Auth'}]:[]),
-    ...(canManageContracts()?[{key:'Contract of Sale',fic:'document',label:'Contract of Sale'}]:[]),
-    ...(canManagePayments()?[{key:'Log Payment',fic:'savings',label:'Log Payment'}]:[]),
-    ...(canManageExpenses()?[{key:'Expenses',fic:'savings',label:'Expenses'}]:[]),
-    ...(isMgr?[{key:'Commission',fic:'savings',label:'Commission'}]:[]),
-    ...(isMgr?[{key:'Management Reports',fic:'analytics',label:'Reports'}]:[]),
+    {key:'Memorandum',fic:'memo',label:'Memorandum'},
+    {key:'Banner Tracking',fic:'billboard',label:'Banner Tracking'},
+    ...(showCompanyLeads?[{key:'Site Visit Auth',fic:'sitevisitauth',label:'Site Visit Auth'}]:[]),
+    ...(canManageContracts()?[{key:'Contract of Sale',fic:'contract',label:'Contract of Sale'}]:[]),
+    ...(canManagePayments()?[{key:'Log Payment',fic:'payment',label:'Log Payment'}]:[]),
+    ...(canManageExpenses()?[{key:'Expenses',fic:'expense',label:'Expenses'}]:[]),
+    ...(isMgr?[{key:'Commission',fic:'commission',label:'Commission'}]:[]),
+    ...(isMgr?[{key:'Management Reports',fic:'reportdoc',label:'Reports'}]:[]),
     ...(isMgr?[{key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'}]:[]),
-    ...(showCompanyLeads?[{key:'Company Leads',fic:'briefcase',label:'Company Leads'}]:[])
+    ...(showCompanyLeads?[{key:'Company Leads',fic:'companyleads',label:'Company Leads'}]:[])
   ];
   V.innerHTML=`<div class="pagehead"><div><h2>Office Desk</h2><p>Operations, feedback${isMgr?', the leaderboard':''}${showCompanyLeads?' &amp; company leads':''} — everything off to the side of your daily pipeline</p></div></div>
   <div class="appGrid" id="officeDeskGrid">${mgrAppGridHtml(items)}</div>`;
@@ -4491,9 +4521,9 @@ function viewMore(){
   } else {
     const items=[
       {key:'insights',fic:'target',label:'Smart Insights'},
-      {key:'downloads',fic:'document',label:'Download Directory'},
-      {key:'notes',fic:'document',label:'Notes'},
-      {key:'sms',fic:'chat',label:'SMS'},
+      {key:'downloads',fic:'downloads',label:'Download Directory'},
+      {key:'notes',fic:'notes',label:'Notes'},
+      {key:'sms',fic:'sms',label:'SMS'},
       {key:'account',fic:'settings',label:'Settings'}
     ];
     grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
@@ -10404,30 +10434,30 @@ const MGR_APPS=[
   {key:'Reports',fic:'analytics',label:'Reports'},
   {key:'Plots',fic:'map',label:'Plot Inventory',section:'salesdesk'},
   {key:'Allocations',fic:'allocation',label:'Allocations',section:'salesdesk'},
-  {key:'Client Database',fic:'savings',label:'Client Database',section:'salesdesk'},
-  {key:'Plot Requests',fic:'savings',label:'Plot Requests',badgeKind:'plotrequest',section:'salesdesk'},
-  {key:'Company Leads',fic:'briefcase',label:'Company Leads',section:'officedesk'},
+  {key:'Client Database',fic:'clientdb',label:'Client Database',section:'salesdesk'},
+  {key:'Plot Requests',fic:'plotrequest',label:'Plot Requests',badgeKind:'plotrequest',section:'salesdesk'},
+  {key:'Company Leads',fic:'companyleads',label:'Company Leads',section:'officedesk'},
   {key:'Enquiries',fic:'enquiry',label:'Enquiries',badgeKind:'enquiry',section:'salesdesk'},
   {key:'Complaints',fic:'alert',label:'Client Feedback',badgeKind:'complaint',section:'salesdesk'},
   {key:'Site visits',fic:'location',label:'Site Visits',badgeKind:'sitevisit',section:'salesdesk'},
-  {key:'Site Visit Auth',fic:'clipboard',label:'Site Visit Auth',section:'officedesk'},
-  {key:'Contract of Sale',fic:'document',label:'Contract of Sale',section:'officedesk'},
-  {key:'Log Payment',fic:'savings',label:'Log Payment',section:'officedesk'},
+  {key:'Site Visit Auth',fic:'sitevisitauth',label:'Site Visit Auth',section:'officedesk'},
+  {key:'Contract of Sale',fic:'contract',label:'Contract of Sale',section:'officedesk'},
+  {key:'Log Payment',fic:'payment',label:'Log Payment',section:'officedesk'},
   {key:'News',fic:'announce',label:'News & Announcements'},
-  {key:'Commission',fic:'savings',label:'Commission',section:'officedesk'},
+  {key:'Commission',fic:'commission',label:'Commission',section:'officedesk'},
   {key:'Duties',fic:'clipboard',label:'Operations Tracker',section:'officedesk'},
-  {key:'Feedback',fic:'chat',label:'Team Feedback',section:'officedesk'},
+  {key:'Feedback',fic:'feedback',label:'Team Feedback',section:'officedesk'},
   {key:'Insights',fic:'target',label:'Smart Insights'},
   {key:'Settings',fic:'settings',label:'Settings'},
-  {key:'Downloads',fic:'document',label:'Download Directory'},
-  {key:'Notes',fic:'document',label:'Notes'},
-  {key:'SMS',fic:'chat',label:'SMS'},
-  {key:'Quotation Settings',fic:'document',label:'Quotation Settings',section:'settingshub'},
-  {key:'Commission Settings',fic:'savings',label:'Commission Settings',section:'settingshub'},
-  {key:'Pricing & Targets',fic:'analytics',label:'Pricing & Targets',section:'settingshub'},
-  {key:'Staff Settings',fic:'briefcase',label:'Staff Settings',section:'settingshub'},
-  {key:'Company Settings',fic:'location',label:'Company Settings',section:'settingshub'},
-  {key:'System',fic:'settings',label:'System',section:'settingshub'},
+  {key:'Downloads',fic:'downloads',label:'Download Directory'},
+  {key:'Notes',fic:'notes',label:'Notes'},
+  {key:'SMS',fic:'sms',label:'SMS'},
+  {key:'Quotation Settings',fic:'quote',label:'Quotation Settings',section:'settingshub'},
+  {key:'Commission Settings',fic:'commission',label:'Commission Settings',section:'settingshub'},
+  {key:'Pricing & Targets',fic:'pricetag',label:'Pricing & Targets',section:'settingshub'},
+  {key:'Staff Settings',fic:'staffteam',label:'Staff Settings',section:'settingshub'},
+  {key:'Company Settings',fic:'building',label:'Company Settings',section:'settingshub'},
+  {key:'System',fic:'serverconfig',label:'System',section:'settingshub'},
 ];
 async function managerView(){
   const mgrAppDef=MGR_APPS.find(a=>a.key===mgrTab);
@@ -11430,14 +11460,14 @@ async function downloadCompanyExcel(){
 
 /* ================= SETTINGS (pricing config + targets) ================= */
 const SETTINGS_APPS=[
-  {key:'Quotation Settings',fic:'document',label:'Quotation Settings',section:'settingshub'},
-  {key:'Commission Settings',fic:'savings',label:'Commission Settings',section:'settingshub'},
-  {key:'Pricing & Targets',fic:'analytics',label:'Pricing & Targets',section:'settingshub'},
-  {key:'Staff Settings',fic:'briefcase',label:'Staff Settings',section:'settingshub'},
-  {key:'Company Settings',fic:'location',label:'Company Settings',section:'settingshub'},
+  {key:'Quotation Settings',fic:'quote',label:'Quotation Settings',section:'settingshub'},
+  {key:'Commission Settings',fic:'commission',label:'Commission Settings',section:'settingshub'},
+  {key:'Pricing & Targets',fic:'pricetag',label:'Pricing & Targets',section:'settingshub'},
+  {key:'Staff Settings',fic:'staffteam',label:'Staff Settings',section:'settingshub'},
+  {key:'Company Settings',fic:'building',label:'Company Settings',section:'settingshub'},
   {key:'Backup & Restore',fic:'backup',label:'Backup & Restore',section:'settingshub'},
-  {key:'System Health',fic:'alert',label:'System Health',section:'settingshub'},
-  {key:'System',fic:'settings',label:'System',section:'settingshub'}
+  {key:'System Health',fic:'pulse',label:'System Health',section:'settingshub'},
+  {key:'System',fic:'serverconfig',label:'System',section:'settingshub'}
 ];
 function mgrSettingsHubHtml(){
   return `<div class="appGrid" id="mgrSettingsGrid">${mgrAppGridHtml(SETTINGS_APPS)}</div>`;
