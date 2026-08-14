@@ -2284,6 +2284,8 @@ async function apiInsertLead(l,c,agentKeyOverride){
     payment_plan:l.paymentPlan,grand_total:c.grand,site_visit:l.siteVisit,priority:l.priority,
     amt_paid:num(l.amtPaid),balance:c.bal,next_action:l.nextAction,notes:l.notes,
     deposit_target:l.depositTarget!=null&&l.depositTarget!==''?num(l.depositTarget):Math.round(c.grand*0.3)};
+  if(l.leadSource) row.lead_source=l.leadSource;
+  if(l.bannerId) row.banner_id=l.bannerId;
   const {data,error}=await sb.from('leads').insert(row).select().single(); if(error) throw error; return mapLead(data);
 }
 async function apiUpdateLead(id,patch){
@@ -2305,6 +2307,27 @@ async function apiUpdateLead(id,patch){
   if('bannerId' in patch) dbPatch.banner_id=patch.bannerId;
   const {error}=await sb.from('leads').update(dbPatch).eq('id',id); if(error) throw error;
 }
+// Seeds a referral record the moment staff tag "this lead was referred by an existing
+// client" during normal lead intake. Starts Pending -- it only turns into earned points
+// once the referred person actually buys (handled by the Referral System build).
+async function apiInsertReferral({referrerLeadId,referrerName,referrerContact,referredName,referredContact,referredLocation,referredNoPlots,referredLeadId}){
+  if(DEMO_MODE){ const d=await demoLoad(); d.referrals=d.referrals||[];
+    const rec={id:uid(),referrerLeadId,referrerName,referrerContact,referredName,referredContact,referredLocation,referredNoPlots,referredLeadId,status:'Pending',pointsAwarded:0,source:'staff',createdAt:today()+' '+nowTime()};
+    d.referrals.unshift(rec); await demoSave(); return rec; }
+  const row={referrer_lead_id:referrerLeadId||null,referrer_name:referrerName,referrer_contact:referrerContact||null,
+    referred_name:referredName,referred_contact:referredContact,referred_location:referredLocation||null,
+    referred_no_plots:referredNoPlots||1,referred_lead_id:referredLeadId||null,source:'staff',created_by_key:PROFILE.agent_key};
+  // No .select() on this insert -- the RLS SELECT policy only grants a staff member
+  // visibility into referrals tied to their OWN leads, so immediately reading back a
+  // referral filed against someone else's book (a manager tagging any agent's client,
+  // for instance) would fail the read-back even though the insert itself succeeded.
+  // Nothing currently uses the returned row, so skip the round-trip entirely.
+  const {error}=await sb.from('referrals').insert(row); if(error) throw error;
+}
+const mapReferral=r=>({id:r.id,referrerLeadId:r.referrer_lead_id,referrerName:r.referrer_name,referrerContact:r.referrer_contact,
+  referredName:r.referred_name,referredContact:r.referred_contact,referredLocation:r.referred_location,referredNoPlots:r.referred_no_plots,
+  referredLeadId:r.referred_lead_id,status:r.status,pointsAwarded:r.points_awarded,source:r.source,
+  createdAt:(r.created_at||'').slice(0,16).replace('T',' '),clearedAt:r.cleared_at});
 async function apiInsertEnquiry(row){
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),agentKey:PROFILE.key,agentName:PROFILE.name,...row,createdAt:today()+' '+nowTime()};
     d.enquiries.unshift(rec); await demoSave(); return rec; }
@@ -3447,7 +3470,103 @@ function clientDatabaseStatStripHtml(){
   const paidCount=CLIENTDB_LIST.filter(l=>isFullyPaid(l)).length;
   return `<div class="pipeStatStrip"><div class="pipeStat"><div class="v">${CLIENTDB_LIST.length}</div><div class="l">Clients</div></div><div class="pipeStat"><div class="v">${paidCount}</div><div class="l">Paid in full</div></div><div class="pipeStat"><div class="v">${ghs(totalBal)}</div><div class="l">Outstanding</div></div></div>`;
 }
-const LEAD_SOURCES=['Social Media','Radio','TV','Recommendation','Banner'];
+const LEAD_SOURCES=['Banner','Referral','Facebook','Instagram','TikTok','Google','Website','Radio','TV','Other'];
+// Shared inline source-capture block, reused by every "add a lead" entry point (the
+// per-agent Add-to-pipeline form and the Company Leads form) so source is captured at
+// the moment the lead is created instead of needing a separate follow-up step. Banner
+// picks an area+banner (feeds Banner Tracking's per-location counts). Referral asks
+// whether an existing client sent them and, if so, searches for that client so they
+// can be credited once this lead buys (seeds the Referral System's points ledger).
+let LEAD_SOURCE_STATE={};
+function leadSourceFieldsHtml(prefix){
+  return `${fld('How did they hear about us?',sel(prefix+'_source',LEAD_SOURCES,LEAD_SOURCES[0]))}
+  <div id="${prefix}_bannerWrap" class="hidden">
+    ${fld('Area',sel(prefix+'_area',['Select an area…'],'Select an area…'))}
+    <div id="${prefix}_bannerFieldWrap">${fld('Banner',sel(prefix+'_banner',['Select an area first…'],''))}</div>
+  </div>
+  <div id="${prefix}_referralWrap" class="hidden">
+    <div class="field"><label>Referred by an existing client?</label>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="chip" data-refyn="${prefix}:no" id="${prefix}_refNo">No / not sure</button>
+        <button type="button" class="chip" data-refyn="${prefix}:yes" id="${prefix}_refYes">Yes, search for them</button>
+      </div>
+    </div>
+    <div id="${prefix}_referrerSearchWrap" class="hidden">
+      ${fld('Search by name','<input id="'+prefix+'_refSearch" placeholder="Start typing their name…" autocomplete="off"/>')}
+      <div id="${prefix}_refResults"></div>
+      <div id="${prefix}_refPicked" class="hidden rowcard" style="margin-top:8px;padding:10px 14px"></div>
+    </div>
+  </div>`;
+}
+// searchPool: () => [{id,name,contact}] -- the candidates this form is allowed to
+// search (an agent's own pipeline for the personal form; company-wide for managers/
+// office staff on the Company Leads form, matching what each role can already see).
+function bindLeadSourceFieldsCtrls(prefix,searchPool){
+  const state=LEAD_SOURCE_STATE[prefix]={bannerId:null,referrerLeadId:null,referrerName:null,referrerContact:null};
+  const sourceSel=document.getElementById(prefix+'_source');
+  const bannerWrap=document.getElementById(prefix+'_bannerWrap');
+  const referralWrap=document.getElementById(prefix+'_referralWrap');
+  const syncVisibility=()=>{
+    const src=sourceSel.value;
+    bannerWrap.classList.toggle('hidden',src!=='Banner');
+    referralWrap.classList.toggle('hidden',src!=='Referral');
+  };
+  sourceSel.onchange=syncVisibility; syncVisibility();
+  const refreshBannerOptions=()=>{
+    const area=val(prefix+'_area');
+    const wrap=document.getElementById(prefix+'_bannerFieldWrap'); if(!wrap) return;
+    if(!area||area==='Select an area…'){ wrap.innerHTML=fld('Banner',sel(prefix+'_banner',['Select an area first…'],'')); return; }
+    const banners=(DB.banners||[]).filter(b=>b.area===area);
+    wrap.innerHTML=fld('Banner',sel(prefix+'_banner',banners.length?banners.map(b=>b.name):['No banners in this area yet'],''));
+  };
+  (async()=>{
+    if(!BANNERS_LOADED){ try{ DB.banners=await withLoadTimeout(apiLoadBanners(),15000,'Banners'); BANNERS_LOADED=true; }catch(e){} }
+    const areas=[...new Set((DB.banners||[]).map(b=>b.area).filter(Boolean))].sort();
+    const areaSel=document.getElementById(prefix+'_area'); if(!areaSel) return;
+    areaSel.outerHTML=sel(prefix+'_area',['Select an area…',...areas],'Select an area…');
+    const newAreaSel=document.getElementById(prefix+'_area'); if(newAreaSel) newAreaSel.onchange=refreshBannerOptions;
+  })();
+  document.querySelectorAll(`[data-refyn="${prefix}:no"],[data-refyn="${prefix}:yes"]`).forEach(b=>{
+    b.onclick=()=>{
+      const yes=b.dataset.refyn===prefix+':yes';
+      document.getElementById(prefix+'_refYes').classList.toggle('on',yes);
+      document.getElementById(prefix+'_refNo').classList.toggle('on',!yes);
+      document.getElementById(prefix+'_referrerSearchWrap').classList.toggle('hidden',!yes);
+      if(!yes){ state.referrerLeadId=null; state.referrerName=null; state.referrerContact=null; const p=document.getElementById(prefix+'_refPicked'); p.classList.add('hidden'); p.innerHTML=''; }
+    };
+  });
+  const searchInput=document.getElementById(prefix+'_refSearch');
+  if(searchInput) searchInput.oninput=debounce(()=>{
+    const q=searchInput.value.trim().toLowerCase();
+    const results=document.getElementById(prefix+'_refResults');
+    if(q.length<2){ results.innerHTML=''; return; }
+    const matches=searchPool().filter(p=>(p.name||'').toLowerCase().includes(q)).slice(0,6);
+    results.innerHTML=matches.length?matches.map(p=>`<button type="button" class="chip" data-refpick="${esc(p.id)}" style="display:block;width:100%;text-align:left;margin:6px 0">${esc(p.name)} · ${esc(p.contact||'')}</button>`).join(''):`<div class="mini" style="margin-top:6px">No matches</div>`;
+    results.querySelectorAll('[data-refpick]').forEach(btn=>btn.onclick=()=>{
+      const picked=searchPool().find(p=>p.id===btn.dataset.refpick); if(!picked) return;
+      state.referrerLeadId=picked.id; state.referrerName=picked.name; state.referrerContact=picked.contact;
+      const p=document.getElementById(prefix+'_refPicked');
+      p.classList.remove('hidden');
+      p.innerHTML=`Referred by <b>${esc(picked.name)}</b> <button type="button" class="chip" id="${prefix}_refClear" style="margin-left:8px">Change</button>`;
+      document.getElementById(prefix+'_refClear').onclick=()=>{ state.referrerLeadId=null; state.referrerName=null; state.referrerContact=null; p.classList.add('hidden'); p.innerHTML=''; };
+      results.innerHTML=''; searchInput.value='';
+    });
+  });
+}
+function collectLeadSourceValue(prefix){
+  const state=LEAD_SOURCE_STATE[prefix]||{};
+  const source=val(prefix+'_source');
+  let bannerId=null;
+  if(source==='Banner'){
+    const area=val(prefix+'_area'), bannerName=val(prefix+'_banner');
+    const banner=(DB.banners||[]).find(b=>b.area===area&&b.name===bannerName);
+    bannerId=banner?banner.id:null;
+  }
+  return {leadSource:source,bannerId,
+    referrerLeadId:source==='Referral'?state.referrerLeadId:null,
+    referrerName:source==='Referral'?state.referrerName:null,
+    referrerContact:source==='Referral'?state.referrerContact:null};
+}
 function companyLeadsStatStripHtml(){
   const totalVal=COMPANY_LEADS_LIST.reduce((s,l)=>{ const c=computeLead(l); return s+(l.grandTotal!=null?num(l.grandTotal):c.grand); },0);
   const unsourced=COMPANY_LEADS_LIST.filter(l=>!l.leadSource).length;
@@ -3552,22 +3671,27 @@ function openAddCompanyLeadModal(){
     ${fld('Contact *','<input id="cl_contact" placeholder="0244…"/>')}
     <div class="grid2">${fld('Plot type',sel('cl_plot',['Full Plot','Half Plot']))}${fld('No. of plots','<input id="cl_noplots" type="number" min="0.5" step="0.5" value="1"/>')}</div>
     ${fld('Payment plan',sel('cl_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}
-    ${fld('Notes','<textarea id="cl_notes" placeholder="How this lead reached the company, etc."></textarea>','optional')}
+    ${leadSourceFieldsHtml('cl')}
+    ${fld('Notes','<textarea id="cl_notes" placeholder="Anything else worth noting"></textarea>','optional')}
     <div class="formactions"><button class="btn primary" id="saveCompanyLead" style="width:100%">Save lead</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeAddCompanyLead').onclick=()=>ov.remove();
+  bindLeadSourceFieldsCtrls('cl',()=>(COMPANY_LEADS_LIST.length?COMPANY_LEADS_LIST:[]).concat(CLIENTDB_LOADED?CLIENTDB_LIST:[]).map(l=>({id:l.id,name:l.name,contact:l.contact})));
   document.getElementById('saveCompanyLead').onclick=async()=>{
     const name=val('cl_name').trim(), contact=val('cl_contact').trim();
     if(!name||!contact){ toast('Name and contact are required'); return; }
+    const src=collectLeadSourceValue('cl');
     const l={name,contact,date:today(),stage:'1',priority:'Low',plotType:val('cl_plot'),noPlots:val('cl_noplots'),
-      unitPrice:null,discount:null,paymentPlan:val('cl_plan'),siteVisit:'No',amtPaid:0,nextAction:'',notes:val('cl_notes').trim()};
+      unitPrice:null,discount:null,paymentPlan:val('cl_plan'),siteVisit:'No',amtPaid:0,nextAction:'',notes:val('cl_notes').trim(),
+      leadSource:src.leadSource,bannerId:src.bannerId};
     const c=computeLead(l);
     const btn=document.getElementById('saveCompanyLead'); btn.disabled=true; btn.textContent='Saving…';
     try{
       const row=await apiInsertLead(l,c,'company');
       COMPANY_LEADS_LIST.unshift(row); if(PROFILE.agent_key==='company') DB.leads.push(row);
+      if(src.referrerLeadId){ try{ await apiInsertReferral({referrerLeadId:src.referrerLeadId,referrerName:src.referrerName,referrerContact:src.referrerContact,referredName:name,referredContact:contact,referredLocation:'',referredNoPlots:val('cl_noplots'),referredLeadId:row.id}); }catch(e){} }
       toast('Company lead added'); ov.remove();
       const body=document.getElementById('companyLeadsBody'); if(body){ body.innerHTML=companyLeadsBodyHtml(); bindCompanyLeadsRows(body); }
     }catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save lead'; }
@@ -8017,12 +8141,14 @@ function formAddLead(){
   <div class="grid2">${fld('Payment plan',sel('f_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months']))}${fld('Site visit done?',sel('f_sv',['No','Yes']))}</div>
   ${fld('Deposit target (GHS)','<input id="f_deptarget" type="number" placeholder="auto = 30%"/>','only matters on an installment plan — the monthly schedule begins once this is fully paid')}
   ${canEnterPayments?fld('Amount already paid (GHS)','<input id="f_paid" type="number" placeholder="0"/>','the deposit or partial deposit, if they’ve already paid something'):''}
+  ${leadSourceFieldsHtml('f')}
   <div class="calcbox" id="calc"></div>
   ${fld('Next action','<input id="f_next" placeholder="e.g. Follow up Monday"/>')}
   ${fld('Notes','<textarea id="f_notes" placeholder="Context, preferences, history…"></textarea>')}
   <div class="formactions"><button class="btn ghost" onclick="route('home')">Cancel</button><button class="btn primary" id="saveLead">Save lead</button></div></div>`;
   ['f_plot','f_plots','f_unit','f_disc','f_plan','f_paid','f_deptarget'].forEach(i=>{ const el=document.getElementById(i); if(el) el.addEventListener('input',paintCalc); });
   bindDiscModeToggle('addlead',()=>ADDLEAD_DISC_MODE,m=>ADDLEAD_DISC_MODE=m,paintCalc);
+  bindLeadSourceFieldsCtrls('f',()=>(DB.leads||[]).map(l=>({id:l.id,name:l.name,contact:l.contact})));
   paintCalc(); document.getElementById('saveLead').onclick=saveNewLead;
 }
 function readLeadForm(){return {name:val('f_name').trim(),contact:val('f_contact').trim(),date:val('f_date'),stage:val('f_stage'),
@@ -8036,8 +8162,11 @@ function paintCalc(){ const c=computeLead(readLeadForm());
 }
 async function saveNewLead(){ const l=readLeadForm();
   if(!l.name||!l.contact){ toast('Name and contact are required'); return; }
+  const src=collectLeadSourceValue('f');
+  l.leadSource=src.leadSource; l.bannerId=src.bannerId;
   const c=computeLead(l); const btn=document.getElementById('saveLead'); btn.disabled=true; btn.textContent='Saving…';
   try{ const row=await apiInsertLead(l,c); DB.leads.unshift(row);
+    if(src.referrerLeadId){ try{ await apiInsertReferral({referrerLeadId:src.referrerLeadId,referrerName:src.referrerName,referrerContact:src.referrerContact,referredName:l.name,referredContact:l.contact,referredLocation:'',referredNoPlots:l.noPlots,referredLeadId:row.id}); }catch(e){} }
     await addActivity(l.name,'New lead added','Stage: '+l.stage,l.nextAction);
     toast('Lead saved to your pipeline'); route('pipeline');
   }catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save lead'; }
