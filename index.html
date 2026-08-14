@@ -1226,6 +1226,11 @@ function resizeImageToB64(file,maxW,maxH,quality){
 }
 
 function val(id){const e=document.getElementById(id);return e?e.value:'';}
+// Search boxes over growing tables (leads/plots/clients) were re-filtering the full
+// array and rebuilding innerHTML on every single keystroke -- fine at today's scale,
+// but janky on slower phones and only gets worse as the tables grow. Debounce delays
+// that work until typing actually pauses, without changing what any of it does.
+function debounce(fn,wait){ let t; return function(...args){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,args),wait||220); }; }
 function fld(l,inner,hint){return `<div class="field"><label>${l}${hint?` <span class="hint">— ${hint}</span>`:''}</label>${inner}</div>`;}
 function sel(id,opts,cur){return `<select id="${id}">`+opts.map(o=>`<option ${o===cur?'selected':''}>${o}</option>`).join('')+`</select>`;}
 function back(to){return `<button class="backlink" onclick="goBack('${to}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button>`;}
@@ -3099,7 +3104,7 @@ function clientDatabaseListHtml(){
 }
 function bindClientDatabaseCtrls(container){
   const inp=container.querySelector('#cdbq');
-  if(inp) inp.oninput=e=>{ CLIENTDB_QUERY=e.target.value; container.querySelector('#cdbList').innerHTML=clientDatabaseListHtml(); bindClientDbRows(container); };
+  if(inp) inp.oninput=debounce(e=>{ CLIENTDB_QUERY=e.target.value; container.querySelector('#cdbList').innerHTML=clientDatabaseListHtml(); bindClientDbRows(container); });
   const addBtn=container.querySelector('#cdbAddBtn');
   if(addBtn) addBtn.onclick=openAddClientDbLead;
   const templateBtn=container.querySelector('#cdbTemplateBtn');
@@ -4975,7 +4980,7 @@ function renderAnnounceCard(a){
     <div style="font-weight:800;font-size:15px;color:var(--text)">${esc(a.title)}</div>
     <div class="mini" style="margin-top:2px">${esc(a.createdBy||'')} · ${esc(a.createdAt||'')}</div>
     ${a.body?`<div style="font-size:13.5px;margin-top:8px;line-height:1.5">${esc(a.body)}</div>`:''}
-    ${a.image?`<img src="${a.image}"/>`:''}
+    ${a.image?`<img src="${a.image}" loading="lazy"/>`:''}
     <div id="commentsWrap_${a.id}" style="margin-top:10px"></div>
     <div class="commentRow"><input id="commentInput_${a.id}" placeholder="Write a comment…"/><button data-postcomment="${a.id}">Send</button></div>
     <div style="text-align:right;margin-top:10px"><button class="chip" data-closeannounce="${a.id}">Got it — mark as read</button></div>
@@ -5578,7 +5583,7 @@ function viewPipeline(){
   <div style="margin-bottom:14px"><button class="chip ${pf.paidOnly?'on':''}" id="paidOnlyBtn">✓ Fully paid only${pf.paidOnly?' ✕':''}</button></div>
   <div class="list" id="plist"></div>
   <div class="footer-note">System created by Abdul Waheed (Digital Operations) © ${new Date().getFullYear()}</div>`;
-  document.getElementById('pq').oninput=e=>{pf.q=e.target.value;paintPipe();};
+  document.getElementById('pq').oninput=debounce(e=>{pf.q=e.target.value;paintPipe();});
   document.getElementById('ps').onchange=e=>{pf.stage=e.target.value;paintPipe();};
   document.getElementById('paidOnlyBtn').onclick=()=>{pf.paidOnly=!pf.paidOnly;viewPipeline();};
   V.querySelectorAll('[data-recentcust]').forEach(b=>b.onclick=()=>route('customer',{name:b.dataset.recentcust,contact:b.dataset.recentcontact}));
@@ -6042,7 +6047,7 @@ async function deleteSelectedPlot(){
 }
 function bindPlotsGrid(){
   const qInp=document.getElementById('pf_q'), stSel=document.getElementById('pf_status');
-  if(qInp) qInp.oninput=e=>{ plotFilter.q=e.target.value; refreshPlotsView(); };
+  if(qInp) qInp.oninput=debounce(e=>{ plotFilter.q=e.target.value; refreshPlotsView(); });
   if(stSel) stSel.onchange=e=>{ plotFilter.status=e.target.value; refreshPlotsView(); };
   V.querySelectorAll('[data-plot]').forEach(b=>b.onclick=()=>{ selectedPlotId=selectedPlotId===b.dataset.plot?null:b.dataset.plot; refreshPlotsView(); });
   V.querySelectorAll('[data-block]').forEach(b=>b.onclick=()=>{ const bl=b.dataset.block; openBlocks.has(bl)?openBlocks.delete(bl):openBlocks.add(bl); refreshPlotsView(); });
@@ -6987,7 +6992,7 @@ function paintDuties(){
 function bindDutiesCtrls(){
   document.querySelectorAll('[data-dutiesfilter]').forEach(b=>b.onclick=()=>{ dutiesFilter=b.dataset.dutiesfilter; viewDuties(); });
   document.querySelectorAll('[data-dutiesstatus]').forEach(b=>b.onclick=()=>{ dutiesStatusFilter=b.dataset.dutiesstatus; viewDuties(); });
-  document.getElementById('dutiesSearchInput').oninput=e=>{ dutiesSearch=e.target.value; paintDuties(); };
+  document.getElementById('dutiesSearchInput').oninput=debounce(e=>{ dutiesSearch=e.target.value; paintDuties(); });
   document.getElementById('dutiesCatSelect').onchange=e=>{ dutiesCatFilter=e.target.value; paintDuties(); };
   document.getElementById('newTaskBtn').onclick=openNewTaskModal;
 }
@@ -7686,7 +7691,7 @@ function pickForUpdate(){
     const f=DB.leads.filter(l=>!q||(l.name||'').toLowerCase().includes(q)||String(l.contact||'').includes(q));
     document.getElementById('ulist').innerHTML=f.length?f.map(l=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0);
       return `<button class="rowcard" style="text-align:left;width:100%" onclick="route('updateOne','${l.id}')"><div class="top"><div><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'')} · ${esc(l.stage||'')}</div></div><div style="text-align:right"><div class="amt">${bal>0?ghs(bal):'Paid'}</div><div class="meta">balance</div></div></div></button>`; }).join(''):emptyState(ic.update,'No leads found'); };
-  document.getElementById('uq').oninput=paint; paint();
+  document.getElementById('uq').oninput=debounce(paint); paint();
 }
 let UPD_DISC_MODE='total';
 // Contract of Sale is never generated directly from the pipeline -- Elizabeth/
@@ -8272,7 +8277,7 @@ function paintLogPayBody(){
         if(lead){ LOGPAY_SELECTED_LEAD=lead; paintLogPayBody(); }
       });
     };
-    inp.oninput=()=>{ LOGPAY_QUERY=inp.value; document.getElementById('lpResults').innerHTML=logPaymentSearchResultsHtml(LOGPAY_QUERY); bindLpResultRows(); };
+    inp.oninput=debounce(()=>{ LOGPAY_QUERY=inp.value; document.getElementById('lpResults').innerHTML=logPaymentSearchResultsHtml(LOGPAY_QUERY); bindLpResultRows(); });
     bindLpResultRows();
   } else {
     body.innerHTML=logPayDetailHtml(LOGPAY_SELECTED_LEAD);
@@ -10266,7 +10271,7 @@ function paintContractAppBody(){
 }
 function bindContractAppCtrls(){
   const q=document.getElementById('ca_q');
-  if(q) q.oninput=()=>{ CONTRACTAPP_QUERY=q.value; document.getElementById('ca_results').innerHTML=logPaymentSearchResultsHtml(CONTRACTAPP_QUERY); bindContractResultRows(); };
+  if(q) q.oninput=debounce(()=>{ CONTRACTAPP_QUERY=q.value; document.getElementById('ca_results').innerHTML=logPaymentSearchResultsHtml(CONTRACTAPP_QUERY); bindContractResultRows(); });
   bindContractResultRows();
   const newBtn=document.getElementById('ca_newClient');
   if(newBtn) newBtn.onclick=openContractNewClientModal;
@@ -10673,7 +10678,7 @@ async function managerView(){
   else if(mgrTab==='Quotation Settings'){ body.innerHTML=mgrQuotationSettingsHtml(); bindQuotationSettingsCtrls(); }
   else if(mgrTab==='Commission Settings'){ body.innerHTML=mgrCommissionSettingsHtml(); bindCommissionSettingsCtrls(); }
   else if(mgrTab==='Pricing & Targets'){ if(!PRICING_HISTORY_LOADED){ try{ PRICING_HISTORY_LIST=await apiLoadPricingHistory(); PRICING_HISTORY_LOADED=true; }catch(e){} } body.innerHTML=mgrPricingTargetsHtml(); bindPricingTargetsCtrls(); }
-  else if(mgrTab==='Staff Settings'){ TEAM_ROSTER=await apiLoadFullRoster(); INVITE_LIST=await apiListInvites().catch(()=>[]); body.innerHTML=mgrStaffSettingsHtml(); bindStaffSettingsCtrls(); }
+  else if(mgrTab==='Staff Settings'){ [TEAM_ROSTER,INVITE_LIST]=await Promise.all([apiLoadFullRoster(),apiListInvites().catch(()=>[])]); body.innerHTML=mgrStaffSettingsHtml(); bindStaffSettingsCtrls(); }
   else if(mgrTab==='Company Settings'){ body.innerHTML=mgrCompanySettingsHtml(); bindCompanySettingsCtrls(); }
   else if(mgrTab==='Backup & Restore'){ if(!BACKUPS_LOADED){ try{ BACKUPS_LIST=await apiLoadBackups(); BACKUPS_LOADED=true; }catch(e){} } body.innerHTML=mgrBackupHtml(); bindMgrBackupCtrls(); }
   else if(mgrTab==='System Health'){ body.innerHTML=`<div class="skel" style="height:120px;border-radius:16px"></div>`; const health=await computeSystemHealth(); body.innerHTML=systemHealthHtml(health); bindSystemHealthCtrls(); }
@@ -11136,7 +11141,7 @@ async function downloadMasterPipelineExcel(){
   btn.disabled=false; btn.textContent='⬇ Download Master Pipeline (.xlsx)';
 }
 function bindReportCtrls(){
-  document.getElementById('reportsSearchInput').oninput=e=>{ REPORTS_SEARCH=e.target.value; document.getElementById('reportsSearchResults').innerHTML=reportsSearchResultsHtml(); bindReportsSearchResultRows(); };
+  document.getElementById('reportsSearchInput').oninput=debounce(e=>{ REPORTS_SEARCH=e.target.value; document.getElementById('reportsSearchResults').innerHTML=reportsSearchResultsHtml(); bindReportsSearchResultRows(); });
   bindReportsSearchResultRows();
   document.getElementById('xlCompanyBtn').onclick=downloadCompanyExcel;
   document.getElementById('xlMasterBtn').onclick=downloadMasterPipelineExcel;
@@ -12236,7 +12241,7 @@ function bindSmsCtrls(){
     paintSmsBody();
   });
   const search=document.getElementById('sms_search');
-  if(search) search.oninput=()=>{ SMS_SEARCH=search.value; document.getElementById('smsRecipientArea').innerHTML=smsRecipientAreaHtml(); bindSmsCtrls(); };
+  if(search) search.oninput=debounce(()=>{ SMS_SEARCH=search.value; document.getElementById('smsRecipientArea').innerHTML=smsRecipientAreaHtml(); bindSmsCtrls(); });
   document.querySelectorAll('[data-smsperson]').forEach(cb=>cb.onchange=()=>{
     const phone=cb.dataset.smsperson;
     if(cb.checked) SMS_SELECTED[phone]=cb.dataset.smsname;
@@ -12699,7 +12704,7 @@ function newsCategoryOf(a){
 function renderNewsCard(a){
   const cat=newsCategoryOf(a);
   return `<div class="newsCard ${a.active?'':'inactive'}">
-    ${a.image?`<div class="newsCardImg"><img src="${a.image}"/></div>`:''}
+    ${a.image?`<div class="newsCardImg"><img src="${a.image}" loading="lazy"/></div>`:''}
     <div class="newsCardBody">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <span class="tag" style="background:${cat.bg};color:${cat.color};border-color:transparent">${cat.label}</span>
@@ -13553,7 +13558,7 @@ function bannerRowHtml(b){
   const st=BANNER_STATUS[b.status]||BANNER_STATUS.placed;
   const leadCount=BANNER_LEAD_COUNTS[b.id]||0;
   return `<button class="rowcard" style="text-align:left;width:100%" data-bnopen="${b.id}"><div class="top">
-    ${b.image?`<img src="${b.image}" style="width:44px;height:44px;border-radius:10px;object-fit:cover;flex:0 0 auto;margin-right:10px"/>`:''}
+    ${b.image?`<img src="${b.image}" loading="lazy" style="width:44px;height:44px;border-radius:10px;object-fit:cover;flex:0 0 auto;margin-right:10px"/>`:''}
     <div><div class="nm">${esc(b.name)}</div><div class="meta">${esc(b.area||'—')} · ${esc((b.updatedAt||b.createdAt||'').slice(0,16).replace('T',' '))}${leadCount?' · '+leadCount+' lead'+(leadCount===1?'':'s'):''}</div></div>
     <span class="tag" style="background:${st.bg};color:${st.color};border-color:transparent">${st.label}</span>
   </div></button>`;
@@ -13605,7 +13610,7 @@ function bindBannerListCtrls(){
   document.querySelectorAll('[data-bnarea]').forEach(b=>b.onclick=()=>{ bannerAreaFilter=b.dataset.bnarea; paintBannerApp(); });
   const rebindRows=(list)=>list.querySelectorAll('[data-bnopen]').forEach(b=>b.onclick=()=>{ const rec=DB.banners.find(x=>x.id===b.dataset.bnopen); if(rec) openBannerModal(rec); });
   const searchInput=document.getElementById('bnSearchInput');
-  searchInput.oninput=()=>{
+  searchInput.oninput=debounce(()=>{
     const q=searchInput.value.toLowerCase();
     const listEl=document.getElementById('bnList');
     let filtered=DB.banners.slice();
@@ -13615,7 +13620,7 @@ function bindBannerListCtrls(){
     filtered.sort((a,b)=>(b.updatedAt||b.createdAt||'').localeCompare(a.updatedAt||a.createdAt||''));
     listEl.innerHTML=filtered.length?filtered.map(bannerRowHtml).join(''):emptyState(ic.grid,'Nothing here','Try a different search.');
     rebindRows(listEl);
-  };
+  });
   rebindRows(document);
 }
 function openBannerModal(existing){
