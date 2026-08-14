@@ -162,6 +162,9 @@ a{color:var(--green2)}
   padding:10px 12px;font-size:12px;color:#E4F5B0;line-height:1.55;display:flex;gap:9px;align-items:flex-start}
 .demo-banner svg{flex:0 0 auto;margin-top:1px}
 .linkbtn{background:none;border:none;color:#9DB2CC;text-decoration:underline;font-size:12px;margin-top:14px;width:100%;text-align:center}
+.loginModeSwitch{display:flex;justify-content:center;margin:12px 0 4px}
+.loginModeSwitch button{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);color:#EAF7FA;font-size:12.5px;font-weight:600;padding:8px 16px;border-radius:100px;cursor:pointer;transition:.15s;backdrop-filter:blur(6px)}
+.loginModeSwitch button:hover{background:rgba(255,255,255,.14)}
 .sysBanner{position:fixed;left:12px;right:12px;bottom:14px;z-index:60;display:flex;align-items:center;gap:10px;
   padding:12px 14px;border-radius:14px;font-size:12.5px;line-height:1.5;box-shadow:0 10px 30px rgba(0,0,0,.3);
   animation:fadeUp .3s ease both;max-width:520px;margin:0 auto}
@@ -268,6 +271,17 @@ a{color:var(--green2)}
   .whoami{padding:4px 4px 4px 4px;gap:1px}
   .iconbtn{width:31px;height:31px}
   .iconbtn svg{width:15px;height:15px}
+  /* Site Visit Auth: an 8-column table can't fit a phone screen without horizontal
+     scrolling that hid the client-data columns entirely -- turn each row into a
+     stacked label:value card instead, using the same <td data-label> markup. */
+  .svaTableWrap{overflow-x:visible;border:none}
+  .svaTable{min-width:0!important}
+  .svaTable thead{display:none}
+  .svaTable tbody tr{display:block;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:var(--card)}
+  .svaTable tbody tr td{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border:none;text-align:right}
+  .svaTable tbody tr td[data-label]:not([data-label=""])::before{content:attr(data-label);font-weight:700;color:var(--muted);font-size:11px;text-align:left;flex:1}
+  .svaTable tbody tr td[data-label=""]{justify-content:flex-end}
+  .svaCostGrid{grid-template-columns:1fr!important}
 }
 .chatnavbtn .badge{position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:100px;
   background:linear-gradient(150deg,#84CC16,#4D7C0F);color:#0B1E3D;font-size:9.5px;font-weight:800;
@@ -550,6 +564,7 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--leaf);box-shadow:var(--glow-blue);transform:translateY(-1px)}
 .field input:hover:not(:focus),.field select:hover:not(:focus){border-color:#C7D0DC}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:430px){.grid2{grid-template-columns:1fr}}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip2{border:1.5px solid var(--line);background:var(--card);border-radius:100px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--text);transition:.15s}
 .lvCalNav{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
@@ -636,7 +651,9 @@ body.dark .empty .bigicon{background:linear-gradient(135deg,#182541,#132038)}
 .agentrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 4px;border-bottom:1px solid var(--line);transition:.15s}
 .agentrow:hover{background:#FAF8F1}
 .agentrow:last-child{border-bottom:none}
-.agentrow .ai{display:flex;align-items:center;gap:12px}
+.agentrow .ai{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+.agentrow .ai>div{min-width:0}
+.agentrow .nm,.agentrow .mini{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mini{font-size:11px;color:var(--muted)}
 select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;font-size:13px}
 .footer-note{text-align:center;color:var(--muted);font-size:11.5px;padding:20px 10px 4px;display:flex;align-items:center;justify-content:center;gap:8px}
@@ -775,8 +792,8 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
     <div id="forgotWrap" class="hidden" style="text-align:right;margin-top:8px">
       <button class="linkbtn" id="forgotBtn" style="margin:0;width:auto;display:inline">Forgot your password?</button>
     </div>
-    <div id="pinSwitchWrap" class="hidden" style="text-align:right;margin-top:8px">
-      <button class="linkbtn" id="modeSwitchBtn" style="margin:0;width:auto;display:inline">Use PIN instead</button>
+    <div id="pinSwitchWrap" class="hidden loginModeSwitch">
+      <button type="button" id="modeSwitchBtn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Use PIN instead</button>
     </div>
     <button class="signin" id="signBtn" disabled>Sign in</button>
     <div class="err" id="loginErr"></div>
@@ -4058,12 +4075,16 @@ applyDarkModePref();
 document.getElementById('darkModeBtn').onclick=()=>{
   document.body.classList.toggle('dark');
   try{ localStorage.setItem('pep_dark', document.body.classList.contains('dark')?'1':'0'); }catch(e){}
-  // Some cards choose hardcoded (non-variable) colors at render time based on
-  // dark/light mode, so a plain class toggle leaves those stuck until the next
-  // navigation -- immediately repaint whatever's on screen so it takes full
-  // effect on this one tap, not the next page visit.
-  if(typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT) && history.state && history.state.routeName){
-    try{ route(history.state.routeName,history.state.routeArg,true); }catch(e){}
+  // Most of the theme is CSS-variable-driven and updates live the instant the class
+  // toggles, everywhere in the DOM -- including open modals, which live outside #view
+  // and were never touched by the old route()-only repaint below. A few cards still
+  // bake literal colors into their template string at render time, though, so also
+  // re-run whatever's on screen. Prefer CURRENT_ROUTE_NAME (kept in sync on every
+  // route() call, even ones that skip history.pushState) over history.state, which
+  // can be empty right after sign-in or inside a modal-only flow.
+  if(typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
+    const rn=(history.state&&history.state.routeName)||CURRENT_ROUTE_NAME;
+    if(rn){ try{ route(rn,(history.state&&history.state.routeArg),true); }catch(e){} }
   }
 };
 document.getElementById('accountBtn').onclick=()=>route(IS_CLIENT?'clientsettings':'account');
@@ -4518,7 +4539,7 @@ function svgLineChart(values,labels,opts={}){
   const pathD=pts.map((p,i)=>(i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
   const areaD=pathD+` L${pts[n-1][0].toFixed(1)},${h-pad} L${pts[0][0].toFixed(1)},${h-pad} Z`;
   const dots=pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4" fill="#3B82F6" stroke="#fff" stroke-width="1.5"/>`).join('');
-  const lbls=labels.map((l,i)=>`<text x="${pts[i][0].toFixed(1)}" y="${h-8}" font-size="10.5" fill="#647085" text-anchor="middle" font-family="Inter,sans-serif">${esc(l)}</text>`).join('');
+  const lbls=labels.map((l,i)=>`<text x="${pts[i][0].toFixed(1)}" y="${h-8}" font-size="10.5" fill="var(--muted)" text-anchor="middle" font-family="Inter,sans-serif">${esc(l)}</text>`).join('');
   return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:${h}px;display:block" preserveAspectRatio="none">
     <defs><linearGradient id="lcGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3B82F6" stop-opacity="0.32"/><stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/></linearGradient></defs>
     <path d="${areaD}" fill="url(#lcGrad)"/>
@@ -8419,19 +8440,19 @@ function siteVisitAuthBodyHtml(form,visits){
   </div>
 
   <div class="sectitle" style="margin-top:0"><h3>AUTHORIZATION FORM-TSOPOLI SITE VISIT</h3><span class="cnt">${esc(fmtLongDate(SVA_SELECTED_DAY))} · ${visits.length} visit${visits.length===1?'':'s'}</span></div>
-  <div style="overflow-x:auto;margin-bottom:18px;border:1px solid var(--line);border-radius:12px">
-    <table class="league-table" style="min-width:960px">
+  <div class="svaTableWrap" style="overflow-x:auto;margin-bottom:18px;border:1px solid var(--line);border-radius:12px">
+    <table class="league-table svaTable" style="min-width:960px">
       <thead><tr>${SVA_VISIT_COLS.map(([label])=>`<th>${esc(label)}</th>`).join('')}<th></th></tr></thead>
       <tbody>${!visits.length?`<tr><td colspan="${SVA_VISIT_COLS.length+1}" style="text-align:center;color:var(--muted)">No site visits logged for this day yet.</td></tr>`:
-        visits.map(v=>`<tr>${SVA_VISIT_COLS.map(([,key])=>`<td>${esc(v[key]||'—')}</td>`).join('')}
-          <td><button class="trashbtn" data-svadelvisit="${esc(v.id)}" title="Remove from this form"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V4h6v3m-8 0l1 13h8l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td></tr>`).join('')}
+        visits.map(v=>`<tr>${SVA_VISIT_COLS.map(([label,key])=>`<td data-label="${esc(label)}">${esc(v[key]||'—')}</td>`).join('')}
+          <td data-label=""><button class="trashbtn" data-svadelvisit="${esc(v.id)}" title="Remove from this form"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V4h6v3m-8 0l1 13h8l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></td></tr>`).join('')}
       </tbody>
     </table>
   </div>
 
   <div class="sectitle"><h3>Cost breakdown</h3><span class="cnt">Estimated vs. actual, exactly as on the paper form</span></div>
   <div class="rowcard" style="margin-bottom:18px">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="svaCostGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div>
         <div style="font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:8px">Estimated Cost</div>
         ${SVA_COST_ROWS.map(r=>`
@@ -13608,7 +13629,12 @@ function openBannerModal(existing){
     ${fld('Area *','<input id="bn_area" list="bnAreaList" placeholder="e.g. Spintex" value="'+esc(existing?existing.area:'')+'"/>')}
     <datalist id="bnAreaList">${areas.map(a=>`<option value="${esc(a)}"></option>`).join('')}</datalist>
     ${fld('Status',sel('bn_status',['Perfect condition','Needs maintenance','New location (no banner yet)'],curLabel))}
-    ${fld('Banner photo','<input id="bn_image" type="file" accept="image/*"/>','optional — skip for a scouted location with no banner yet')}
+    ${fld('Banner photo',`<div style="display:flex;gap:8px">
+      <button type="button" class="btn ghost" id="bn_takePhotoBtn" style="flex:1">📷 Take photo</button>
+      <button type="button" class="btn ghost" id="bn_pickPhotoBtn" style="flex:1">🖼️ Choose from gallery</button>
+    </div>
+    <input id="bn_imageCapture" type="file" accept="image/*" capture="environment" class="hidden"/>
+    <input id="bn_image" type="file" accept="image/*" class="hidden"/>`,'optional — skip for a scouted location with no banner yet')}
     <div id="bn_imgPreview">${existing&&existing.image?`<img src="${existing.image}" style="max-width:140px;border-radius:10px;margin-top:6px"/>`:''}</div>
     <div class="grid2">${fld('Latitude','<input id="bn_lat" type="number" step="any" value="'+(existing&&existing.lat!=null?existing.lat:'')+'"/>')}${fld('Longitude','<input id="bn_lng" type="number" step="any" value="'+(existing&&existing.lng!=null?existing.lng:'')+'"/>')}</div>
     <div class="formactions" style="margin:-6px 0 12px"><button class="btn ghost" id="bn_useLoc" style="width:100%" type="button">📍 Use my current location</button></div>
@@ -13620,11 +13646,15 @@ function openBannerModal(existing){
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeBannerModal').onclick=()=>ov.remove();
   let imageB64=existing?existing.image:null;
-  document.getElementById('bn_image').onchange=async(e)=>{
+  const bnHandlePhoto=async(e)=>{
     const file=e.target.files[0]; if(!file) return;
     try{ imageB64=await resizeImageToB64(file,900,900,0.8); document.getElementById('bn_imgPreview').innerHTML=`<img src="${imageB64}" style="max-width:140px;border-radius:10px;margin-top:6px"/>`; }
     catch(err){ toast('Could not read that image'); }
   };
+  document.getElementById('bn_image').onchange=bnHandlePhoto;
+  document.getElementById('bn_imageCapture').onchange=bnHandlePhoto;
+  document.getElementById('bn_takePhotoBtn').onclick=()=>document.getElementById('bn_imageCapture').click();
+  document.getElementById('bn_pickPhotoBtn').onclick=()=>document.getElementById('bn_image').click();
   document.getElementById('bn_useLoc').onclick=()=>{
     if(!navigator.geolocation){ toast('Geolocation not available on this device'); return; }
     const btn=document.getElementById('bn_useLoc'); btn.disabled=true; btn.textContent='Locating…';
