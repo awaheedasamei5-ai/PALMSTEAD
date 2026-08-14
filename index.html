@@ -589,6 +589,11 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .tag.portal{background:#EAF7D8;color:#4D7C0F}
 .chip{border:1px solid var(--line);background:var(--card);border-radius:100px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--text);transition:.15s}
 .chip:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
+/* .chip.on is used ~30 places across the app (mode/filter toggles) to mark the
+   selected option, but no rule ever styled it -- selected and unselected chips
+   were visually identical everywhere this pattern is used. */
+.chip.on{background:var(--green);color:#fff;border-color:var(--green)}
+.chip.on:hover{background:var(--ink);border-color:var(--ink)}
 
 .formwrap{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px 17px;box-shadow:var(--shadow);animation:fadeUp .4s ease both}
 .field{margin-bottom:15px}
@@ -12396,8 +12401,10 @@ function paintSmsBody(){
   const body=document.getElementById('smsBody'); if(!body) return;
   const customVal=SMS_MODE==='custom'?(document.getElementById('sms_custom')?document.getElementById('sms_custom').value:''):'';
   body.innerHTML=`
+  <div class="sectitle" style="margin-top:0"><h3>Who</h3></div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${smsModeChip('staff','Staff')}${smsModeChip('clients','Clients')}${smsModeChip('custom','Custom number')}</div>
-  <div id="smsRecipientArea">${smsRecipientAreaHtml()}</div>
+  <div class="formwrap" id="smsRecipientArea">${smsRecipientAreaHtml()}</div>
+  <div class="sectitle"><h3>Message</h3></div>
   <div class="formwrap" style="margin-top:6px">
   ${fld('Message','<textarea id="sms_message" rows="5" placeholder="Type your message…">'+esc(document.getElementById('sms_message')?document.getElementById('sms_message').value:'')+'</textarea>')}
   <div class="mini" id="smsCharCount" style="margin:-8px 0 12px"></div>
