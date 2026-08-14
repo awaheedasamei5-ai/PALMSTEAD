@@ -1898,7 +1898,7 @@ function seedDemoPlots(){
   ];
 }
 function seedDemo(){
-  const m={version:DEMO_VERSION,leads:{},enquiries:[],complaints:[],sitevisits:[],activity:[],config:defaultConfig(),employees:[],overrides:{},invites:[],plots:seedDemoPlots(),payments:[],announcements:[],allocations:[],messages:[]};
+  const m={version:DEMO_VERSION,leads:{},enquiries:[],complaints:[],sitevisits:[],activity:[],config:defaultConfig(),employees:[],overrides:{},invites:[],plots:seedDemoPlots(),payments:[],announcements:[],allocations:[],messages:[],notes:[]};
   Object.keys(DEMO_PIPELINES).forEach(k=>{ m.leads[k]=DEMO_PIPELINES[k].map(l=>({id:uid(),agent:k,...l,
     netTotal:l.netTotal,grandTotal:l.grandTotal,balance:l.balance})); });
   // backfill: one opening payment per lead with money already paid, dated to when it was added
@@ -1921,6 +1921,7 @@ async function demoLoad(){
     if(!demoMem.announcements) demoMem.announcements=[];
     if(!demoMem.allocations) demoMem.allocations=[];
     if(!demoMem.messages) demoMem.messages=[];
+    if(!demoMem.notes) demoMem.notes=[];
     return demoMem; }
   demoMem=seedDemo();
   await demoSave();
@@ -4112,7 +4113,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -4405,6 +4406,7 @@ function mgrAppRoute(key){
   else if(key==='Log Payment') route('logpayment');
   else if(key==='Site Visit Auth') route('sitevisitauth');
   else if(key==='Contract of Sale') route('contractapp');
+  else if(key==='Notes') route('notes');
   else route('mgrTabView',key);
 }
 function mgrAppGridHtml(items){
@@ -4456,6 +4458,7 @@ function viewMore(){
     const items=[
       {key:'insights',fic:'target',label:'Smart Insights'},
       {key:'downloads',fic:'document',label:'Download Directory'},
+      {key:'notes',fic:'document',label:'Notes'},
       {key:'account',fic:'settings',label:'Settings'}
     ];
     grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
@@ -10094,6 +10097,7 @@ const MGR_APPS=[
   {key:'Insights',fic:'target',label:'Smart Insights'},
   {key:'Settings',fic:'settings',label:'Settings'},
   {key:'Downloads',fic:'document',label:'Download Directory'},
+  {key:'Notes',fic:'document',label:'Notes'},
   {key:'Quotation Settings',fic:'document',label:'Quotation Settings',section:'settingshub'},
   {key:'Commission Settings',fic:'savings',label:'Commission Settings',section:'settingshub'},
   {key:'Pricing & Targets',fic:'analytics',label:'Pricing & Targets',section:'settingshub'},
@@ -11287,6 +11291,106 @@ function openRestoreConfirmModal(backupId,whenLabel){
       managerView();
     }catch(e){ toast('Restore failed: '+(e.message||e)); goBtn.disabled=false; goBtn.textContent='Restore now'; }
   };
+}
+/* Notes app -- simple private jot-down/save/send/download tool. Each agent/manager only
+   ever sees their own notes (RLS-enforced live; client-side filtered in demo). */
+let NOTES_LOADED=false, NOTES_LIST=[];
+function mapNote(r){ return {id:r.id,title:r.title,body:r.body,createdAt:r.created_at,updatedAt:r.updated_at}; }
+async function apiLoadNotes(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.notes||[]).filter(n=>n.ownerKey===PROFILE.key).slice().sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')); }
+  const {data,error}=await sb.from('notes').select('*').eq('owner_key',PROFILE.key).order('updated_at',{ascending:false});
+  if(error) throw error; return (data||[]).map(mapNote);
+}
+async function apiSaveNote(id,title,body){
+  if(DEMO_MODE){ const d=await demoLoad(); d.notes=d.notes||[];
+    if(id){ const n=d.notes.find(x=>x.id===id); if(n){ n.title=title; n.body=body; n.updatedAt=new Date().toISOString(); } await demoSave(); return n; }
+    const rec={id:uid(),ownerKey:PROFILE.key,title,body,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    d.notes.unshift(rec); await demoSave(); return rec; }
+  if(id){ const {data,error}=await sb.from('notes').update({title,body,updated_at:new Date().toISOString()}).eq('id',id).select().single(); if(error) throw error; return mapNote(data); }
+  const {data,error}=await sb.from('notes').insert({owner_key:PROFILE.key,title,body}).select().single(); if(error) throw error; return mapNote(data);
+}
+async function apiDeleteNote(id){
+  if(DEMO_MODE){ const d=await demoLoad(); d.notes=(d.notes||[]).filter(x=>x.id!==id); await demoSave(); return; }
+  const {error}=await sb.from('notes').delete().eq('id',id); if(error) throw error;
+}
+async function viewNotesApp(){
+  V.innerHTML=`${back(PROFILE.role==='manager'?'mgr':'more')}<div class="pagehead"><div><div class="eyebrow">Personal</div><h2>Notes</h2><p>Quick private notes — jot something down, save it, send it, or download it.</p></div></div>
+  <div id="notesBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  if(!NOTES_LOADED){ try{ NOTES_LIST=await apiLoadNotes(); NOTES_LOADED=true; }catch(e){ toast('Could not load notes: '+(e.message||e)); } }
+  const body=document.getElementById('notesBody');
+  body.innerHTML=notesBodyHtml();
+  bindNotesCtrls(body);
+}
+function notesBodyHtml(){
+  return `<div style="margin-bottom:14px"><button class="btn primary" id="notesAddBtn" style="width:100%">+ New note</button></div>
+  <div class="list" id="notesList">${NOTES_LIST.length?NOTES_LIST.map(n=>noteRowHtml(n)).join(''):emptyState(ic.doc,'No notes yet','Tap "+ New note" to jot something down.')}</div>`;
+}
+function noteRowHtml(n){
+  const snippet=(n.body||'').replace(/\s+/g,' ').trim().slice(0,90);
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(n.title||'Untitled note')}</div><div class="meta">${fmtBackupWhen(n.updatedAt)}</div></div></div>
+  ${snippet?`<div class="note">${esc(snippet)}${(n.body||'').length>90?'…':''}</div>`:''}
+  <div class="foot" style="gap:8px;flex-wrap:wrap"><button class="chip" data-noteedit="${esc(n.id)}">Open</button><button class="chip" data-notesend="${esc(n.id)}">Send</button><button class="chip" data-notedl="${esc(n.id)}">Download</button><button class="chip" data-notedel="${esc(n.id)}" style="color:#B91C1C">Delete</button></div></div>`;
+}
+function bindNotesCtrls(container){
+  const addBtn=document.getElementById('notesAddBtn'); if(addBtn) addBtn.onclick=()=>openNoteModal(null);
+  container.querySelectorAll('[data-noteedit]').forEach(b=>b.onclick=()=>{ const n=NOTES_LIST.find(x=>x.id===b.dataset.noteedit); if(n) openNoteModal(n); });
+  container.querySelectorAll('[data-notesend]').forEach(b=>b.onclick=()=>{ const n=NOTES_LIST.find(x=>x.id===b.dataset.notesend); if(n) openNoteSendModal(n); });
+  container.querySelectorAll('[data-notedl]').forEach(b=>b.onclick=()=>{ const n=NOTES_LIST.find(x=>x.id===b.dataset.notedl); if(n) downloadNote(n); });
+  container.querySelectorAll('[data-notedel]').forEach(b=>b.onclick=async()=>{
+    const n=NOTES_LIST.find(x=>x.id===b.dataset.notedel); if(!n) return;
+    if(!confirm('Delete "'+(n.title||'Untitled note')+'"?')) return;
+    try{ await apiDeleteNote(n.id); NOTES_LIST=NOTES_LIST.filter(x=>x.id!==n.id); const body=document.getElementById('notesBody'); body.innerHTML=notesBodyHtml(); bindNotesCtrls(body); toast('Note deleted'); }
+    catch(e){ toast('Delete failed: '+(e.message||e)); }
+  });
+}
+function openNoteModal(note){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${note?'Edit note':'New note'}</div><button id="closeNoteModal" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Title','<input id="nt_title" placeholder="Untitled note" value="'+esc(note?note.title||'':'')+'"/>','optional')}
+    ${fld('Note','<textarea id="nt_body" rows="8" placeholder="Type here…">'+esc(note?note.body||'':'')+'</textarea>')}
+    <div class="formactions"><button class="btn primary" id="nt_save" style="width:100%">Save note</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeNoteModal').onclick=()=>ov.remove();
+  document.getElementById('nt_save').onclick=async()=>{
+    const title=val('nt_title').trim(), body=val('nt_body');
+    if(!title&&!body.trim()){ toast('Write something first'); return; }
+    const btn=document.getElementById('nt_save'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const saved=await apiSaveNote(note?note.id:null,title,body);
+      if(note){ Object.assign(note,{title:saved.title,body:saved.body,updatedAt:saved.updatedAt}); NOTES_LIST=NOTES_LIST.filter(x=>x.id!==note.id); NOTES_LIST.unshift(note); }
+      else NOTES_LIST.unshift(saved);
+      toast('Note saved'); ov.remove();
+      const body2=document.getElementById('notesBody'); if(body2){ body2.innerHTML=notesBodyHtml(); bindNotesCtrls(body2); }
+    }catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save note'; }
+  };
+}
+function openNoteSendModal(note){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  const text=(note.title?note.title+'\n\n':'')+(note.body||'');
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Send "${esc(note.title||'Untitled note')}"</div><button id="closeNoteSend" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:14px">Opens WhatsApp or Email with this note pre-filled — pick the recipient there.</div>
+    <div class="formactions" style="flex-direction:column;gap:8px">
+      <button class="btn primary" id="nt_sendWa" style="width:100%">Send via WhatsApp</button>
+      <button class="chip" id="nt_sendEmail" style="width:100%">Send via Email</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeNoteSend').onclick=()=>ov.remove();
+  document.getElementById('nt_sendWa').onclick=()=>{ window.open('https://wa.me/?text='+encodeURIComponent(text),'_blank'); ov.remove(); };
+  document.getElementById('nt_sendEmail').onclick=()=>{ window.open('mailto:?subject='+encodeURIComponent(note.title||'Note')+'&body='+encodeURIComponent(text),'_blank'); ov.remove(); };
+}
+function downloadNote(note){
+  const text=(note.title?note.title+'\n\n':'')+(note.body||'');
+  const blob=new Blob([text],{type:'text/plain'});
+  const url=URL.createObjectURL(blob);
+  triggerDownload(url,(note.title||'note').replace(/[^a-z0-9]+/gi,'_').slice(0,40)+'.txt','note',blob);
 }
 function paintTeamToggle(b,isActive){
   b.dataset.active=isActive;
