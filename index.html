@@ -4917,7 +4917,7 @@ function groupedAppGridHtml(groups){
     <div class="appGridGroupLabel">${esc(g.title)}</div>
     <div class="appGrid">${g.items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`).join('');
 }
-const VAULT_ICONS={'Documents':'📁','Operations':'🗂️','Money':'💰','Insights':'📊','My pipeline':'📈','Client touchpoints':'🤝','Inventory & records':'🏘️','Pricing & money':'💳','Team & company':'🏢','System':'⚙️'};
+const VAULT_ICONS={'Documents':'📁','Operations':'🗂️','Money':'💰','Insights':'📊','My pipeline':'📈','Client touchpoints':'🤝','Inventory & records':'🏘️','Pricing & money':'💳','Team & company':'🏢','System':'⚙️','Documents & tools':'🧰'};
 // A vault is a collapsed <details> card -- tap it and the apps inside expand in
 // place. Cuts a 13-tile flat grid down to 4 tiles up front, instead of just
 // labelling the same flat grid (which is what the section-header version did).
@@ -5010,7 +5010,12 @@ function viewMore(){
       {key:'sms',fic:'sms',label:'SMS'},
       {key:'account',fic:'settings',label:'Settings'}
     ];
-    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+    const byKey=k=>items.find(a=>a.key===k);
+    const groups=[
+      {title:'Insights',items:['insights'].map(byKey).filter(Boolean)},
+      {title:'Documents & tools',items:['downloads','notes','sms','account'].map(byKey).filter(Boolean)}
+    ];
+    grid.innerHTML=vaultGridHtml(groups,{openFirst:true});
     grid.querySelectorAll('[data-moreapp]').forEach(b=>{
       const item=items.find(a=>a.key===b.dataset.moreapp);
       b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); if(item&&item.badgeCountKey&&DB.badgeCounts){ DB.badgeCounts[item.badgeCountKey]=0; refreshAllBadges(); } route(b.dataset.moreapp); };
