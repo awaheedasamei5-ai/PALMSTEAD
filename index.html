@@ -460,6 +460,19 @@ a{color:var(--green2)}
 .vaultCard[open] .vaultChevron{transform:rotate(180deg)}
 .vaultCard[open] .vaultSummary{border-bottom:1px solid var(--line)}
 .vaultContents{padding:16px;margin:0!important;animation:fadeUp .3s ease both}
+.clauseList{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.clauseItem{border-bottom:1px solid var(--line)}
+.clauseItem:last-child{border-bottom:none}
+.clauseSummary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:11px 12px;user-select:none;transition:.15s}
+.clauseSummary::-webkit-details-marker{display:none}
+.clauseSummary:hover{background:var(--paper)}
+.clauseMarker{flex:0 0 auto;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:#fff;background:var(--ink);border-radius:6px;padding:2px 6px}
+.clausePreview{flex:1;min-width:0;font-size:12.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clauseChevron{flex:0 0 auto;color:var(--muted);transition:transform .25s ease}
+.clauseItem[open] .clauseChevron{transform:rotate(180deg)}
+.clauseItem[open] .clauseSummary{background:var(--paper);border-bottom:1px solid var(--line)}
+.clauseText{width:100%;box-sizing:border-box;border:none;padding:12px;font-family:inherit;font-size:13px;line-height:1.5;resize:vertical;background:transparent;color:var(--text)}
+.clauseText:focus{outline:none;background:var(--paper)}
 .appGridIcon{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;cursor:pointer;padding:14px 6px;border-radius:16px;transition:.15s}
 .appGridIcon:hover{background:#F4F6F5;transform:translateY(-4px)}
 .appGridIcon:hover .fic{transform:scale(1.06)}
@@ -10726,6 +10739,48 @@ function bindContractRequestsCtrls(){
   const unreadIds=(DB.contractRequests||[]).filter(r=>r.status==='pending'&&!r.read).map(r=>r.id);
   if(unreadIds.length){ apiMarkContractRequestsRead(unreadIds).then(()=>{ unreadIds.forEach(id=>{ const r=DB.contractRequests.find(x=>x.id===id); if(r) r.read=true; }); }); }
 }
+// Splits a CONFIG contract-text field into individual clause paragraphs using the
+// exact same blank-line boundary pdfContractBody() itself splits on -- so what you
+// edit here as "one clause" is exactly one printed clause, never more, never less.
+function splitContractClauses(text){ return String(text||'').split(/\n\s*\n/).map(p=>p.trim()).filter(Boolean); }
+// A short label for the collapsed summary row -- the clause's own number/marker
+// plus a preview of its opening words, so "2.2.6" or "3.1 Payments and Defaults"
+// is findable at a glance without opening every clause to check.
+function clauseLabel(para){
+  const m=para.match(/^(\d+(?:\.\d+){0,3}\.?|[ivx]+\.|[a-z]\.)\s*([\s\S]*)$/i);
+  const marker=m?m[1].replace(/\.$/,''):'';
+  const rest=(m?m[2]:para).replace(/\s+/g,' ').trim();
+  return {marker,preview:rest.length>72?rest.slice(0,72)+'…':(rest||'(untitled)')};
+}
+function clauseEditorHtml(prefix,text){
+  const clauses=splitContractClauses(text);
+  return `<div class="clauseList" id="${prefix}_clauseList">${clauses.map(c=>{
+    const {marker,preview}=clauseLabel(c);
+    return `<details class="clauseItem">
+      <summary class="clauseSummary">
+        ${marker?`<span class="clauseMarker">${esc(marker)}</span>`:''}
+        <span class="clausePreview">${esc(preview)}</span>
+        <svg class="clauseChevron" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </summary>
+      <textarea class="clauseText" rows="3">${esc(c)}</textarea>
+    </details>`;
+  }).join('')}</div>
+  <button type="button" class="chip" id="${prefix}_addClause" style="width:100%;margin-top:10px">+ Add a clause</button>`;
+}
+function collectClauseEditorValue(prefix){
+  const list=document.getElementById(prefix+'_clauseList'); if(!list) return '';
+  return [...list.querySelectorAll('.clauseText')].map(a=>a.value.trim()).filter(Boolean).join('\n\n');
+}
+function bindClauseEditorCtrls(prefix){
+  const addBtn=document.getElementById(prefix+'_addClause');
+  if(addBtn) addBtn.onclick=()=>{
+    const list=document.getElementById(prefix+'_clauseList');
+    const wrap=document.createElement('div');
+    wrap.innerHTML=`<details class="clauseItem" open><summary class="clauseSummary"><span class="clausePreview">New clause</span><svg class="clauseChevron" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><textarea class="clauseText" rows="3"></textarea></details>`;
+    const item=wrap.firstElementChild; list.appendChild(item);
+    item.querySelector('.clauseText').focus();
+  };
+}
 function contractAppSettingsHtml(){
   return `
   <div class="sectitle" style="margin-top:0"><h3>Contract settings</h3><span class="cnt">everything the PDF is built from</span></div>
@@ -10736,14 +10791,14 @@ function contractAppSettingsHtml(){
     <div class="grid2">
       <div>
         <div class="mini" style="margin-bottom:6px;font-weight:700">Cover photo</div>
-        <div style="width:100%;aspect-ratio:210/297;max-height:160px;border-radius:10px;overflow:hidden;background:#F4F6F5;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;margin-bottom:8px">
+        <div style="width:76px;height:108px;border-radius:8px;overflow:hidden;background:#F4F6F5;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;margin-bottom:8px">
           <img src="${CONFIG.contractCoverImage||'./contract-cover.jpg'}" style="width:100%;height:100%;object-fit:cover"/>
         </div>
         <input type="file" id="ca_coverFile" accept="image/png,image/jpeg"/>
       </div>
       <div>
         <div class="mini" style="margin-bottom:6px;font-weight:700">Trulander wordmark</div>
-        <div style="width:100%;height:160px;border-radius:10px;overflow:hidden;background:#F4F6F5;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;margin-bottom:8px">
+        <div style="width:100%;max-width:130px;height:64px;border-radius:8px;overflow:hidden;background:#F4F6F5;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;margin-bottom:8px">
           <img src="${CONFIG.contractWordmarkImage||'./trulander-wordmark.png'}" style="max-width:90%;max-height:90%;object-fit:contain"/>
         </div>
         <input type="file" id="ca_wordmarkFile" accept="image/png,image/jpeg"/>
@@ -10753,18 +10808,21 @@ function contractAppSettingsHtml(){
   </div>
 
   <div class="rowcard" style="margin-bottom:14px">
-    <div class="mini" style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--muted);margin-bottom:10px">Segment 2 — Preamble (the "WHEREAS" lease background)</div>
-    ${fld('','<textarea id="ca_preamble" rows="8">'+esc(CONFIG.contractPreamble||'')+'</textarea>','one blank line between paragraphs — keep the "i. / ii. / iii." markers; {ACRES} is replaced with each client\'s own land size')}
+    <div class="mini" style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--muted);margin-bottom:2px">Segment 2 — Preamble (the "WHEREAS" lease background)</div>
+    <p class="mini" style="margin:0 0 10px">Tap a clause to expand it for editing. Keep the "i. / ii. / iii." markers; {ACRES} is replaced with each client's own land size.</p>
+    ${clauseEditorHtml('ca_preamble',CONFIG.contractPreamble||'')}
   </div>
 
   <div class="rowcard" style="margin-bottom:14px">
-    <div class="mini" style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--muted);margin-bottom:10px">Segment 3 — Definitions &amp; Interpretation (Section 1)</div>
-    ${fld('','<textarea id="ca_definitions" rows="10">'+esc(CONFIG.contractDefinitions||'')+'</textarea>','comes right after "NOW THEREFORE..." and before the Transaction clause — matches the real document\'s own order')}
+    <div class="mini" style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--muted);margin-bottom:2px">Segment 3 — Definitions &amp; Interpretation (Section 1)</div>
+    <p class="mini" style="margin:0 0 10px">Comes right after "NOW THEREFORE..." and before the Transaction clause — matches the real document's own order.</p>
+    ${clauseEditorHtml('ca_definitions',CONFIG.contractDefinitions||'')}
   </div>
 
   <div class="rowcard" style="margin-bottom:14px">
-    <div class="mini" style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--muted);margin-bottom:10px">Segment 4 — Clauses: Warranties, Payments &amp; Defaults, Governing Law, Notices (Sections 2-6)</div>
-    ${fld('','<textarea id="ca_terms" rows="12">'+esc(CONFIG.contractTerms||'')+'</textarea>','"2. REPRESENTATIONS..." starts a bold section, "2.1 ..." a sub-heading, "2.1.1 ..." / "a. ..." a numbered item — any length reflows automatically, the page border and footer stay put')}
+    <div class="mini" style="font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--muted);margin-bottom:2px">Segment 4 — Clauses: Warranties, Payments &amp; Defaults, Governing Law, Notices (Sections 2-6)</div>
+    <p class="mini" style="margin:0 0 10px">Each numbered clause is its own placeholder below — tap one to edit just that clause without touching the rest.</p>
+    ${clauseEditorHtml('ca_terms',CONFIG.contractTerms||'')}
   </div>
 
   <div class="rowcard" style="margin-bottom:18px">
@@ -10791,11 +10849,12 @@ function bindContractAppCtrls(){
   bindContractResultRows();
   const newBtn=document.getElementById('ca_newClient');
   if(newBtn) newBtn.onclick=openContractNewClientModal;
+  bindClauseEditorCtrls('ca_preamble'); bindClauseEditorCtrls('ca_definitions'); bindClauseEditorCtrls('ca_terms');
   const saveBtn=document.getElementById('ca_saveSettings');
   if(saveBtn) saveBtn.onclick=async()=>{
     saveBtn.disabled=true; saveBtn.textContent='Saving…';
     try{
-      const patch={contractCeoName:val('ca_ceoName').trim(),contractPreamble:val('ca_preamble').trim(),contractDefinitions:val('ca_definitions').trim(),contractTerms:val('ca_terms').trim()};
+      const patch={contractCeoName:val('ca_ceoName').trim(),contractPreamble:collectClauseEditorValue('ca_preamble'),contractDefinitions:collectClauseEditorValue('ca_definitions'),contractTerms:collectClauseEditorValue('ca_terms')};
       const coverFile=document.getElementById('ca_coverFile'), wordmarkFile=document.getElementById('ca_wordmarkFile');
       if(coverFile.files[0]) patch.contractCoverImage=await readImageFileAsDataUri(coverFile.files[0],900);
       if(wordmarkFile.files[0]) patch.contractWordmarkImage=await readImageFileAsDataUri(wordmarkFile.files[0],500);
