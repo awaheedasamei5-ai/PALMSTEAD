@@ -444,6 +444,21 @@ a{color:var(--green2)}
 .appGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .appGridGroupLabel{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:22px 0 12px}
 .appGridGroupLabel:first-child{margin-top:0}
+.vaultCard{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);margin-bottom:12px;overflow:hidden;animation:fadeUp .35s ease both}
+.vaultSummary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:13px;padding:15px 16px;user-select:none;transition:.15s}
+.vaultSummary::-webkit-details-marker{display:none}
+.vaultSummary:hover{background:var(--paper)}
+.vaultIcon{width:46px;height:46px;border-radius:14px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:21px;
+  background:linear-gradient(135deg,var(--green),var(--leaf));box-shadow:0 8px 18px -6px rgba(12,122,147,.5)}
+.vaultInfo{flex:1;min-width:0;display:flex;flex-direction:column}
+.vaultTitle{font-weight:800;font-size:14.5px;color:var(--text)}
+.vaultCount{font-size:11.5px;color:var(--muted);margin-top:1px}
+.vaultBadge{min-width:20px;height:20px;padding:0 5px;border-radius:100px;background:linear-gradient(150deg,#EF4444,#B91C1C);color:#fff;
+  font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.vaultChevron{flex:0 0 auto;color:var(--muted);transition:transform .25s ease}
+.vaultCard[open] .vaultChevron{transform:rotate(180deg)}
+.vaultCard[open] .vaultSummary{border-bottom:1px solid var(--line)}
+.vaultContents{padding:16px;margin:0!important;animation:fadeUp .3s ease both}
 .appGridIcon{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;cursor:pointer;padding:14px 6px;border-radius:16px;transition:.15s}
 .appGridIcon:hover{background:#F4F6F5;transform:translateY(-4px)}
 .appGridIcon:hover .fic{transform:scale(1.06)}
@@ -4799,7 +4814,18 @@ function viewSalesDesk(){
   ].filter(g=>g.items.length);
   const items=groups.flatMap(g=>g.items);
   V.innerHTML=`<div class="pagehead"><div><h2>Sales</h2><p>Leads, pipeline, plots &amp; client touchpoints — everything for your book of clients</p></div></div>
-  ${groups.map(g=>`<div class="appGridGroupLabel">${esc(g.title)}</div><div class="appGrid">${g.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`).join('')}`;
+  ${groups.map((g,i)=>{
+    const badgeTotal=g.items.reduce((s,a)=>s+(a.badgeKind?unreadByKind(a.badgeKind):0)+(a.badgeCountKey?((DB.badgeCounts&&DB.badgeCounts[a.badgeCountKey])||0):0),0);
+    return `<details class="vaultCard" ${i===0?'open':''}>
+      <summary class="vaultSummary">
+        <span class="vaultIcon">${VAULT_ICONS[g.title]||'📁'}</span>
+        <span class="vaultInfo"><span class="vaultTitle">${esc(g.title)}</span><span class="vaultCount">${g.items.length} app${g.items.length===1?'':'s'}</span></span>
+        ${badgeTotal?`<span class="vaultBadge">${badgeTotal>9?'9+':badgeTotal}</span>`:''}
+        <svg class="vaultChevron" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </summary>
+      <div class="appGrid vaultContents">${g.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
+    </details>`;
+  }).join('')}`;
   V.querySelectorAll('[data-hubroute]').forEach(b=>{
     const item=items.find(a=>a.r===b.dataset.hubroute);
     b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); if(item&&item.badgeCountKey&&DB.badgeCounts){ DB.badgeCounts[item.badgeCountKey]=0; refreshAllBadges(); } route(b.dataset.hubroute); };
@@ -4824,6 +4850,7 @@ function mgrAppRoute(key){
   else if(key==='Contract of Sale') route('contractapp');
   else if(key==='Notes') route('notes');
   else if(key==='SMS') route('sms');
+  else if(key==='Quotation') openQuotationRequest();
   else route('mgrTabView',key);
 }
 function mgrAppGridHtml(items){
@@ -4837,6 +4864,25 @@ function groupedAppGridHtml(groups){
     <div class="appGridGroupLabel">${esc(g.title)}</div>
     <div class="appGrid">${g.items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`).join('');
 }
+const VAULT_ICONS={'Documents':'📁','Operations':'🗂️','Money':'💰','Insights':'📊','My pipeline':'📈','Client touchpoints':'🤝','Inventory & records':'🏘️','Pricing & money':'💳','Team & company':'🏢','System':'⚙️'};
+// A vault is a collapsed <details> card -- tap it and the apps inside expand in
+// place. Cuts a 13-tile flat grid down to 4 tiles up front, instead of just
+// labelling the same flat grid (which is what the section-header version did).
+function vaultGridHtml(groups,opts){
+  opts=opts||{};
+  return groups.filter(g=>g.items.length).map((g,i)=>{
+    const badgeTotal=g.items.reduce((s,a)=>s+(a.badgeKind?unreadByKind(a.badgeKind):0)+(a.badgeCountKey?((DB.badgeCounts&&DB.badgeCounts[a.badgeCountKey])||0):0),0);
+    return `<details class="vaultCard" ${opts.openFirst&&i===0?'open':''}>
+      <summary class="vaultSummary">
+        <span class="vaultIcon">${VAULT_ICONS[g.title]||'📁'}</span>
+        <span class="vaultInfo"><span class="vaultTitle">${esc(g.title)}</span><span class="vaultCount">${g.items.length} app${g.items.length===1?'':'s'}</span></span>
+        ${badgeTotal?`<span class="vaultBadge">${badgeTotal>9?'9+':badgeTotal}</span>`:''}
+        <svg class="vaultChevron" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </summary>
+      <div class="appGrid vaultContents">${g.items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
+    </details>`;
+  }).join('');
+}
 function bindMgrAppGrid(grid,items){
   grid.querySelectorAll('[data-moreapp]').forEach(b=>{
     const item=items.find(a=>a.key===b.dataset.moreapp);
@@ -4846,18 +4892,25 @@ function bindMgrAppGrid(grid,items){
 // Replaces the old separate CRM Tools / Plot Inventory tabs with one Sales Desk hub,
 // mirroring the agent-side consolidation -- same nav shape for both roles.
 function viewMgrSalesDesk(){
-  const items=MGR_APPS.filter(a=>a.section==='salesdesk');
+  const all=MGR_APPS.filter(a=>a.section==='salesdesk');
+  const byKey=k=>all.find(a=>a.key===k);
+  const groups=[
+    {title:'Client touchpoints',items:['Plot Requests','Enquiries','Complaints','Site visits'].map(byKey).filter(Boolean)},
+    {title:'Inventory & records',items:['Plots','Allocations','Client Database'].map(byKey).filter(Boolean)}
+  ];
+  const items=groups.flatMap(g=>g.items);
   V.innerHTML=`<div class="pagehead"><div><h2>Sales</h2><p>Client database, plots, allocations, site visits, enquiries &amp; plot requests</p></div></div>
-  <div class="appGrid" id="mgrSalesGrid">${mgrAppGridHtml(items)}</div>`;
+  <div id="mgrSalesGrid">${vaultGridHtml(groups,{openFirst:true})}</div>`;
   bindMgrAppGrid(document.getElementById('mgrSalesGrid'),items);
 }
 function viewOfficeDesk(){
   const isMgr=PROFILE.role==='manager';
   const showCompanyLeads=isMgr||canViewClientDatabase();
   const groups=[
-    {title:'Documents & communication',items:[
+    {title:'Documents',items:[
       {key:'Memorandum',fic:'memo',label:'Memorandum',badgeCountKey:'memo'},
       {key:'Banner Tracking',fic:'billboard',label:'Banner Tracking'},
+      {key:'Quotation',fic:'quote',label:'Quotation'},
       ...(canManageContracts()?[{key:'Contract of Sale',fic:'contract',label:'Contract of Sale',badgeCountKey:'contractRequest'}]:[])
     ]},
     {title:'Operations',items:[
@@ -4879,16 +4932,22 @@ function viewOfficeDesk(){
   ];
   const items=groups.flatMap(g=>g.items);
   V.innerHTML=`<div class="pagehead"><div><h2>Office</h2><p>Operations, feedback${isMgr?', the leaderboard':''}${showCompanyLeads?' &amp; company leads':''} — everything off to the side of your daily pipeline</p></div></div>
-  <div id="officeDeskGrid">${groupedAppGridHtml(groups)}</div>`;
+  <div id="officeDeskGrid">${vaultGridHtml(groups,{openFirst:true})}</div>`;
   bindMgrAppGrid(document.getElementById('officeDeskGrid'),items);
 }
 function viewMore(){
   V.innerHTML=`<div class="pagehead"><div><h2>More</h2><p>Additional tools and settings</p></div></div>
-  <div class="appGrid" id="moreGrid"></div>`;
+  <div id="moreGrid"></div>`;
   const grid=document.getElementById('moreGrid');
   if(PROFILE.role==='manager'){
-    const items=MGR_APPS.filter(a=>!a.section);
-    grid.innerHTML=mgrAppGridHtml(items);
+    const all=MGR_APPS.filter(a=>!a.section);
+    const byKey=k=>all.find(a=>a.key===k);
+    const groups=[
+      {title:'Insights & data',items:['Data Check','Reports','News','Insights'].map(byKey).filter(Boolean)},
+      {title:'Tools',items:['Settings','Downloads','Notes','SMS'].map(byKey).filter(Boolean)}
+    ];
+    const items=groups.flatMap(g=>g.items);
+    grid.innerHTML=vaultGridHtml(groups,{openFirst:true});
     bindMgrAppGrid(grid,items);
   } else {
     const items=[
@@ -11860,7 +11919,7 @@ function mgrSettingsHubHtml(){
     {title:'Team & company',items:['Staff Settings','Company Settings'].map(byKey)},
     {title:'System',items:['Backup & Restore','System Health','System'].map(byKey)}
   ];
-  return `<div id="mgrSettingsGrid">${groupedAppGridHtml(groups)}</div>`;
+  return `<div id="mgrSettingsGrid">${vaultGridHtml(groups)}</div>`;
 }
 function mgrQuotationSettingsHtml(){
   return `<div class="sectitle" style="margin-top:0"><h3>Quotation &amp; receipt text</h3><span class="cnt">everything printed on client-facing PDFs</span></div>
