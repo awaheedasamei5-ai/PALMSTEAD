@@ -82,9 +82,11 @@ a{color:var(--green2)}
 @keyframes shimmer{0%{background-position:-300px 0}100%{background-position:300px 0}}
 @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 @keyframes ringPulse{0%{box-shadow:0 0 0 0 rgba(132,204,22,.45)}100%{box-shadow:0 0 0 14px rgba(132,204,22,0)}}
-@keyframes letterIn{0%{opacity:0;transform:translateX(16px) scale(.6)}60%{opacity:1}100%{opacity:1;transform:translateX(0) scale(1)}}
-@keyframes glyphSettle{0%{transform:scale(1)}45%{transform:scale(1.14)}100%{transform:scale(1)}}
-@keyframes lockupFlash{0%,100%{filter:drop-shadow(0 0 0 rgba(190,242,100,0))}50%{filter:drop-shadow(0 0 10px rgba(190,242,100,.65))}}
+@keyframes logoRevealIn{0%{opacity:0;transform:scale(.25) rotate(-14deg)}60%{opacity:1}100%{opacity:1;transform:scale(1) rotate(0)}}
+@keyframes glowPulseOnce{0%{opacity:0;transform:scale(.6)}40%{opacity:1}100%{opacity:0;transform:scale(1.5)}}
+@keyframes letterDrop{0%{opacity:0;transform:translateY(-22px) scale(.5)}55%{opacity:1}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes letterDropDown{0%{opacity:0;transform:translateY(22px) scale(.5)}55%{opacity:1}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes fleckIn{0%{opacity:0;transform:scale(0) translateY(6px)}45%{opacity:1;transform:scale(1.3) translateY(-3px)}100%{opacity:.85;transform:scale(1) translateY(0)}}
 .view-enter{animation:fadeUp .38s cubic-bezier(.2,.8,.2,1) both}
 .skel{background:linear-gradient(90deg,#EDEAE0 25%,#F6F4EC 37%,#EDEAE0 63%);background-size:400px 100%;animation:shimmer 1.3s infinite linear;border-radius:10px}
 
@@ -696,27 +698,35 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 .demoflag{display:inline-flex;align-items:center;gap:6px;background:#F6EBD3;color:#8A6E12;font-weight:700;font-size:10.5px;
   padding:4px 10px;border-radius:100px;letter-spacing:.04em;text-transform:uppercase}
 .demoflag .d{width:6px;height:6px;border-radius:50%;background:#8A6E12;animation:ringPulse 1.6s infinite}
-.bootscreen{position:fixed;inset:0;z-index:200;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+.bootscreen{position:fixed;inset:0;z-index:200;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
   background:var(--wave-bg,radial-gradient(130% 100% at 50% 30%, #163B7A 0%, var(--ink) 60%, #050E1F 100%));
-  opacity:1;transition:opacity .45s ease;}
+  opacity:1;transition:opacity .5s ease;overflow:hidden}
 .bootscreen.fade{opacity:0;pointer-events:none}
-.bootLockup{display:flex;align-items:center;gap:14px}
-.bootscreen .glyphwrap{position:relative;width:76px;height:76px;display:grid;place-items:center;animation:glyphSettle .7s .5s ease both}
-.bootscreen .ring{position:absolute;inset:0;border-radius:22px;border:2px solid rgba(132,204,22,.5);animation:ringPulse 1.7s ease-out infinite}
-.bootscreen .glyph{width:64px;height:64px;border-radius:20px;overflow:hidden;animation:floaty 1.8s ease-in-out infinite,lockupFlash 1s .5s ease both;box-shadow:0 14px 34px rgba(0,0,0,.45);position:relative;z-index:1}
+.bootLockup{display:flex;align-items:center;gap:16px;position:relative}
+.bootscreen .glyphwrap{position:relative;width:104px;height:104px;display:grid;place-items:center;animation:logoRevealIn .85s cubic-bezier(.34,1.56,.64,1) .15s both}
+.bootscreen .glowPulse{position:absolute;inset:-30%;border-radius:50%;background:radial-gradient(circle,rgba(103,232,249,.55) 0%,transparent 70%);opacity:0;animation:glowPulseOnce 1s ease-out .95s both}
+.bootscreen .glyph{width:88px;height:88px;border-radius:26px;overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.5);position:relative;z-index:1}
 .bootscreen .glyph img{width:100%;height:100%;display:block}
-.bootscreen .boot-word{display:flex;gap:2px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:21px;color:#fff}
-.bootscreen .boot-word span{display:inline-block;opacity:0;animation:letterIn .5s cubic-bezier(.2,.8,.3,1.2) forwards}
-.bootscreen .boot-word span:nth-child(1){animation-delay:.28s}
-.bootscreen .boot-word span:nth-child(2){animation-delay:.32s}
-.bootscreen .boot-word span:nth-child(3){animation-delay:.36s}
-.bootscreen .boot-word span:nth-child(4){animation-delay:.40s}
-.bootscreen .boot-word span:nth-child(5){animation-delay:.44s}
-.bootscreen .boot-word span:nth-child(6){animation-delay:.48s}
-.bootscreen .boot-word span:nth-child(7){animation-delay:.52s}
-.bootscreen .boot-word span:nth-child(8){animation-delay:.56s}
-.bootscreen .boot-word span:nth-child(9){animation-delay:.60s}
-.bootscreen .boot-sub{font-size:11.5px;color:#8FAE9C;letter-spacing:.05em;opacity:0;animation:fadeIn .6s .85s ease forwards}
+.bootscreen .boot-word{display:flex;gap:2px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:28px;color:#fff;position:relative}
+.bootscreen .boot-word span{display:inline-block;opacity:0;animation:letterDrop .55s cubic-bezier(.2,.9,.25,1.3) forwards}
+.bootscreen .boot-word span:nth-child(odd){animation-name:letterDropDown}
+.bootscreen .boot-word span:nth-child(1){animation-delay:.5s}
+.bootscreen .boot-word span:nth-child(2){animation-delay:.55s}
+.bootscreen .boot-word span:nth-child(3){animation-delay:.6s}
+.bootscreen .boot-word span:nth-child(4){animation-delay:.65s}
+.bootscreen .boot-word span:nth-child(5){animation-delay:.7s}
+.bootscreen .boot-word span:nth-child(6){animation-delay:.75s}
+.bootscreen .boot-word span:nth-child(7){animation-delay:.8s}
+.bootscreen .boot-word span:nth-child(8){animation-delay:.85s}
+.bootscreen .boot-word span:nth-child(9){animation-delay:.9s}
+.bootscreen .boot-sub{font-size:12px;color:#9DB2CC;letter-spacing:.14em;text-transform:uppercase;opacity:0;animation:fadeIn .6s 1.3s ease forwards}
+.bootscreen .fleck{position:absolute;border-radius:50%;background:#67E8F9;opacity:0;animation:fleckIn 1.1s ease-out both}
+.bootscreen .fleck.f1{width:7px;height:7px;top:8%;left:12%;background:#C9A227;animation-delay:.55s}
+.bootscreen .fleck.f2{width:5px;height:5px;top:70%;left:88%;animation-delay:.65s}
+.bootscreen .fleck.f3{width:4px;height:4px;top:80%;left:8%;background:#C9A227;animation-delay:.75s}
+.bootscreen .fleck.f4{width:6px;height:6px;top:15%;left:85%;animation-delay:.85s}
+.bootscreen .fleck.f5{width:3px;height:3px;top:45%;left:5%;animation-delay:.6s}
+.bootscreen .bootTap{position:absolute;bottom:34px;font-size:10.5px;color:#5E7396;opacity:0;animation:fadeIn .6s 1.9s ease forwards;letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
 .greetScreen{position:fixed;inset:0;z-index:250;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
   background:var(--wave-bg,radial-gradient(130% 100% at 50% 30%, #163B7A 0%, var(--ink) 60%, #050E1F 100%));opacity:1;transition:opacity .5s ease;cursor:pointer;padding:24px;text-align:center}
 .greetScreen .chip-insight{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);border-radius:100px;padding:8px 16px;font-size:12px;font-weight:600;color:#EAF7FA;
@@ -736,11 +746,13 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 
 <!-- BOOT -->
 <div class="bootscreen" id="boot">
+  <span class="fleck f1"></span><span class="fleck f2"></span><span class="fleck f3"></span><span class="fleck f4"></span><span class="fleck f5"></span>
   <div class="bootLockup">
-    <span class="glyphwrap"><span class="ring"></span><span class="glyph"><img alt="" id="bootLogo"/></span></span>
+    <span class="glyphwrap"><span class="glowPulse"></span><span class="glyph"><img alt="" id="bootLogo"/></span></span>
     <div class="boot-word"><span>P</span><span>A</span><span>L</span><span>M</span><span>S</span><span>T</span><span>E</span><span>A</span><span>D</span></div>
   </div>
   <div class="boot-sub">by PEP Landbank</div>
+  <div class="bootTap" id="bootTap">Tap to continue</div>
 </div>
 
 <!-- LOGIN -->
@@ -1244,7 +1256,12 @@ function toast(m){const t=document.getElementById('toast');document.getElementBy
 function playChime(kind){
   try{
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
-    const notes=kind==='success'?[[880,0,.12],[1318.5,.09,.18]]:kind==='signin'?[[523.3,0,.1],[659.3,.08,.1],[784,.16,.22]]:[[392,0,.09],[523.3,.09,.09],[659.3,.18,.24]];
+    // 'reveal' tracks the logo animation beat: a rising arpeggio while the mark and
+    // letters fly in (.15s-.9s), a low "impact" note timed to the glowPulseOnce flash
+    // (.95s), then a soft high shimmer as the tagline/accents settle (1.3-1.6s).
+    const notes=kind==='success'?[[880,0,.12],[1318.5,.09,.18]]:kind==='signin'?[[523.3,0,.1],[659.3,.08,.1],[784,.16,.22]]
+      :kind==='reveal'?[[523.3,.1,.14],[659.3,.25,.14],[784,.4,.14],[1046.5,.55,.18],[196,.95,.32],[1568,1.3,.4],[2093,1.4,.45]]
+      :[[392,0,.09],[523.3,.09,.09],[659.3,.18,.24]];
     notes.forEach(([freq,off,dur])=>{
       const o=ctx.createOscillator(), g=ctx.createGain();
       o.type='sine'; o.frequency.value=freq; o.connect(g); g.connect(ctx.destination);
@@ -14220,10 +14237,19 @@ function hideBoot(){
   b.classList.add('fade');
   setTimeout(()=>b.classList.add('hidden'),450);
 }
-playChime('boot');
+playChime('reveal');
 (async function(){
   const bootStart=Date.now();
-  const minSplash=async()=>{ const left=900-(Date.now()-bootStart); if(left>0) await new Promise(r=>setTimeout(r,left)); };
+  // Full reveal takes ~2.4s to play out (logo + letters + flecks + glow + tagline) --
+  // but a returning user who's seen it a hundred times shouldn't have to sit through
+  // it every single sign-in, so a tap anywhere ends the wait immediately.
+  let skipBoot;
+  const skipPromise=new Promise(r=>{ skipBoot=r; });
+  document.getElementById('boot').addEventListener('click',()=>skipBoot(),{once:true});
+  const minSplash=async()=>{
+    const left=2400-(Date.now()-bootStart);
+    if(left>0) await Promise.race([new Promise(r=>setTimeout(r,left)),skipPromise]);
+  };
   const connected = tryInitClient();
   LIVE_MODE = connected; DEMO_MODE = !connected;
   syncDemoBannerVisibility();
