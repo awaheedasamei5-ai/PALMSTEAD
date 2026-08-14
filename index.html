@@ -623,6 +623,23 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .homeHero .heroChip:hover{background:rgba(255,255,255,.17);transform:translateY(-1px)}
 .homeHero .heroChip .l{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.6);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .homeHero .heroChip .v{font-size:16px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Settings screens: a profile identity card up top instead of a misleading plain
+   "Change password" header, and a small colored icon per section instead of bare
+   text -- same premium-anchor idea as the home hero, scaled down for forms. */
+.profileHero{display:flex;align-items:center;gap:15px;padding:18px;border-radius:20px;margin-bottom:22px;color:#fff;position:relative;overflow:hidden;
+  background:linear-gradient(135deg,var(--ink) 0%,#0F3A52 55%,var(--green) 100%);box-shadow:0 16px 36px -14px rgba(11,30,61,.45);animation:fadeUp .4s ease both}
+.profileHero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 88% -15%,rgba(103,232,249,.35),transparent 55%);pointer-events:none}
+.profileHero .avatar{width:60px;height:60px;border-radius:100px;flex:0 0 auto;overflow:hidden;background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.3);
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;position:relative;z-index:1}
+.profileHero .avatar img{width:100%;height:100%;object-fit:cover}
+.profileHero .info{position:relative;z-index:1;flex:1;min-width:0}
+.profileHero .name{font-weight:800;font-size:16.5px;font-family:'Space Grotesk',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.profileHero .role{font-size:11.5px;color:rgba(255,255,255,.7);margin-top:2px;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+.profileHero .email{font-size:11.5px;color:rgba(255,255,255,.55);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.settingsSectitle .ssTitleRow{display:flex;align-items:center;gap:10px}
+.settingsSectitle .ssIcon{width:32px;height:32px;border-radius:10px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--green),var(--leaf));color:#fff;box-shadow:0 6px 14px -6px rgba(12,122,147,.5)}
+.settingsSectitle .ssIcon svg{width:16px;height:16px}
 .tag.ghost{background:#F1EFE7;color:#6C7269}
 .tag.ok{background:#DCEEE4;color:#1E7A56}
 .tag.warnt{background:#F6EBD3;color:#8A6E12}
@@ -4658,6 +4675,8 @@ Object.assign(ic,{
  trenddown:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 8l5 5 3-3 7 7m0 0h-5m5 0v-5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
  crystal:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M6 20h12M9 11a3 3 0 013-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
  star:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2.6 5.6 6 .8-4.4 4.2 1.1 6-5.3-3-5.3 3 1.1-6L3.4 9.4l6-.8L12 3z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+ lock:'<svg viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 11V7a4 4 0 018 0v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+ keypad:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="7" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="17" cy="6" r="1.6"/><circle cx="7" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="17" cy="12" r="1.6"/><circle cx="7" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="17" cy="18" r="1.6"/></svg>',
  trophy:'<svg viewBox="0 0 24 24" fill="none"><path d="M8 4h8v4a4 4 0 01-8 0V4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 5H5a3 3 0 003 3M16 5h3a3 3 0 01-3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M9 19h6M12 15v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
  party:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 20l5-14 9 9-14 5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 4h.01M18 8h.01M20 4l-1 1M8 4l.5 1M4 12l1 .5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
  save:'<svg viewBox="0 0 24 24" fill="none"><path d="M5 4h11l3 3v13H5V4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 4v5h7V4M8 20v-6h8v6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
@@ -9419,21 +9438,35 @@ async function addActivity(client,action,detail,note,method,follow){
 }
 
 /* ================= ACCOUNT / CHANGE PASSWORD ================= */
+// Shared by Account settings and every manager Settings sub-page -- a plain <h3>
+// section title reads flat/generic; a small colored icon chip gives each section
+// its own visual anchor, same idea as the app-icon system elsewhere.
+function settingsSectionHead(iconKey,title,count){
+  return `<div class="sectitle settingsSectitle"><div class="ssTitleRow"><span class="ssIcon">${ic[iconKey]||ic.gear}</span><h3>${esc(title)}</h3></div>${count?`<span class="cnt">${esc(count)}</span>`:''}</div>`;
+}
+function profileHeroHtml(p,roleLabel){
+  const initials=esc((p.name||'?')[0]);
+  return `<div class="profileHero">
+    <div class="avatar">${p.avatar?`<img src="${p.avatar}"/>`:initials}</div>
+    <div class="info"><div class="name">${esc(p.name||'')}</div><div class="role">${esc(roleLabel||'')}</div><div class="email">${esc(p.email||'')}</div></div>
+  </div>`;
+}
 function formAccount(){
   const homeRoute = PROFILE.role==='manager' ? 'mgr' : 'home';
   if(DEMO_MODE){
-    V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Account</div><h2>Change password</h2></div></div>
+    V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Account</div><h2>Settings</h2></div></div>
     ${emptyState(ic.update,'Not available in demo mode','Passwords and PIN sign-in only apply once the portal is connected to Supabase — in demo mode there is no real account to change. This screen works fully once you go live.')}`;
     return;
   }
   const hasPin = pinLockExists(PROFILE.key);
-  V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Account</div><h2>Change password</h2><p>${esc(PROFILE.email)}</p></div></div>
-  <div class="sectitle" style="margin-top:0"><h3>Profile picture</h3></div>
+  V.innerHTML=`${back(homeRoute)}
+  ${profileHeroHtml(PROFILE,PROFILE.role==='manager'?'Management':'Agent')}
+  ${settingsSectionHead('image','Profile picture')}
   <div class="formwrap acctMediaRow">
     <div id="avatarPreview" style="width:64px;height:64px;border-radius:100px;overflow:hidden;flex:0 0 auto;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted);font-size:22px">${PROFILE.avatar?`<img src="${PROFILE.avatar}" style="width:100%;height:100%;object-fit:cover"/>`:esc((PROFILE.name||'?')[0])}</div>
     <div style="flex:1;min-width:0"><input type="file" id="avatarInput" accept="image/*"/><div class="mini" style="margin-top:6px">You'll be able to crop and zoom before it's saved.</div></div>
   </div>
-  <div class="sectitle"><h3>E-signature</h3><span class="cnt">used to auto-sign documents you approve</span></div>
+  ${settingsSectionHead('edit','E-signature','used to auto-sign documents')}
   <div class="formwrap">
     <div class="acctMediaRow" style="margin-bottom:12px">
       <div id="signaturePreview" style="width:120px;height:60px;border-radius:10px;overflow:hidden;flex:0 0 auto;background:#F4F6F5;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">${PROFILE.signature_data?`<img src="${PROFILE.signature_data}" style="max-width:100%;max-height:100%;object-fit:contain"/>`:'No signature yet'}</div>
@@ -9441,7 +9474,7 @@ function formAccount(){
     </div>
     ${PROFILE.signature_data?'<button class="btn ghost" id="removeSigBtn" style="width:100%">Remove signature</button>':''}
   </div>
-  <div class="sectitle"><h3>Contact info</h3><span class="cnt">shown to clients &amp; teammates</span></div>
+  ${settingsSectionHead('phone','Contact info','shown to clients & teammates')}
   <div class="formwrap">
     <div class="grid2">${fld('Phone','<input id="ct_phone" placeholder="0244…" value="'+esc(PROFILE.phone||'')+'"/>')}${fld('WhatsApp','<input id="ct_whatsapp" placeholder="0244… (if different)" value="'+esc(PROFILE.whatsapp||'')+'"/>')}</div>
     <div class="grid2">${fld('Instagram','<input id="ct_instagram" placeholder="@handle" value="'+esc((PROFILE.social_handles||{}).instagram||'')+'"/>')}${fld('Facebook','<input id="ct_facebook" placeholder="page or profile name" value="'+esc((PROFILE.social_handles||{}).facebook||'')+'"/>')}</div>
@@ -9449,19 +9482,20 @@ function formAccount(){
     <div class="mini" style="margin-top:2px">These show up on your contact card wherever clients or teammates need to reach you.</div>
     <div class="formactions"><button class="btn primary" id="saveContactBtn">Save contact info</button></div>
   </div>
-  <div class="sectitle"><h3>Display settings</h3><span class="cnt">this device only</span></div>
+  ${settingsSectionHead('gear','Display settings','this device only')}
   <div class="formwrap">
     ${fld('Font',`<select id="dispFontFamily">
       <option value="inter">Inter (default)</option><option value="system">System default</option><option value="georgia">Georgia (serif)</option><option value="verdana">Verdana (wide)</option>
     </select>`)}
     <div class="mini" style="margin-top:2px">Changes apply immediately and are saved to this device.</div>
   </div>
+  ${settingsSectionHead('lock','Password')}
   <div class="formwrap">
     ${fld('New password *','<input id="a_p1" type="password" placeholder="At least 6 characters"/>')}
     ${fld('Confirm new password *','<input id="a_p2" type="password" placeholder="Re-enter password"/>')}
     <div class="formactions"><button class="btn ghost" onclick="route('${homeRoute}')">Cancel</button><button class="btn primary" id="saveAcct">Update password</button></div>
   </div>
-  <div class="sectitle"><h3>Quick PIN sign-in</h3><span class="cnt">This device only</span></div>
+  ${settingsSectionHead('keypad','Quick PIN sign-in','This device only')}
   <div class="formwrap" id="pinBlock">
     ${hasPin ? `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
