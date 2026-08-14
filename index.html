@@ -427,9 +427,12 @@ a{color:var(--green2)}
   display:flex;align-items:flex-end;justify-content:center;animation:fadeIn .2s ease both}
 @media(min-width:640px){#announceOverlay{align-items:center}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-#announceModal{background:var(--paper);width:100%;max-width:460px;max-height:88vh;overflow-y:auto;border-radius:22px 22px 0 0;
-  padding:22px 20px 26px;animation:modalUp .32s cubic-bezier(.34,1.56,.64,1) both;box-shadow:0 -10px 40px rgba(0,0,0,.3)}
-@media(min-width:640px){#announceModal{border-radius:22px;margin-bottom:0}}
+#announceModal{background:var(--card);width:100%;max-width:460px;max-height:88vh;overflow-y:auto;border-radius:22px 22px 0 0;
+  padding:24px 20px 26px;animation:modalUp .32s cubic-bezier(.34,1.56,.64,1) both;box-shadow:0 -10px 40px rgba(0,0,0,.3);
+  position:relative;border-top:3px solid transparent;
+  background-image:linear-gradient(var(--card),var(--card)),linear-gradient(100deg,var(--green),var(--leaf) 60%,var(--premium));
+  background-origin:border-box;background-clip:padding-box,border-box}
+@media(min-width:640px){#announceModal{border-radius:22px;margin-bottom:0;border-top-width:3px}}
 @keyframes modalUp{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}
 .announceCard{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px;border:1px solid var(--line);box-shadow:var(--shadow)}
 .announceCard img{width:100%;border-radius:12px;margin-top:10px}
@@ -589,7 +592,7 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 
 .formwrap{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px 17px;box-shadow:var(--shadow);animation:fadeUp .4s ease both}
 .field{margin-bottom:15px}
-.field label{display:block;font-size:12.5px;font-weight:700;color:#3c433c;margin-bottom:7px;letter-spacing:.01em}
+.field label{display:block;font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:7px;letter-spacing:.01em}
 .field .hint{font-weight:400;color:var(--muted);font-size:11.5px}
 .field input,.field select,.field textarea{width:100%;padding:12.5px 13px;border:1.5px solid var(--line);border-radius:12px;
   background:var(--card);color:var(--text);outline:none;transition:border-color .16s,box-shadow .16s,transform .16s}
