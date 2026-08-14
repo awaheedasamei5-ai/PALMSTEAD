@@ -4113,7 +4113,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -4136,7 +4136,7 @@ function tabForRoute(name){
     return 'clienthome';
   }
   if(['salesdesk','mgrSalesDesk','mgrCrmTools','mgrPlotInv','crm','addlead','update','updateOne','myDataCheck','plots','pipeline','sitevisit','enquiry','complaint','plotrequests','clientdb','allocations'].includes(name)) return 'salesdesk';
-  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp'||name==='bannerapp'||name==='contractapp'||name==='sitevisitauth'||name==='logpayment') return 'officedesk';
+  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp'||name==='bannerapp'||name==='contractapp'||name==='sitevisitauth'||name==='logpayment'||name==='expenses') return 'officedesk';
   if(name==='chat'||name==='chatThread') return 'chat';
   if(name==='home'||name==='mgr') return 'home';
   return 'more';
@@ -4404,6 +4404,7 @@ function mgrAppRoute(key){
   else if(key==='Plot Requests') route('plotrequests');
   else if(key==='Company Leads') route('companyleads');
   else if(key==='Log Payment') route('logpayment');
+  else if(key==='Expenses') route('expenses');
   else if(key==='Site Visit Auth') route('sitevisitauth');
   else if(key==='Contract of Sale') route('contractapp');
   else if(key==='Notes') route('notes');
@@ -4439,6 +4440,7 @@ function viewOfficeDesk(){
     ...(showCompanyLeads?[{key:'Site Visit Auth',fic:'clipboard',label:'Site Visit Auth'}]:[]),
     ...(canManageContracts()?[{key:'Contract of Sale',fic:'document',label:'Contract of Sale'}]:[]),
     ...(canManagePayments()?[{key:'Log Payment',fic:'savings',label:'Log Payment'}]:[]),
+    ...(canManageExpenses()?[{key:'Expenses',fic:'savings',label:'Expenses'}]:[]),
     ...(isMgr?[{key:'Commission',fic:'savings',label:'Commission'}]:[]),
     ...(isMgr?[{key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'}]:[]),
     ...(showCompanyLeads?[{key:'Company Leads',fic:'briefcase',label:'Company Leads'}]:[])
@@ -7671,7 +7673,7 @@ function openLogMonthPayment(lead,slotKey,expected){
    consistent everywhere, but re-renders in place instead of navigating away. */
 let LOGPAY_SELECTED_LEAD=null, LOGPAY_QUERY='', logPayTab='search';
 async function viewLogPaymentApp(){
-  if(!canManagePayments()){ V.innerHTML=back('officedesk')+emptyState(ic.savings,'Elias/Management only','Payment entry is restricted to Elias and Management.'); return; }
+  if(!canManagePayments()){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Elias/Management only','Payment entry is restricted to Elias and Management.'); return; }
   LOGPAY_SELECTED_LEAD=null; LOGPAY_QUERY='';
   const isMgr=PROFILE.role==='manager';
   const pendingCount=(DB.pendingPayments||[]).length;
@@ -7694,7 +7696,7 @@ function pendingPaymentsHtml(){
   <div class="foot" style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px">
     <button class="chip" data-paydecline="${esc(p.id)}" style="color:var(--danger)">Decline</button>
     <button class="btn primary" data-payapprove="${esc(p.id)}" style="padding:8px 18px;font-size:12.5px">Approve &amp; send receipt</button>
-  </div></div>`).join(''):emptyState(ic.savings,'Nothing pending','New payments logged by staff will show up here for approval.')}</div>`;
+  </div></div>`).join(''):emptyState(ic.doc,'Nothing pending','New payments logged by staff will show up here for approval.')}</div>`;
 }
 function bindPendingPaymentsCtrls(){
   document.querySelectorAll('[data-payapprove]').forEach(b=>b.onclick=async()=>{
@@ -11545,6 +11547,240 @@ async function smsHandleSend(){
   SMS_RESULT=`Sent to ${sent} of ${phones.length}.${failed?' '+failed+' failed — check the SMS log.':''}`;
   if(sent>0){ SMS_SELECTED={}; toast('SMS sent'); }
   paintSmsBody();
+}
+/* Expenses app -- for Elias/Management: budget tracking, receipt attachments, fund
+   requests (with Management approval + signature stamping), and daily cash/MoMo/bank
+   balance logging. Live-mode only (real money, real receipts -- nothing to protect in
+   demo mode), same restriction pattern as canManagePayments(). */
+function canManageExpenses(){ return PROFILE.role==='manager' || PROFILE.key==='elias'; }
+let EXP_TAB='log', EXP_LOADED=false, EXPENSES_LIST=[], FUND_REQUESTS_LIST=[], DAILY_BALANCES_LIST=[], EXP_CATEGORIES_LIST=[];
+function mapExpense(r){ return {id:r.id,category:r.category,amount:num(r.amount),method:r.payment_method,date:r.expense_date,description:r.description,
+  receiptData:r.receipt_data,receiptName:r.receipt_name,loggedBy:r.logged_by,loggedByName:r.logged_by_name,status:r.status,
+  decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedAt:r.decided_at,decisionNote:r.decision_note,createdAt:r.created_at}; }
+function mapFundReq(r){ return {id:r.id,type:r.req_type,amount:num(r.amount),purpose:r.purpose,requestedBy:r.requested_by,requestedByName:r.requested_by_name,
+  status:r.status,decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedAt:r.decided_at,decisionNote:r.decision_note,approvalSignature:r.approval_signature,createdAt:r.created_at}; }
+function mapDailyBalance(r){ return {id:r.id,date:r.balance_date,cash:num(r.cash),momo:num(r.momo),bank:num(r.bank),loggedByName:r.logged_by_name,updatedAt:r.updated_at}; }
+async function apiLoadExpenseCategories(){ const {data,error}=await sb.from('expense_categories').select('*').eq('active',true).order('name'); if(error) throw error; return data||[]; }
+async function apiAddExpenseCategory(name){ const {data,error}=await sb.from('expense_categories').insert({name}).select().single(); if(error) throw error; return data; }
+async function apiLoadExpenses(){ const {data,error}=await sb.from('expenses').select('*').order('created_at',{ascending:false}); if(error) throw error; return (data||[]).map(mapExpense); }
+async function apiInsertExpense(e){
+  const {data,error}=await sb.from('expenses').insert({category:e.category,amount:e.amount,payment_method:e.method,expense_date:e.date,description:e.description,
+    receipt_data:e.receiptData||null,receipt_name:e.receiptName||null,logged_by:PROFILE.key,logged_by_name:PROFILE.name}).select().single();
+  if(error) throw error; return mapExpense(data);
+}
+async function apiDecideExpense(id,approve,note){
+  const {data,error}=await sb.from('expenses').update({status:approve?'approved':'rejected',decided_by:PROFILE.key,decided_by_name:PROFILE.name,decided_at:new Date().toISOString(),decision_note:note||null}).eq('id',id).select().single();
+  if(error) throw error; return mapExpense(data);
+}
+async function apiLoadFundRequests(){ const {data,error}=await sb.from('fund_requests').select('*').order('created_at',{ascending:false}); if(error) throw error; return (data||[]).map(mapFundReq); }
+async function apiInsertFundRequest(type,amount,purpose){
+  const {data,error}=await sb.from('fund_requests').insert({req_type:type,amount,purpose,requested_by:PROFILE.key,requested_by_name:PROFILE.name}).select().single();
+  if(error) throw error; return mapFundReq(data);
+}
+async function apiDecideFundRequest(id,approve,note){
+  const sig=approve?getStaffSignature(PROFILE.key):null;
+  const {data,error}=await sb.from('fund_requests').update({status:approve?'approved':'rejected',decided_by:PROFILE.key,decided_by_name:PROFILE.name,decided_at:new Date().toISOString(),decision_note:note||null,approval_signature:sig}).eq('id',id).select().single();
+  if(error) throw error; return mapFundReq(data);
+}
+async function apiLoadDailyBalances(){ const {data,error}=await sb.from('daily_balances').select('*').order('balance_date',{ascending:false}).limit(60); if(error) throw error; return (data||[]).map(mapDailyBalance); }
+async function apiUpsertDailyBalance(date,cash,momo,bank){
+  const {data,error}=await sb.from('daily_balances').upsert({balance_date:date,cash,momo,bank,logged_by:PROFILE.key,logged_by_name:PROFILE.name,updated_at:new Date().toISOString()},{onConflict:'balance_date'}).select().single();
+  if(error) throw error; return mapDailyBalance(data);
+}
+async function viewExpensesApp(){
+  if(!canManageExpenses()){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Elias/Management only','Expenses are restricted to Elias and Management.'); return; }
+  if(DEMO_MODE){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Only available live','Expenses track real money and receipts — connect to Supabase (Portal settings) to use it.'); return; }
+  EXP_TAB='log';
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Operations</div><h2>Expenses</h2><p>Log spending, request funds, and track the daily cash/MoMo/bank position.</p></div></div>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap" id="expTabs"></div>
+  <div id="expBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  if(!EXP_LOADED){
+    try{
+      [EXP_CATEGORIES_LIST,EXPENSES_LIST,FUND_REQUESTS_LIST,DAILY_BALANCES_LIST]=await Promise.all([
+        apiLoadExpenseCategories(),apiLoadExpenses(),apiLoadFundRequests(),apiLoadDailyBalances()]);
+      EXP_LOADED=true;
+    }catch(e){ toast('Could not load expenses: '+(e.message||e)); }
+  }
+  paintExpensesApp();
+}
+function expPendingCount(){ return EXPENSES_LIST.filter(e=>e.status==='pending').length + FUND_REQUESTS_LIST.filter(f=>f.status==='pending').length; }
+function paintExpensesApp(){
+  const isMgr=PROFILE.role==='manager';
+  const tabs=document.getElementById('expTabs');
+  const pc=expPendingCount();
+  tabs.innerHTML=[
+    ['log','Log Expense'],['funds','Fund Requests'],['balance','Daily Balance'],
+    ...(isMgr?[['approvals','Approvals'+(pc?' ('+pc+')':'')]]:[])
+  ].map(([k,l])=>`<button class="chip ${EXP_TAB===k?'on':''}" data-exptab="${k}">${l}</button>`).join('');
+  tabs.querySelectorAll('[data-exptab]').forEach(b=>b.onclick=()=>{ EXP_TAB=b.dataset.exptab; paintExpensesApp(); });
+  const body=document.getElementById('expBody');
+  if(EXP_TAB==='log') body.innerHTML=expLogTabHtml();
+  else if(EXP_TAB==='funds') body.innerHTML=expFundsTabHtml();
+  else if(EXP_TAB==='balance') body.innerHTML=expBalanceTabHtml();
+  else if(EXP_TAB==='approvals') body.innerHTML=expApprovalsTabHtml();
+  bindExpensesCtrls();
+}
+function expStatusTag(s){
+  if(s==='approved') return '<span class="tag ok">Approved</span>';
+  if(s==='rejected') return '<span class="tag" style="color:#B91C1C">Rejected</span>';
+  return '<span class="tag warnt">Pending</span>';
+}
+function expLogTabHtml(){
+  const mine=EXPENSES_LIST.filter(e=>PROFILE.role==='manager'||e.loggedBy===PROFILE.key).slice(0,30);
+  return `<div class="formwrap">
+  <div class="sectitle" style="margin-top:0"><h3>Log an expense</h3></div>
+  ${fld('Category',sel('exp_category',EXP_CATEGORIES_LIST.map(c=>c.name),EXP_CATEGORIES_LIST[0]?EXP_CATEGORIES_LIST[0].name:''))}
+  <div class="grid2">${fld('Amount (GHS)','<input id="exp_amount" type="number" min="0" step="0.01" placeholder="0.00"/>')}${fld('Payment method',sel('exp_method',['Cash','MoMo','Bank'],'Cash'))}</div>
+  ${fld('Date','<input id="exp_date" type="date" value="'+today()+'"/>')}
+  ${fld('Description','<textarea id="exp_desc" placeholder="What was this for?"></textarea>','optional')}
+  ${fld('Receipt','<input id="exp_receipt" type="file" accept="image/*,.pdf"/>','optional — image or PDF')}
+  <div id="exp_receiptPreview"></div>
+  <div class="formactions"><button class="btn primary" id="expSaveBtn" style="width:100%">Save expense</button></div>
+  </div>
+  <div class="sectitle"><h3>Recent</h3><span class="cnt">${mine.length}</span></div>
+  <div class="list">${mine.length?mine.map(e=>expRowHtml(e)).join(''):emptyState(ic.doc,'No expenses logged yet','Use the form above to log your first one.')}</div>`;
+}
+function expRowHtml(e){
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(e.category)} · ${ghs(e.amount)}</div><div class="meta">${esc(e.date||'')} · ${esc(e.method||'')}${e.loggedByName?' · by '+esc(e.loggedByName):''}</div></div>${expStatusTag(e.status)}</div>
+  ${e.description?`<div class="note">${esc(e.description)}</div>`:''}
+  ${e.receiptData?`<div class="foot" style="gap:8px"><button class="chip" data-expreceipt="${esc(e.id)}">View receipt</button></div>`:''}</div>`;
+}
+function expFundsTabHtml(){
+  const mine=FUND_REQUESTS_LIST.filter(f=>PROFILE.role==='manager'||f.requestedBy===PROFILE.key).slice(0,30);
+  return `<div class="formwrap">
+  <div class="sectitle" style="margin-top:0"><h3>Request funds</h3></div>
+  ${fld('Type',sel('fr_type',['General budget','Specific / untagged spending'],'General budget'))}
+  ${fld('Amount (GHS)','<input id="fr_amount" type="number" min="0" step="0.01" placeholder="0.00"/>')}
+  ${fld('Purpose','<textarea id="fr_purpose" placeholder="What is this for?"></textarea>')}
+  <div class="formactions"><button class="btn primary" id="frSaveBtn" style="width:100%">Send request</button></div>
+  </div>
+  <div class="sectitle"><h3>Recent requests</h3><span class="cnt">${mine.length}</span></div>
+  <div class="list">${mine.length?mine.map(f=>fundReqRowHtml(f)).join(''):emptyState(ic.doc,'No fund requests yet','Use the form above to request a budget or a specific spend.')}</div>`;
+}
+function fundReqRowHtml(f){
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${f.type==='budget'?'General budget':'Specific spend'} · ${ghs(f.amount)}</div><div class="meta">${esc((f.createdAt||'').slice(0,10))}${f.requestedByName?' · by '+esc(f.requestedByName):''}</div></div>${expStatusTag(f.status)}</div>
+  <div class="note">${esc(f.purpose)}</div>
+  ${f.status==='approved'?`<div class="foot" style="gap:8px"><button class="chip" data-frslip="${esc(f.id)}">Download approval slip</button></div>`:''}</div>`;
+}
+function expBalanceTabHtml(){
+  const todayRow=DAILY_BALANCES_LIST.find(b=>b.date===today());
+  return `<div class="formwrap">
+  <div class="sectitle" style="margin-top:0"><h3>Log today's balance</h3><span class="cnt">${today()}</span></div>
+  <div class="grid2">${fld('Cash (GHS)','<input id="db_cash" type="number" min="0" step="0.01" value="'+(todayRow?todayRow.cash:'')+'"/>')}${fld('MoMo (GHS)','<input id="db_momo" type="number" min="0" step="0.01" value="'+(todayRow?todayRow.momo:'')+'"/>')}</div>
+  ${fld('Bank (GHS)','<input id="db_bank" type="number" min="0" step="0.01" value="'+(todayRow?todayRow.bank:'')+'"/>')}
+  <div class="formactions"><button class="btn primary" id="dbSaveBtn" style="width:100%">${todayRow?'Update':'Save'} today's balance</button></div>
+  </div>
+  <div class="sectitle"><h3>Recent history</h3><span class="cnt">${DAILY_BALANCES_LIST.length}</span></div>
+  <div class="list">${DAILY_BALANCES_LIST.length?DAILY_BALANCES_LIST.map(b=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(b.date)}</div><div class="meta">Cash ${ghs(b.cash)} · MoMo ${ghs(b.momo)} · Bank ${ghs(b.bank)}${b.loggedByName?' · by '+esc(b.loggedByName):''}</div></div><div class="amt">${ghs(b.cash+b.momo+b.bank)}</div></div></div>`).join(''):emptyState(ic.doc,'No balances logged yet','')}</div>`;
+}
+function expApprovalsTabHtml(){
+  const pendingExp=EXPENSES_LIST.filter(e=>e.status==='pending');
+  const pendingFund=FUND_REQUESTS_LIST.filter(f=>f.status==='pending');
+  return `<div class="sectitle" style="margin-top:0"><h3>Pending expenses</h3><span class="cnt">${pendingExp.length}</span></div>
+  <div class="list" style="margin-bottom:20px">${pendingExp.length?pendingExp.map(e=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(e.category)} · ${ghs(e.amount)}</div><div class="meta">${esc(e.date||'')} · ${esc(e.method||'')} · by ${esc(e.loggedByName||e.loggedBy)}</div></div></div>
+    ${e.description?`<div class="note">${esc(e.description)}</div>`:''}
+    ${e.receiptData?`<div class="foot" style="gap:8px"><button class="chip" data-expreceipt="${esc(e.id)}">View receipt</button></div>`:''}
+    <div class="foot" style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px"><button class="chip" data-expreject="${esc(e.id)}" style="color:var(--danger)">Reject</button><button class="btn primary" data-expapprove="${esc(e.id)}" style="padding:8px 18px;font-size:12.5px">Approve</button></div></div>`).join(''):emptyState(ic.doc,'Nothing pending','')}</div>
+  <div class="sectitle"><h3>Pending fund requests</h3><span class="cnt">${pendingFund.length}</span></div>
+  <div class="list">${pendingFund.length?pendingFund.map(f=>`<div class="rowcard"><div class="top"><div><div class="nm">${f.type==='budget'?'General budget':'Specific spend'} · ${ghs(f.amount)}</div><div class="meta">by ${esc(f.requestedByName||f.requestedBy)}</div></div></div>
+    <div class="note">${esc(f.purpose)}</div>
+    <div class="foot" style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px"><button class="chip" data-frreject="${esc(f.id)}" style="color:var(--danger)">Reject</button><button class="btn primary" data-frapprove="${esc(f.id)}" style="padding:8px 18px;font-size:12.5px">Approve</button></div></div>`).join(''):emptyState(ic.doc,'Nothing pending','')}</div>`;
+}
+let EXP_RECEIPT_PENDING=null;
+function bindExpensesCtrls(){
+  const receiptInput=document.getElementById('exp_receipt');
+  if(receiptInput) receiptInput.onchange=async()=>{
+    const file=receiptInput.files[0]; if(!file) return;
+    try{
+      const isImage=file.type.startsWith('image/');
+      const data=isImage?await resizeImageToB64(file,1200,1600,0.8):await readFileAsB64(file,4*1024*1024);
+      EXP_RECEIPT_PENDING={data,name:file.name};
+      document.getElementById('exp_receiptPreview').innerHTML=isImage?`<img src="${data}" style="max-width:140px;border-radius:10px;margin-top:6px"/>`:`<div class="mini" style="margin-top:6px">📎 ${esc(file.name)}</div>`;
+    }catch(e){ toast('Could not attach that file: '+(e.message||e)); }
+  };
+  const saveBtn=document.getElementById('expSaveBtn');
+  if(saveBtn) saveBtn.onclick=async()=>{
+    const amount=num(val('exp_amount'));
+    if(!amount||amount<=0){ toast('Enter an amount'); return; }
+    saveBtn.disabled=true; saveBtn.textContent='Saving…';
+    try{
+      const rec=await apiInsertExpense({category:val('exp_category'),amount,method:val('exp_method').toLowerCase(),date:val('exp_date')||today(),
+        description:val('exp_desc').trim(),receiptData:EXP_RECEIPT_PENDING?EXP_RECEIPT_PENDING.data:null,receiptName:EXP_RECEIPT_PENDING?EXP_RECEIPT_PENDING.name:null});
+      EXPENSES_LIST.unshift(rec); EXP_RECEIPT_PENDING=null;
+      toast('Expense logged — awaiting approval'); paintExpensesApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); saveBtn.disabled=false; saveBtn.textContent='Save expense'; }
+  };
+  document.querySelectorAll('[data-expreceipt]').forEach(b=>b.onclick=()=>{
+    const e=EXPENSES_LIST.find(x=>x.id===b.dataset.expreceipt); if(!e||!e.receiptData) return;
+    window.open(e.receiptData,'_blank');
+  });
+  document.querySelectorAll('[data-expapprove]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true;
+    try{ const updated=await apiDecideExpense(b.dataset.expapprove,true); Object.assign(EXPENSES_LIST.find(x=>x.id===updated.id),updated); toast('Expense approved'); paintExpensesApp(); }
+    catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
+  });
+  document.querySelectorAll('[data-expreject]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Reject this expense?')) return;
+    b.disabled=true;
+    try{ const updated=await apiDecideExpense(b.dataset.expreject,false); Object.assign(EXPENSES_LIST.find(x=>x.id===updated.id),updated); toast('Expense rejected'); paintExpensesApp(); }
+    catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
+  });
+  const frBtn=document.getElementById('frSaveBtn');
+  if(frBtn) frBtn.onclick=async()=>{
+    const amount=num(val('fr_amount'));
+    if(!amount||amount<=0){ toast('Enter an amount'); return; }
+    const purpose=val('fr_purpose').trim(); if(!purpose){ toast('Describe the purpose'); return; }
+    frBtn.disabled=true; frBtn.textContent='Sending…';
+    try{
+      const type=val('fr_type')==='General budget'?'budget':'specific';
+      const rec=await apiInsertFundRequest(type,amount,purpose);
+      FUND_REQUESTS_LIST.unshift(rec);
+      toast('Request sent to Management'); paintExpensesApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); frBtn.disabled=false; frBtn.textContent='Send request'; }
+  };
+  document.querySelectorAll('[data-frapprove]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true;
+    try{ const updated=await apiDecideFundRequest(b.dataset.frapprove,true); Object.assign(FUND_REQUESTS_LIST.find(x=>x.id===updated.id),updated); toast('Request approved'); paintExpensesApp(); }
+    catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
+  });
+  document.querySelectorAll('[data-frreject]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Reject this fund request?')) return;
+    b.disabled=true;
+    try{ const updated=await apiDecideFundRequest(b.dataset.frreject,false); Object.assign(FUND_REQUESTS_LIST.find(x=>x.id===updated.id),updated); toast('Request rejected'); paintExpensesApp(); }
+    catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
+  });
+  document.querySelectorAll('[data-frslip]').forEach(b=>b.onclick=()=>{
+    const f=FUND_REQUESTS_LIST.find(x=>x.id===b.dataset.frslip); if(f) buildFundRequestSlipPDF(f);
+  });
+  const dbBtn=document.getElementById('dbSaveBtn');
+  if(dbBtn) dbBtn.onclick=async()=>{
+    dbBtn.disabled=true; dbBtn.textContent='Saving…';
+    try{
+      const rec=await apiUpsertDailyBalance(today(),num(val('db_cash')),num(val('db_momo')),num(val('db_bank')));
+      DAILY_BALANCES_LIST=DAILY_BALANCES_LIST.filter(b=>b.date!==rec.date); DAILY_BALANCES_LIST.unshift(rec);
+      toast('Balance saved'); paintExpensesApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); dbBtn.disabled=false; dbBtn.textContent='Save today\'s balance'; }
+  };
+}
+function buildFundRequestSlipPDF(f){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  let y=pdfHeader(doc,'FUND REQUEST APPROVAL');
+  y+=14;
+  doc.setFont('helvetica','normal'); doc.setFontSize(11);
+  const line=(label,value)=>{ doc.setFont('helvetica','bold'); doc.text(label,14,y); doc.setFont('helvetica','normal'); doc.text(String(value||''),60,y); y+=9; };
+  line('Type:',f.type==='budget'?'General budget':'Specific / untagged spending');
+  line('Amount:',ghs(f.amount));
+  line('Requested by:',f.requestedByName||f.requestedBy);
+  line('Requested on:',(f.createdAt||'').slice(0,10));
+  line('Purpose:','');
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  const purposeLines=doc.splitTextToSize(f.purpose||'',180); doc.text(purposeLines,14,y); y+=purposeLines.length*5+10;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('Approved by:',14,y);
+  doc.setFont('helvetica','normal'); doc.text(f.decidedByName||'',60,y);
+  y+=6; doc.setFontSize(9); doc.text('Date: '+(f.decidedAt||'').slice(0,10),14,y);
+  if(f.approvalSignature) pdfStampSignature(doc,120,y,45,16,f.approvalSignature);
+  const fname='FundRequest_'+f.id.slice(0,8)+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
 }
 function paintTeamToggle(b,isActive){
   b.dataset.active=isActive;
