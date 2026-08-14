@@ -2031,7 +2031,8 @@ async function apiLoadAll(){
       DB.payments=scoped.filter(p=>(p.status||'approved')!=='pending');
       DB.pendingPayments=scoped.filter(p=>p.status==='pending'); }
     DB.announcements=(d.announcements||[]).slice();
-    DB.profiles=STAFF_LIST.filter(s=>s.role==='agent').map(s=>({name:s.name,role:'agent',agent_key:s.key,birthday:(d.profileBirthdays||{})[s.key]||null}));
+    DB.profiles=STAFF_LIST.filter(s=>s.role==='agent').map(s=>({name:s.name,role:'agent',agent_key:s.key,birthday:(d.profileBirthdays||{})[s.key]||null,
+      position:((d.profileDetails||{})[s.key]||{}).position||null,address:((d.profileDetails||{})[s.key]||{}).address||null}));
     DB.agentMonthStats=await apiLoadAgentMonthStats();
     DB.tasks=await apiLoadTasks();
     DB.feedback=await apiLoadFeedback();
@@ -2092,11 +2093,20 @@ async function apiLoadAll(){
 async function apiLoadBadgeCounts(){
   const counts={memo:0,contractRequest:0,approvals:0};
   if(DEMO_MODE){
-    try{ const d=await demoLoad(); counts.memo=(d.memos||[]).filter(m=>m.toKey===PROFILE.key&&!m.read).length; }catch(e){}
+    try{ const d=await demoLoad();
+      const toUnread=(d.memos||[]).filter(m=>m.toKey===PROFILE.key&&!m.read).length;
+      const ccUnread=(d.memoRecipients||[]).filter(r=>r.staffKey===PROFILE.key&&!r.read).length;
+      counts.memo=toUnread+ccUnread; }catch(e){}
     if(canManageContracts()){ try{ const d=await demoLoad(); counts.contractRequest=(d.contractRequests||[]).filter(r=>r.status==='pending').length; }catch(e){} }
     return counts;
   }
-  try{ const {count}=await sb.from('memos').select('id',{count:'exact',head:true}).eq('to_key',PROFILE.agent_key).eq('read',false); counts.memo=count||0; }catch(e){}
+  try{
+    const [{count:toCount},{count:ccCount}]=await Promise.all([
+      sb.from('memos').select('id',{count:'exact',head:true}).eq('to_key',PROFILE.agent_key).eq('read',false),
+      sb.from('memo_recipients').select('id',{count:'exact',head:true}).eq('staff_key',PROFILE.agent_key).eq('read',false)
+    ]);
+    counts.memo=(toCount||0)+(ccCount||0);
+  }catch(e){}
   if(canManageContracts()){
     try{ const {count}=await sb.from('contract_requests').select('id',{count:'exact',head:true}).eq('status','pending'); counts.contractRequest=count||0; }catch(e){}
   }
@@ -2622,9 +2632,10 @@ async function apiLoadPricingHistory(){
     return (data||[]).map(r=>({id:r.id,changedBy:r.changed_by,changedByName:r.changed_by_name,field:r.field,fieldLabel:r.field_label,oldValue:r.old_value,newValue:r.new_value,changedAt:r.changed_at})); }
   catch(e){ return []; }
 }
-async function apiSaveBirthday(agentKey,birthday){
-  if(DEMO_MODE){ const d=await demoLoad(); d.profileBirthdays=d.profileBirthdays||{}; if(birthday) d.profileBirthdays[agentKey]=birthday; else delete d.profileBirthdays[agentKey]; await demoSave(); return; }
-  const {error}=await sb.from('profiles').update({birthday}).eq('agent_key',agentKey); if(error) throw error;
+async function apiSaveStaffDetails(agentKey,{birthday,position,address}){
+  if(DEMO_MODE){ const d=await demoLoad(); d.profileBirthdays=d.profileBirthdays||{}; if(birthday) d.profileBirthdays[agentKey]=birthday; else delete d.profileBirthdays[agentKey];
+    d.profileDetails=d.profileDetails||{}; d.profileDetails[agentKey]={position,address}; await demoSave(); return; }
+  const {error}=await sb.from('profiles').update({birthday,position,address}).eq('agent_key',agentKey); if(error) throw error;
 }
 // Runs from a Management session only (avoids two different agents' sessions both
 // posting/DMing the same birthday within seconds of each other). Only the month and
@@ -2877,22 +2888,68 @@ async function apiDeleteLeaveRequest(id){
   const {error}=await sb.from('leave_requests').delete().eq('id',id); if(error) throw error;
 }
 /* ---- memoranda ---- */
-const mapMemo=r=>({id:r.id,fromKey:r.from_key,fromName:r.from_name,toKey:r.to_key,toName:r.to_name,subject:r.subject,bodyHtml:r.body_html,parentId:r.parent_id,kind:r.kind,createdAt:r.created_at,read:r.read});
+const mapMemo=r=>({id:r.id,fromKey:r.from_key,fromName:r.from_name,toKey:r.to_key,toName:r.to_name,subject:r.subject,bodyHtml:r.body_html,parentId:r.parent_id,kind:r.kind,createdAt:r.created_at,read:r.read,status:r.status||'sent',cc:[]});
+const mapMemoRecipient=r=>({id:r.id,memoId:r.memo_id,staffKey:r.staff_key,staffName:r.staff_name,read:r.read});
+// Cc is a separate memo_recipients row per extra recipient, kept apart from the
+// primary to_key/to_name so existing single-recipient memos need no backfill --
+// RLS on memo_recipients only ever returns rows this signed-in user is allowed to
+// see (their own Cc rows, or every Cc row on a memo they sent), so a plain
+// select('*') here is already correctly scoped, same as memos itself.
 async function apiLoadMemos(){
-  if(DEMO_MODE){ const d=await demoLoad(); return (d.memos||[]).slice(); }
-  try{ const {data,error}=await sb.from('memos').select('*').order('created_at',{ascending:false}); if(error) throw error;
-    return (data||[]).map(mapMemo); }
-  catch(e){ return []; }
+  if(DEMO_MODE){ const d=await demoLoad(); const memos=(d.memos||[]).slice();
+    const recips=d.memoRecipients||[];
+    memos.forEach(m=>{ m.cc=recips.filter(r=>r.memoId===m.id); });
+    return memos; }
+  try{
+    const [{data,error},{data:rdata,error:rerror}]=await Promise.all([
+      sb.from('memos').select('*').order('created_at',{ascending:false}),
+      sb.from('memo_recipients').select('*')
+    ]);
+    if(error) throw error;
+    const recips=(rdata||[]).map(mapMemoRecipient);
+    const memos=(data||[]).map(mapMemo);
+    memos.forEach(m=>{ m.cc=recips.filter(r=>r.memoId===m.id); });
+    return memos;
+  }catch(e){ return []; }
 }
-async function apiInsertMemo(toKey,toName,subject,bodyHtml,parentId,kind){
-  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),fromKey:PROFILE.key,fromName:PROFILE.name,toKey,toName,subject,bodyHtml,parentId:parentId||null,kind:kind||'memo',createdAt:new Date().toISOString(),read:false};
-    d.memos=d.memos||[]; d.memos.unshift(rec); await demoSave(); return rec; }
-  const {data,error}=await sb.from('memos').insert({from_key:PROFILE.key,from_name:PROFILE.name,to_key:toKey,to_name:toName,subject,body_html:bodyHtml,parent_id:parentId||null,kind:kind||'memo'}).select().single();
-  if(error) throw error; return mapMemo(data);
+async function apiInsertMemo(toKey,toName,subject,bodyHtml,parentId,kind,ccList,status){
+  status=status||'sent';
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),fromKey:PROFILE.key,fromName:PROFILE.name,toKey,toName,subject,bodyHtml,parentId:parentId||null,kind:kind||'memo',createdAt:new Date().toISOString(),read:false,status};
+    d.memos=d.memos||[]; d.memos.unshift(rec);
+    d.memoRecipients=d.memoRecipients||[];
+    if(status==='sent') (ccList||[]).forEach(c=>d.memoRecipients.push({id:uid(),memoId:rec.id,staffKey:c.key,staffName:c.name,read:false}));
+    await demoSave(); rec.cc=status==='sent'?(ccList||[]).map(c=>({staffKey:c.key,staffName:c.name,read:false})):[]; return rec; }
+  const {data,error}=await sb.from('memos').insert({from_key:PROFILE.key,from_name:PROFILE.name,to_key:toKey,to_name:toName,subject,body_html:bodyHtml,parent_id:parentId||null,kind:kind||'memo',status}).select().single();
+  if(error) throw error;
+  const rec=mapMemo(data);
+  // Cc rows are only created once a memo is actually sent -- a draft has no
+  // recipients yet, cc'd or otherwise.
+  if(status==='sent' && (ccList||[]).length){
+    const rows=ccList.map(c=>({memo_id:rec.id,staff_key:c.key,staff_name:c.name}));
+    try{ const {data:rdata}=await sb.from('memo_recipients').insert(rows).select(); rec.cc=(rdata||[]).map(mapMemoRecipient); }catch(e){}
+  }
+  return rec;
+}
+// Editing is only ever offered for the sender's own drafts (see the memos_upd RLS
+// policy -- from_key=me is only allowed to UPDATE while status='draft'), so this
+// can both save further draft edits and flip status:'draft'->'sent' to finally send it.
+async function apiUpdateMemo(id,patch){
+  const dbPatch={};
+  if('toKey' in patch) dbPatch.to_key=patch.toKey;
+  if('toName' in patch) dbPatch.to_name=patch.toName;
+  if('subject' in patch) dbPatch.subject=patch.subject;
+  if('bodyHtml' in patch) dbPatch.body_html=patch.bodyHtml;
+  if('status' in patch) dbPatch.status=patch.status;
+  if(DEMO_MODE){ const d=await demoLoad(); const m=(d.memos||[]).find(x=>x.id===id); if(m) Object.assign(m,patch); await demoSave(); return; }
+  const {error}=await sb.from('memos').update(dbPatch).eq('id',id); if(error) throw error;
 }
 async function apiMarkMemoRead(id){
   if(DEMO_MODE){ const d=await demoLoad(); const m=(d.memos||[]).find(x=>x.id===id); if(m) m.read=true; await demoSave(); return; }
   try{ await sb.from('memos').update({read:true}).eq('id',id); }catch(e){}
+}
+async function apiMarkMemoRecipientRead(memoId){
+  if(DEMO_MODE){ const d=await demoLoad(); (d.memoRecipients||[]).forEach(r=>{ if(r.memoId===memoId&&r.staffKey===PROFILE.key) r.read=true; }); await demoSave(); return; }
+  try{ await sb.from('memo_recipients').update({read:true}).eq('memo_id',memoId).eq('staff_key',PROFILE.agent_key); }catch(e){}
 }
 /* ---- banner tracking ---- */
 const mapBanner=r=>({id:r.id,name:r.name,area:r.area,status:r.status,lat:r.lat,lng:r.lng,image:r.image,notes:r.notes,createdBy:r.created_by,createdByName:r.created_by_name,createdAt:r.created_at,updatedAt:r.updated_at});
@@ -11852,11 +11909,20 @@ function mgrStaffSettingsHtml(){
   <div class="formwrap" style="padding:6px 15px">${teamRows||'<div class="empty">No agents yet</div>'}
   <p class="mini" style="margin-top:12px">Deactivating someone here blocks their sign-in but keeps their historical leads and stats intact everywhere, including the Sales League.</p></div>
 
-  <div class="sectitle"><h3>Birthdays</h3><span class="cnt">powers the automatic birthday post &amp; message</span></div>
+  <div class="sectitle"><h3>Staff details</h3><span class="cnt">powers birthday posts &amp; the memo letterhead</span></div>
   <div class="formwrap">
-  ${agentStaff.map(s=>{ const p=(DB.profiles||[]).find(x=>x.agent_key===s.key); return fld(s.name,'<input id="bday_'+s.key+'" type="date" value="'+esc((p&&p.birthday)||'')+'"/>'); }).join('')}
-  <div class="mini" style="margin-top:-6px;margin-bottom:12px">Year doesn't matter — only the month and day are used. On the day, the system posts to the news banner and sends the person a message automatically.</div>
-  <div class="formactions"><button class="btn primary" id="saveBirthdays">Save birthdays</button></div>
+  <p class="mini" style="margin:-2px 0 14px">Position and address are stamped automatically at the sign-off of any memo this person writes, so they only ever have to fill in the heading and body.</p>
+  ${agentStaff.map(s=>{ const p=(DB.profiles||[]).find(x=>x.agent_key===s.key); return `
+  <div class="rowcard" style="margin-bottom:10px">
+    <div class="mini" style="font-weight:800;margin-bottom:8px">${esc(s.name)}</div>
+    <div class="grid2">
+      ${fld('Position','<input id="pos_'+s.key+'" placeholder="e.g. Operations Officer" value="'+esc((p&&p.position)||'')+'"/>')}
+      ${fld('Birthday','<input id="bday_'+s.key+'" type="date" value="'+esc((p&&p.birthday)||'')+'"/>')}
+    </div>
+    ${fld('Address','<input id="addr_'+s.key+'" placeholder="Street, city" value="'+esc((p&&p.address)||'')+'"/>')}
+  </div>`; }).join('')}
+  <div class="mini" style="margin-top:-6px;margin-bottom:12px">Birthday year doesn't matter — only month and day are used, to post to the news banner and message the person automatically.</div>
+  <div class="formactions"><button class="btn primary" id="saveStaffDetails">Save staff details</button></div>
   </div>`;
 }
 function bindStaffSettingsCtrls(){
@@ -11888,18 +11954,19 @@ function bindStaffSettingsCtrls(){
       b.disabled=false;
     };
   });
-  const saveBdayBtn=document.getElementById('saveBirthdays');
-  if(saveBdayBtn) saveBdayBtn.onclick=async()=>{
-    saveBdayBtn.disabled=true; saveBdayBtn.textContent='Saving…';
+  const saveStaffBtn=document.getElementById('saveStaffDetails');
+  if(saveStaffBtn) saveStaffBtn.onclick=async()=>{
+    saveStaffBtn.disabled=true; saveStaffBtn.textContent='Saving…';
     try{
       for(const s of STAFF_LIST.filter(x=>x.role==='agent')){
-        const v=val('bday_'+s.key);
-        await apiSaveBirthday(s.key,v||null);
-        const p=(DB.profiles||[]).find(x=>x.agent_key===s.key); if(p) p.birthday=v||null;
+        const bday=val('bday_'+s.key), pos=val('pos_'+s.key).trim(), addr=val('addr_'+s.key).trim();
+        await apiSaveStaffDetails(s.key,{birthday:bday||null,position:pos||null,address:addr||null});
+        const p=(DB.profiles||[]).find(x=>x.agent_key===s.key);
+        if(p){ p.birthday=bday||null; p.position=pos||null; p.address=addr||null; }
       }
-      toast('Birthdays saved');
+      toast('Staff details saved');
     }catch(e){ toast('Save failed: '+(e.message||e)); }
-    saveBdayBtn.disabled=false; saveBdayBtn.textContent='Save birthdays';
+    saveStaffBtn.disabled=false; saveStaffBtn.textContent='Save staff details';
   };
 }
 function mgrCompanySettingsHtml(){
@@ -13418,7 +13485,21 @@ function buildMemoPDF(m){
   doc.setFont('times','bold'); doc.text('SUBJECT:',marginL,y); doc.setFont('times','normal'); doc.text(m.subject,marginL+24,y); y+=9;
   doc.setDrawColor(20,20,20); doc.setLineWidth(0.5); doc.line(marginL,y,marginR,y); y+=8;
   const blocks=memoHtmlToRuns(m.bodyHtml);
-  pdfRenderMemoBlocks(doc,blocks,marginL,marginR,y);
+  y=pdfRenderMemoBlocks(doc,blocks,marginL,marginR,y);
+  // Sign-off block -- signature image (if the sender has one saved), then their
+  // name and position/address, stamped automatically so writing a memo only ever
+  // takes a heading and a body, never a manual signature line.
+  const fromProfile=(DB.profiles||[]).find(p=>p.agent_key===m.fromKey);
+  const sigY=y+22;
+  if(sigY>265){ doc.addPage(); y=20; } else y=sigY;
+  pdfStampSignature(doc,marginL,y,42,16,getStaffSignature(m.fromKey));
+  y+=5;
+  doc.setDrawColor(150,150,150); doc.setLineWidth(0.3); doc.line(marginL,y,marginL+55,y); y+=5;
+  doc.setFont('times','bold'); doc.setFontSize(10.5); doc.text(m.fromName,marginL,y); y+=5;
+  doc.setFont('times','normal'); doc.setFontSize(9); doc.setTextColor(90,98,110);
+  if(fromProfile&&fromProfile.position){ doc.text(fromProfile.position,marginL,y); y+=4.5; }
+  if(fromProfile&&fromProfile.address){ doc.text(fromProfile.address,marginL,y); y+=4.5; }
+  doc.setTextColor(20,20,20);
   doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(140,140,140);
   doc.text('Generated '+new Date().toLocaleDateString('en-GB'),marginR,290,{align:'right'});
   return doc;
@@ -13432,25 +13513,30 @@ async function viewMemoApp(){
 }
 function paintMemoApp(){
   const body=document.getElementById('memoBody'); if(!body) return;
-  const unread=DB.memos.filter(m=>m.toKey===PROFILE.key&&!m.read).length;
+  const unread=DB.memos.filter(m=>(m.toKey===PROFILE.key&&!m.read)||(myMemoCcRow(m)&&!myMemoCcRow(m).read)).length;
+  const draftCount=DB.memos.filter(m=>m.fromKey===PROFILE.key&&m.status==='draft').length;
   const tabs=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <button class="chip ${memoAppTab==='compose'?'on':''}" data-memotab="compose">Compose</button>
     <button class="chip ${memoAppTab==='inbox'?'on':''}" data-memotab="inbox">Inbox${unread?' ('+unread+')':''}</button>
     <button class="chip ${memoAppTab==='sent'?'on':''}" data-memotab="sent">Sent</button>
+    <button class="chip ${memoAppTab==='drafts'?'on':''}" data-memotab="drafts">Drafts${draftCount?' ('+draftCount+')':''}</button>
   </div>`;
   let content;
   if(memoAppTab==='inbox') content=memoInboxHtml();
   else if(memoAppTab==='sent') content=memoSentHtml();
+  else if(memoAppTab==='drafts') content=memoDraftsHtml();
   else content=memoComposeHtml();
   body.innerHTML=tabs+content;
   body.querySelectorAll('[data-memotab]').forEach(b=>b.onclick=()=>{ memoAppTab=b.dataset.memotab; paintMemoApp(); });
   if(memoAppTab==='inbox'||memoAppTab==='sent') bindMemoListCtrls();
+  else if(memoAppTab==='drafts') bindMemoDraftCtrls();
   else bindMemoComposeCtrls();
 }
 function memoComposeHtml(){
   const others=STAFF_LIST.filter(s=>s.key!==PROFILE.key);
   return `<div class="formwrap">
   <div class="grid2">${fld('To',sel('memo_to',others.map(s=>s.name)))}${fld('Subject','<input id="memo_subject" placeholder="Subject" value="'+esc((memoComposeSeed&&memoComposeSeed.subject)||'')+'"/>')}</div>
+  ${fld('Cc <span class="mini">(optional — hold Ctrl/Cmd to pick more than one)</span>','<select id="memo_cc" multiple size="'+Math.min(4,Math.max(2,others.length))+'">'+others.map(s=>`<option value="${esc(s.key)}">${esc(s.name)}</option>`).join('')+'</select>')}
   <p class="mini" style="margin:-4px 0 10px">Letterhead, date, and the recipient's name are added automatically when this is downloaded or printed.</p>
   <div class="memoToolbar" id="memoToolbar">
     <select id="memo_font" title="Font"><option value="Helvetica, Arial, sans-serif">Helvetica</option><option value="Georgia, serif">Georgia</option><option value="'Times New Roman', serif">Times New Roman</option><option value="'Courier New', monospace">Courier New</option><option value="Arial, sans-serif">Arial</option></select>
@@ -13466,7 +13552,7 @@ function memoComposeHtml(){
     <button type="button" data-memocmd="removeFormat" title="Clear formatting">Clear</button>
   </div>
   <div id="memoEditor" class="memoEditor" contenteditable="true">${memoComposeSeed?memoComposeSeed.bodyHtml:''}</div>
-  <div class="formactions"><button class="btn primary" id="memoSendBtn" style="width:100%">Send memo</button></div>
+  <div class="formactions"><button class="btn ghost" id="memoDraftBtn" style="flex:1">Save draft</button><button class="btn primary" id="memoSendBtn" style="flex:1">Send memo</button></div>
   </div>`;
 }
 function bindMemoComposeCtrls(){
@@ -13475,55 +13561,113 @@ function bindMemoComposeCtrls(){
     const toStaff=STAFF_LIST.find(s=>s.key===memoComposeSeed.toKey);
     if(toStaff) document.getElementById('memo_to').value=toStaff.name;
   }
+  if(memoComposeSeed&&memoComposeSeed.ccKeys){
+    [...document.getElementById('memo_cc').options].forEach(o=>{ o.selected=memoComposeSeed.ccKeys.includes(o.value); });
+  }
   const seed=memoComposeSeed; memoComposeSeed=null;
   document.querySelectorAll('[data-memocmd]').forEach(b=>b.onclick=()=>{ editor.focus(); document.execCommand(b.dataset.memocmd,false,null); });
   document.getElementById('memo_font').onchange=e=>{ editor.focus(); document.execCommand('fontName',false,e.target.value); };
   document.getElementById('memo_size').onchange=e=>{ editor.focus(); document.execCommand('fontSize',false,e.target.value); };
-  document.getElementById('memoSendBtn').onclick=async()=>{
+  const gather=()=>{
     const others=STAFF_LIST.filter(s=>s.key!==PROFILE.key);
     const toName=val('memo_to'); const recipient=others.find(s=>s.name===toName);
     const subject=val('memo_subject').trim();
     const bodyHtml=editor.innerHTML.trim();
+    const ccKeys=[...document.getElementById('memo_cc').selectedOptions].map(o=>o.value).filter(k=>!recipient||k!==recipient.key);
+    const ccList=ccKeys.map(k=>others.find(s=>s.key===k)).filter(Boolean).map(s=>({key:s.key,name:s.name}));
+    return {recipient,subject,bodyHtml,ccList};
+  };
+  document.getElementById('memoSendBtn').onclick=async()=>{
+    const {recipient,subject,bodyHtml,ccList}=gather();
     if(!recipient){ toast('Choose a recipient'); return; }
     if(!subject){ toast('Add a subject'); return; }
     if(!bodyHtml||bodyHtml==='<br>'){ toast('Write something first'); return; }
     const btn=document.getElementById('memoSendBtn'); btn.disabled=true; btn.textContent='Sending…';
     try{
-      const rec=await apiInsertMemo(recipient.key,recipient.name,subject,bodyHtml,seed&&seed.parentId||null,seed&&seed.kind||'memo');
-      DB.memos.unshift(rec);
+      let rec;
+      if(seed&&seed.editId){
+        await apiUpdateMemo(seed.editId,{toKey:recipient.key,toName:recipient.name,subject,bodyHtml,status:'sent'});
+        rec={...DB.memos.find(m=>m.id===seed.editId),toKey:recipient.key,toName:recipient.name,subject,bodyHtml,status:'sent'};
+        if(ccList.length){ try{ const {data:rdata}=await sb.from('memo_recipients').insert(ccList.map(c=>({memo_id:seed.editId,staff_key:c.key,staff_name:c.name}))).select(); rec.cc=(rdata||[]).map(mapMemoRecipient); }catch(e){} }
+        const idx=DB.memos.findIndex(m=>m.id===seed.editId); if(idx>=0) DB.memos[idx]=rec; else DB.memos.unshift(rec);
+      }else{
+        rec=await apiInsertMemo(recipient.key,recipient.name,subject,bodyHtml,seed&&seed.parentId||null,seed&&seed.kind||'memo',ccList);
+        DB.memos.unshift(rec);
+      }
       try{ await apiSendMessage(recipient.key,'New memo from '+PROFILE.name+': "'+subject+'" — open Office › Memorandum to read it.'); }catch(e){}
-      toast('Memo sent to '+recipient.name);
+      for(const c of ccList){ try{ await apiSendMessage(c.key,'You were cc\'d on a memo from '+PROFILE.name+': "'+subject+'" — open Office › Memorandum to read it.'); }catch(e){} }
+      toast('Memo sent to '+recipient.name+(ccList.length?' (cc: '+ccList.map(c=>c.name).join(', ')+')':''));
       memoAppTab='sent'; paintMemoApp();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Send memo'; }
   };
+  document.getElementById('memoDraftBtn').onclick=async()=>{
+    const {recipient,subject,bodyHtml}=gather();
+    if(!recipient){ toast('Choose a recipient'); return; }
+    if(!subject&&(!bodyHtml||bodyHtml==='<br>')){ toast('Write something first'); return; }
+    const btn=document.getElementById('memoDraftBtn'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      if(seed&&seed.editId){
+        await apiUpdateMemo(seed.editId,{toKey:recipient.key,toName:recipient.name,subject,bodyHtml});
+        const idx=DB.memos.findIndex(m=>m.id===seed.editId);
+        if(idx>=0) Object.assign(DB.memos[idx],{toKey:recipient.key,toName:recipient.name,subject,bodyHtml});
+      }else{
+        const rec=await apiInsertMemo(recipient.key,recipient.name,subject,bodyHtml,null,'memo',[],'draft');
+        DB.memos.unshift(rec);
+      }
+      toast('Draft saved');
+      memoAppTab='drafts'; paintMemoApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save draft'; }
+  };
 }
+function myMemoCcRow(m){ return (m.cc||[]).find(r=>r.staffKey===PROFILE.key); }
 function memoRowHtml(m){
   const kindTag=m.kind==='reply'?'<span class="tag ghost">Reply</span>':m.kind==='escalation'?'<span class="tag warnt">Escalated</span>':'';
-  return `<button class="rowcard" style="text-align:left;width:100%" data-memoopen="${m.id}"><div class="top"><div><div class="nm">${esc(m.subject)}${(m.toKey===PROFILE.key&&!m.read)?' <span class="tag gold">New</span>':''}</div><div class="meta">${m.fromKey===PROFILE.key?'To '+esc(m.toName):'From '+esc(m.fromName)} · ${esc((m.createdAt||'').slice(0,16).replace('T',' '))}</div></div>${kindTag}</div></button>`;
+  const myCc=myMemoCcRow(m);
+  const isUnreadToMe=(m.toKey===PROFILE.key&&!m.read)||(myCc&&!myCc.read);
+  const ccNote=(m.cc&&m.cc.length)?' <span class="mini">+cc '+m.cc.map(c=>esc(c.staffName)).join(', ')+'</span>':'';
+  return `<button class="rowcard" style="text-align:left;width:100%" data-memoopen="${m.id}"><div class="top"><div><div class="nm">${esc(m.subject)}${isUnreadToMe?' <span class="tag gold">New</span>':''}</div><div class="meta">${m.fromKey===PROFILE.key?'To '+esc(m.toName)+ccNote:(myCc?'Cc’d from '+esc(m.fromName):'From '+esc(m.fromName))} · ${esc((m.createdAt||'').slice(0,16).replace('T',' '))}</div></div>${kindTag}</div></button>`;
 }
 function memoInboxHtml(){
-  const inbox=DB.memos.filter(m=>m.toKey===PROFILE.key).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  const inbox=DB.memos.filter(m=>m.toKey===PROFILE.key||myMemoCcRow(m)).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
   return `<div class="sectitle" style="margin-top:0"><h3>Inbox</h3><span class="cnt">${inbox.length}</span></div>
   <div class="list">${inbox.length?inbox.map(memoRowHtml).join(''):emptyState(ic.mail,'Nothing yet','Memos sent to you will show up here.')}</div>`;
 }
 function memoSentHtml(){
-  const sent=DB.memos.filter(m=>m.fromKey===PROFILE.key).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  const sent=DB.memos.filter(m=>m.fromKey===PROFILE.key&&m.status!=='draft').sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
   return `<div class="sectitle" style="margin-top:0"><h3>Sent</h3><span class="cnt">${sent.length}</span></div>
   <div class="list">${sent.length?sent.map(memoRowHtml).join(''):emptyState(ic.mail,'Nothing sent yet','')}</div>`;
+}
+function memoDraftsHtml(){
+  const drafts=DB.memos.filter(m=>m.fromKey===PROFILE.key&&m.status==='draft').sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  return `<div class="sectitle" style="margin-top:0"><h3>Drafts</h3><span class="cnt">${drafts.length}</span></div>
+  <div class="list">${drafts.length?drafts.map(m=>`<button class="rowcard" style="text-align:left;width:100%" data-memodraft="${m.id}"><div class="top"><div><div class="nm">${esc(m.subject||'(no subject)')}</div><div class="meta">To ${esc(m.toName)} · ${esc((m.createdAt||'').slice(0,16).replace('T',' '))}</div></div><span class="tag ghost">Draft</span></div></button>`).join(''):emptyState(ic.mail,'No drafts','Memos you save without sending will show up here.')}</div>`;
+}
+function bindMemoDraftCtrls(){
+  document.querySelectorAll('[data-memodraft]').forEach(b=>b.onclick=()=>{
+    const m=DB.memos.find(x=>x.id===b.dataset.memodraft); if(!m) return;
+    memoComposeSeed={ editId:m.id, toKey:m.toKey, subject:m.subject, bodyHtml:m.bodyHtml, ccKeys:(m.cc||[]).map(c=>c.staffKey) };
+    memoAppTab='compose'; paintMemoApp();
+  });
 }
 function bindMemoListCtrls(){
   document.querySelectorAll('[data-memoopen]').forEach(b=>b.onclick=()=>openMemoView(b.dataset.memoopen));
 }
 function openMemoView(id){
   const m=DB.memos.find(x=>x.id===id); if(!m) return;
+  const myCc=myMemoCcRow(m);
   if(m.toKey===PROFILE.key&&!m.read){ m.read=true; apiMarkMemoRead(m.id).catch(()=>{}); }
+  else if(myCc&&!myCc.read){ myCc.read=true; apiMarkMemoRecipientRead(m.id).catch(()=>{}); if(DB.badgeCounts) refreshAllBadges(); }
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
-  const isRecipient=m.toKey===PROFILE.key;
+  const isRecipient=m.toKey===PROFILE.key||!!myCc;
+  const fromProfile=(DB.profiles||[]).find(p=>p.agent_key===m.fromKey);
+  const fromLabel=fromProfile&&fromProfile.position?esc(m.fromName)+' <span class="mini">('+esc(fromProfile.position)+')</span>':esc(m.fromName);
+  const ccLine=(m.cc&&m.cc.length)?` · Cc: ${m.cc.map(c=>esc(c.staffName)).join(', ')}`:'';
   ov.innerHTML=`<div id="announceModal" style="max-width:600px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(m.subject)}</div><button id="closeMemoView" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
-    <div class="mini" style="margin-bottom:10px">From ${esc(m.fromName)} to ${esc(m.toName)} · ${esc((m.createdAt||'').slice(0,16).replace('T',' '))}</div>
+    <div class="mini" style="margin-bottom:10px">From ${fromLabel} to ${esc(m.toName)}${ccLine} · ${esc((m.createdAt||'').slice(0,16).replace('T',' '))}</div>
     <div class="formwrap" style="max-height:50vh;overflow:auto;color:#111;background:#fff">${m.bodyHtml}</div>
+    ${(fromProfile&&fromProfile.signature_data)?`<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"><img src="${fromProfile.signature_data}" style="max-width:120px;max-height:44px;object-fit:contain;display:block"/><div class="mini" style="margin-top:4px;font-weight:700;color:var(--text)">${esc(m.fromName)}</div>${fromProfile.position?`<div class="mini">${esc(fromProfile.position)}</div>`:''}</div>`:''}
     <div class="formactions" style="margin-top:14px;flex-wrap:wrap">
       <button class="chip" id="memoDownloadBtn">⬇ Download PDF</button>
       ${isRecipient?`<button class="chip" id="memoReplyBtn">↩ Reply</button><button class="chip" id="memoEscalateBtn">⤴ Escalate to…</button>`:''}
