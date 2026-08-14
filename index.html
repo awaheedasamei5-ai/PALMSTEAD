@@ -550,6 +550,29 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .tag.pri-High{background:#F4E0DA;color:#B4472F}
 .tag.pri-Medium{background:#F6EBD3;color:#8A6E12}
 .tag.pri-Low{background:#EDEFF1;color:#5b6470}
+/* Pipeline lead cards: a colored left rail lets you scan stage at a glance down a
+   long list, without reading every pill -- same six stage colors as .tag.stage-X,
+   just used as a bar instead of text. Kept as its own class so plain .rowcard
+   usages elsewhere (dozens of other screens) are untouched. */
+.pipeCard{position:relative;overflow:hidden;padding-left:18px}
+.pipeCard::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--stagecolor,var(--line))}
+.pipeCard.stage-1{--stagecolor:#9AA5B1}
+.pipeCard.stage-2A{--stagecolor:#2E6E8E}
+.pipeCard.stage-2B{--stagecolor:#1D4ED8}
+.pipeCard.stage-3{--stagecolor:#C9A227}
+.pipeCard.stage-4{--stagecolor:#1E7A56}
+.pipeCard.stage-Lost{--stagecolor:#B4472F}
+.pipeAvatar{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--green),var(--green2));color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex:0 0 auto;letter-spacing:-.02em}
+.pipeStatStrip{display:flex;gap:10px;overflow-x:auto;padding-bottom:2px;margin-bottom:16px}
+.pipeStat{flex:0 0 auto;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 16px;min-width:108px;box-shadow:var(--shadow)}
+.pipeStat .v{font-family:'IBM Plex Mono',monospace;font-weight:800;font-size:16px}
+.pipeStat .l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:1px}
+.pipeToolsBar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.pipeToolsBar button{flex:1;min-width:130px;display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;
+  border:1px solid var(--line);background:var(--card);font-size:12.5px;font-weight:700;color:var(--text);transition:.15s}
+.pipeToolsBar button:hover{border-color:var(--green2);color:var(--green)}
+.pipeToolsBar button svg{width:16px;height:16px;flex:0 0 auto;color:var(--green)}
 .tag.ghost{background:#F1EFE7;color:#6C7269}
 .tag.ok{background:#DCEEE4;color:#1E7A56}
 .tag.warnt{background:#F6EBD3;color:#8A6E12}
@@ -5685,34 +5708,24 @@ function agentHome(){ const k=kpisOf(DB.leads);
 let pf={q:'',stage:'',paidOnly:false};
 function viewPipeline(){
   const paidCount=DB.leads.filter(l=>isFullyPaid(l)).length;
+  const totalValue=DB.leads.reduce((s,l)=>{ const c=computeLead(l); return s+(l.grandTotal!=null?num(l.grandTotal):c.grand); },0);
+  const totalCollected=DB.leads.reduce((s,l)=>s+num(l.amtPaid),0);
   const recent=getRecentlyViewed();
   V.innerHTML=`${back('home')}<div class="pagehead"><div><div class="eyebrow">My pipeline</div><h2>${DB.leads.length} leads</h2><p>${paidCount} paid in full</p></div></div>
-  ${recent.length?`<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px">${recent.map(r=>`<button class="chip" style="flex:0 0 auto" data-recentcust="${esc(r.name)}" data-recentcontact="${esc(r.contact||'')}">🕓 ${esc(r.name)}</button>`).join('')}</div>`:''}
-  <div class="rowcard" style="margin-bottom:16px;padding:16px 16px 6px">
-    <div style="font-weight:700;font-size:14px;margin-bottom:2px">Your pipeline as Excel</div>
-    <div class="mini" style="margin-bottom:6px">Download it, edit offline (add clients, update payments/stage/notes), then import it back — the system reads your changes and updates live.</div>
-    <div class="appGrid" style="grid-template-columns:repeat(2,1fr)">
-      <button class="appGridIcon" id="xlMyPipelineBtn"><span class="appGridGlyph">${fic('document')}</span><span class="appGridLabel">Download pipeline</span></button>
-      <button class="appGridIcon" id="xlImportBtn"><span class="appGridGlyph">${fic('backup')}</span><span class="appGridLabel">Import edited file</span></button>
-    </div>
-    <input type="file" id="xlImportFile" accept=".xlsx" class="hidden"/>
+  <div class="pipeStatStrip">
+    <div class="pipeStat"><div class="v">${ghs(totalValue)}</div><div class="l">Pipeline value</div></div>
+    <div class="pipeStat"><div class="v">${ghs(totalCollected)}</div><div class="l">Collected</div></div>
+    <div class="pipeStat"><div class="v">${paidCount}/${DB.leads.length}</div><div class="l">Paid in full</div></div>
   </div>
-  ${PROFILE.role==='manager'?`<div class="rowcard" style="margin-bottom:16px;padding:16px 16px 6px">
-    <div style="font-weight:700;font-size:14px;margin-bottom:2px">Backup &amp; restore</div>
-    <div class="mini" style="margin-bottom:6px">Before deleting a client — or your whole pipeline — back them up here, full payment history included. Restoring always creates new records; it never overwrites anything live.</div>
-    <div class="appGrid" style="grid-template-columns:repeat(2,1fr)">
-      <button class="appGridIcon" id="pipeBackupBtn"><span class="appGridGlyph">${fic('savings')}</span><span class="appGridLabel">Back up clients</span></button>
-      <button class="appGridIcon" id="pipeRestoreBtn"><span class="appGridGlyph">${fic('access')}</span><span class="appGridLabel">Restore backup</span></button>
-    </div>
-    <input type="file" id="pipeRestoreFile" accept=".json" class="hidden"/>
-  </div>`:`<div class="rowcard" style="margin-bottom:16px;padding:16px 16px 6px">
-    <div style="font-weight:700;font-size:14px;margin-bottom:2px">Backup &amp; restore</div>
-    <div class="mini" style="margin-bottom:10px">Backups and restores are handled by Management to keep pipeline data safe. Request one below and they'll take care of it.</div>
-    <div class="appGrid" style="grid-template-columns:repeat(2,1fr)">
-      <button class="appGridIcon" id="reqBackupBtn"><span class="appGridGlyph">${fic('savings')}</span><span class="appGridLabel">Request backup</span></button>
-      <button class="appGridIcon" id="reqRestoreBtn"><span class="appGridGlyph">${fic('access')}</span><span class="appGridLabel">Request restore</span></button>
-    </div>
-  </div>`}
+  ${recent.length?`<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px">${recent.map(r=>`<button class="chip" style="flex:0 0 auto" data-recentcust="${esc(r.name)}" data-recentcontact="${esc(r.contact||'')}">🕓 ${esc(r.name)}</button>`).join('')}</div>`:''}
+  <div class="pipeToolsBar">
+    <button id="xlMyPipelineBtn">${ic.download}Download Excel</button>
+    <button id="xlImportBtn">${ic.upload}Import edited file</button>
+    ${PROFILE.role==='manager'?`<button id="pipeBackupBtn">${ic.update}Back up clients</button><button id="pipeRestoreBtn">${ic.update}Restore backup</button>`
+      :`<button id="reqBackupBtn">${ic.update}Request backup</button><button id="reqRestoreBtn">${ic.update}Request restore</button>`}
+    <input type="file" id="xlImportFile" accept=".xlsx" class="hidden"/>
+    ${PROFILE.role==='manager'?'<input type="file" id="pipeRestoreFile" accept=".json" class="hidden"/>':''}
+  </div>
   <div class="searchbar"><input id="pq" placeholder="Search name or contact…" value="${esc(pf.q)}"/>
   <select id="ps"><option value="">All stages</option>${STAGES.map(s=>`<option value="${s}" ${s===pf.stage?'selected':''}>${STAGE_LABELS[s]}</option>`).join('')}</select></div>
   <div style="margin-bottom:14px"><button class="chip ${pf.paidOnly?'on':''}" id="paidOnlyBtn">✓ Fully paid only${pf.paidOnly?' ✕':''}</button></div>
@@ -5746,8 +5759,10 @@ async function requestPipelineOp(kind){
 function paintPipe(){ const wrap=document.getElementById('plist'); const q=pf.q.toLowerCase();
   const list=DB.leads.filter(l=>(!q||(l.name||'').toLowerCase().includes(q)||String(l.contact||'').includes(q))&&(!pf.stage||l.stage===pf.stage)&&(!pf.paidOnly||isFullyPaid(l)));
   if(!list.length){ wrap.innerHTML=emptyState(ic.grid,'No matching leads','Adjust your search or add a new lead.'); return; }
-  wrap.innerHTML=list.map(l=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0); const paidFull=isFullyPaid(l);
-    return `<div class="rowcard"><div class="top"><div><div class="nm nm-link" data-custname="${esc(l.name)}" data-custcontact="${esc(l.contact||'')}">${esc(l.name)}</div><div class="meta">${esc(l.contact||'—')}${contactLinks(l.contact)} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''}</div></div>
+  wrap.innerHTML=list.map((l,i)=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0); const paidFull=isFullyPaid(l);
+    const initials=(l.name||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    return `<div class="rowcard pipeCard stage-${esc(l.stage||'')}" style="animation-delay:${Math.min(i*30,300)}ms">
+      <div class="top"><div class="pipeAvatar">${esc(initials)}</div><div style="flex:1;min-width:0"><div class="nm nm-link" data-custname="${esc(l.name)}" data-custcontact="${esc(l.contact||'')}">${esc(l.name)}</div><div class="meta">${esc(l.contact||'—')}${contactLinks(l.contact)} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''}</div></div>
       <div style="text-align:right"><div class="amt">${ghs(g)}</div><div class="meta">${bal>0?('Bal '+ghs(bal)):'Paid in full'}</div></div></div>
       <div class="foot">${paidFull?'<span class="tag ok">✓ Paid in full</span>':''}<span class="tag stage-${esc(l.stage||'')}">${esc(l.stage||'—')}</span><span class="tag pri-${esc(l.priority||'Low')}">${esc(l.priority||'Low')} priority</span>${l.siteVisit==='Yes'?'<span class="tag ok">Site visited</span>':''}${l.paymentPlan?`<span class="tag ghost">${esc(l.paymentPlan)}</span>`:''}${(l.tags||'').split(',').map(t=>t.trim()).filter(Boolean).map(t=>`<span class="tag tagchip">🏷 ${esc(t)}</span>`).join('')}</div>
       ${l.nextAction?`<div class="note"><b>Next:</b> ${esc(l.nextAction)}</div>`:''}
@@ -7918,10 +7933,11 @@ function formUpdate(id){ const l=findLeadById(id); if(!l){ route('home'); return
   const onPlan=PLAN_MONTHS[l.paymentPlan] && !isFullyPaid(l);
   const myDep=onPlan?computeDepositStatus(l,myPayments):null;
   const mySched=onPlan?computeMonthlySchedule(l,myPayments):null;
-  V.innerHTML=`${back('update')}<div class="pagehead"><div><div class="eyebrow">Updating</div><h2>${esc(l.name)}</h2><p>${esc(l.contact||'')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''}</p></div></div>
+  const updInitials=(l.name||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+  V.innerHTML=`${back('update')}<div class="pagehead"><div style="display:flex;align-items:center;gap:12px"><div class="pipeAvatar" style="width:46px;height:46px;font-size:16px;border-radius:14px">${esc(updInitials)}</div><div><div class="eyebrow">Updating</div><h2>${esc(l.name)}</h2><p>${esc(l.contact||'')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''}</p></div></div></div>
   ${priceMismatch?`<div class="rowcard" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #B4472F"><div style="font-weight:700;font-size:13.5px;color:#B4472F">⚠ Price check</div><div class="mini" style="margin-top:2px">This lead's unit price (${ghs(num(l.unitPrice))}) doesn't match the current ${esc(l.plotType)} price (${ghs(expectedUnit)}). This can be legitimate (a past promo) — but worth confirming it's correct.</div></div>`:''}
   ${overpaid?`<div class="rowcard" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #B4472F"><div style="font-weight:700;font-size:13.5px;color:#B4472F">⚠ Amount paid exceeds grand total</div><div class="mini" style="margin-top:2px">Paid ${ghs(num(l.amtPaid))} against a grand total of ${ghs(g)}. Check the numbers below.</div></div>`:''}
-  <div class="kpis" style="grid-template-columns:repeat(2,1fr)">${kpi('Pipeline value',ghs(g),'gold')}${kpi('Collected',ghs(num(l.amtPaid)))}</div>
+  <div class="pipeStatStrip"><div class="pipeStat"><div class="v">${ghs(g)}</div><div class="l">Pipeline value</div></div><div class="pipeStat"><div class="v">${ghs(num(l.amtPaid))}</div><div class="l">Collected</div></div><div class="pipeStat"><div class="v">${ghs(bal)}</div><div class="l">Balance</div></div></div>
   <div class="formwrap">
   <div class="sectitle" style="margin-top:0"><h3>Client</h3></div>
   <div class="grid2">${fld('Full name','<input id="u_name" value="'+esc(l.name)+'"/>')}${fld('Contact','<input id="u_contact" value="'+esc(l.contact||'')+'"/>')}</div>
