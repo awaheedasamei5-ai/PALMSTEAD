@@ -4113,7 +4113,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,mgmtreports:viewManagementReportsApp,
     clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -4136,7 +4136,7 @@ function tabForRoute(name){
     return 'clienthome';
   }
   if(['salesdesk','mgrSalesDesk','mgrCrmTools','mgrPlotInv','crm','addlead','update','updateOne','myDataCheck','plots','pipeline','sitevisit','enquiry','complaint','plotrequests','clientdb','allocations'].includes(name)) return 'salesdesk';
-  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp'||name==='bannerapp'||name==='contractapp'||name==='sitevisitauth'||name==='logpayment'||name==='expenses') return 'officedesk';
+  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp'||name==='bannerapp'||name==='contractapp'||name==='sitevisitauth'||name==='logpayment'||name==='expenses'||name==='mgmtreports') return 'officedesk';
   if(name==='chat'||name==='chatThread') return 'chat';
   if(name==='home'||name==='mgr') return 'home';
   return 'more';
@@ -4405,6 +4405,7 @@ function mgrAppRoute(key){
   else if(key==='Company Leads') route('companyleads');
   else if(key==='Log Payment') route('logpayment');
   else if(key==='Expenses') route('expenses');
+  else if(key==='Management Reports') route('mgmtreports');
   else if(key==='Site Visit Auth') route('sitevisitauth');
   else if(key==='Contract of Sale') route('contractapp');
   else if(key==='Notes') route('notes');
@@ -4442,6 +4443,7 @@ function viewOfficeDesk(){
     ...(canManagePayments()?[{key:'Log Payment',fic:'savings',label:'Log Payment'}]:[]),
     ...(canManageExpenses()?[{key:'Expenses',fic:'savings',label:'Expenses'}]:[]),
     ...(isMgr?[{key:'Commission',fic:'savings',label:'Commission'}]:[]),
+    ...(isMgr?[{key:'Management Reports',fic:'analytics',label:'Reports'}]:[]),
     ...(isMgr?[{key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'}]:[]),
     ...(showCompanyLeads?[{key:'Company Leads',fic:'briefcase',label:'Company Leads'}]:[])
   ];
@@ -11781,6 +11783,140 @@ function buildFundRequestSlipPDF(f){
   y+=6; doc.setFontSize(9); doc.text('Date: '+(f.decidedAt||'').slice(0,10),14,y);
   if(f.approvalSignature) pdfStampSignature(doc,120,y,45,16,f.approvalSignature);
   const fname='FundRequest_'+f.id.slice(0,8)+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
+}
+/* Management Reports -- a manager-only, on-demand branded PDF covering only metrics that
+   are actually well-defined in this data model (revenue = approved payments, outstanding =
+   current balance snapshot, fully paid = balance<=0, pending = status='pending' rows already
+   tracked for approval elsewhere). Deliberately avoids inventing a "deal closed/won" concept
+   that doesn't exist anywhere else in the app. Regenerated fresh every time, never stored. */
+let MGMTRPT_PERIOD='month', MGMTRPT_FROM='', MGMTRPT_TO='';
+function reportPeriodRange(key){
+  const now=new Date(); const t=today();
+  if(key==='week'){ const d=new Date(t+'T00:00:00'); const dow=(d.getDay()+6)%7; const from=isoPlusDays(t,-dow); return {from,to:t,label:'This week'}; }
+  if(key==='month'){ const from=t.slice(0,7)+'-01'; return {from,to:t,label:'This month'}; }
+  if(key==='lastmonth'){ const first=new Date(now.getFullYear(),now.getMonth(),1); const lastMonthEnd=new Date(first.getTime()-86400000);
+    const from=lastMonthEnd.toISOString().slice(0,7)+'-01'; return {from,to:lastMonthEnd.toISOString().slice(0,10),label:'Last month'}; }
+  return {from:MGMTRPT_FROM||t,to:MGMTRPT_TO||t,label:'Custom range'};
+}
+async function viewManagementReportsApp(){
+  if(PROFILE.role!=='manager'){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Management only','Reports are restricted to Management.'); return; }
+  MGMTRPT_PERIOD='month';
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Management</div><h2>Reports</h2><p>Generate a branded PDF summary — performance, revenue, outstanding balances, and pending approvals for any period.</p></div></div>
+  <div id="mgmtRptBody"></div>`;
+  if(!EXP_LOADED && !DEMO_MODE){ try{ [EXP_CATEGORIES_LIST,EXPENSES_LIST,FUND_REQUESTS_LIST,DAILY_BALANCES_LIST]=await Promise.all([apiLoadExpenseCategories(),apiLoadExpenses(),apiLoadFundRequests(),apiLoadDailyBalances()]); EXP_LOADED=true; }catch(e){} }
+  paintMgmtRptBody();
+}
+function paintMgmtRptBody(){
+  const body=document.getElementById('mgmtRptBody');
+  const isCustom=MGMTRPT_PERIOD==='custom';
+  body.innerHTML=`<div class="formwrap">
+  <div class="sectitle" style="margin-top:0"><h3>Period</h3></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    ${['week','month','lastmonth','custom'].map(k=>`<button class="chip ${MGMTRPT_PERIOD===k?'on':''}" data-rptperiod="${k}">${k==='week'?'This week':k==='month'?'This month':k==='lastmonth'?'Last month':'Custom range'}</button>`).join('')}
+  </div>
+  ${isCustom?`<div class="grid2">${fld('From','<input id="rpt_from" type="date" value="'+(MGMTRPT_FROM||today())+'"/>')}${fld('To','<input id="rpt_to" type="date" value="'+(MGMTRPT_TO||today())+'"/>')}</div>`:''}
+  <div class="formactions"><button class="btn primary" id="rptGoBtn" style="width:100%">Generate PDF report</button></div>
+  </div>`;
+  body.querySelectorAll('[data-rptperiod]').forEach(b=>b.onclick=()=>{ MGMTRPT_PERIOD=b.dataset.rptperiod; paintMgmtRptBody(); });
+  document.getElementById('rptGoBtn').onclick=()=>{
+    if(isCustom){ MGMTRPT_FROM=val('rpt_from')||today(); MGMTRPT_TO=val('rpt_to')||today(); }
+    const range=reportPeriodRange(MGMTRPT_PERIOD);
+    const data=computeManagementReportData(range.from,range.to);
+    buildManagementReportPDF(range,data);
+  };
+}
+function computeManagementReportData(from,to){
+  const inRange=d=>d && d>=from && d<=to;
+  const agents=allAgentLists();
+  const allLeads=agents.flatMap(a=>a.list.map(l=>({...l,agentName:a.name,agentKey:a.key})));
+  const newLeads=allLeads.filter(l=>inRange((l.date||'').slice(0,10)));
+  const payments=(DB.payments||[]).filter(p=>inRange((p.date||'').slice(0,10)));
+  const revenue=payments.reduce((s,p)=>s+num(p.amount),0);
+  const byMethod={};
+  payments.forEach(p=>{ const m=p.method||'Unspecified'; byMethod[m]=byMethod[m]||{count:0,total:0}; byMethod[m].count++; byMethod[m].total+=num(p.amount); });
+  const outstandingTotal=allLeads.reduce((s,l)=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; return s+Math.max(g-num(l.amtPaid),0); },0);
+  const fullyPaidCount=allLeads.filter(l=>{ const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; return Math.max(g-num(l.amtPaid),0)<0.5; }).length;
+  const visitsInRange=(DB.sitevisits||[]).filter(v=>inRange((v.date||v.visitDate||v.createdAt||'').slice(0,10))).length;
+  const perAgent=agents.map(a=>{
+    const leadsA=a.list.filter(l=>inRange((l.date||'').slice(0,10)));
+    const paymentsA=payments.filter(p=>p.agentKey===a.key);
+    const revA=paymentsA.reduce((s,p)=>s+num(p.amount),0);
+    return {name:a.name,newLeads:leadsA.length,revenue:revA};
+  }).filter(a=>a.newLeads>0||a.revenue>0).sort((a,b)=>b.revenue-a.revenue);
+  const expensesInRange=(EXPENSES_LIST||[]).filter(e=>e.status==='approved'&&inRange((e.date||'').slice(0,10)));
+  const expensesTotal=expensesInRange.reduce((s,e)=>s+num(e.amount),0);
+  const byCategory={};
+  expensesInRange.forEach(e=>{ byCategory[e.category]=(byCategory[e.category]||0)+num(e.amount); });
+  const pendingPayments=(DB.pendingPayments||[]).length;
+  const pendingExpenses=(EXPENSES_LIST||[]).filter(e=>e.status==='pending').length;
+  const pendingFunds=(FUND_REQUESTS_LIST||[]).filter(f=>f.status==='pending').length;
+  return {newLeadsCount:newLeads.length,revenue,byMethod,outstandingTotal,fullyPaidCount,visitsInRange,perAgent,
+    expensesTotal,byCategory,pendingPayments,pendingExpenses,pendingFunds};
+}
+function pdfSectionTitle(doc,y,pageW,text){
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(11,30,61);
+  doc.text(text,12,y);
+  doc.setDrawColor(200,208,220); doc.setLineWidth(0.4); doc.line(12,y+2,pageW-12,y+2);
+  doc.setTextColor(20,20,20);
+  return y+9;
+}
+function pdfSimpleTable(doc,y,pageW,headers,rows,colPct){
+  const usableW=pageW-24; const colW=colPct.map(p=>usableW*p); const colX=[12]; for(let i=1;i<colW.length;i++) colX.push(colX[i-1]+colW[i-1]);
+  const rowH=7;
+  doc.setFillColor(11,30,61); doc.rect(12,y,usableW,rowH,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(255,255,255);
+  headers.forEach((h,i)=>doc.text(h,colX[i]+3,y+4.8));
+  y+=rowH;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+  rows.forEach((r,i)=>{
+    if(y>272){ doc.addPage(); y=16; }
+    if(i%2===1){ doc.setFillColor(244,246,248); doc.rect(12,y,usableW,rowH,'F'); }
+    doc.setTextColor(20,20,20);
+    r.forEach((cell,ci)=>doc.text(String(cell),colX[ci]+3,y+4.8));
+    y+=rowH;
+  });
+  return y+7;
+}
+function buildManagementReportPDF(range,d){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  let y=pdfBrandedHeader(doc,'MANAGEMENT REPORT',range.label+'  ·  '+range.from+' to '+range.to,
+    ['Generated by '+PROFILE.name,new Date().toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})]);
+  y+=6;
+  y=pdfDarkStatBar(doc,y,pageW,[
+    {label:'New leads',value:d.newLeadsCount},
+    {label:'Revenue collected',value:ghs(d.revenue)},
+    {label:'Site visits',value:d.visitsInRange},
+    {label:'Fully paid',value:d.fullyPaidCount}
+  ]);
+  const cardW=(pageW-24-12)/4;
+  pdfStatCard(doc,12,y,cardW,'Outstanding balance',ghs(d.outstandingTotal));
+  pdfStatCard(doc,12+cardW+4,y,cardW,'Expenses (period)',ghs(d.expensesTotal));
+  pdfStatCard(doc,12+(cardW+4)*2,y,cardW,'Pending payments',d.pendingPayments);
+  pdfStatCard(doc,12+(cardW+4)*3,y,cardW,'Pending expenses/funds',d.pendingExpenses+d.pendingFunds);
+  y+=27;
+
+  y=pdfSectionTitle(doc,y,pageW,'Agent performance (period)');
+  if(d.perAgent.length) y=pdfSimpleTable(doc,y,pageW,['AGENT','NEW LEADS','REVENUE COLLECTED'],
+    d.perAgent.map(a=>[a.name,String(a.newLeads),ghs(a.revenue)]),[0.5,0.2,0.3]);
+  else{ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120); doc.text('No agent activity in this period.',12,y); doc.setTextColor(20,20,20); y+=10; }
+
+  if(y>250){ doc.addPage(); y=16; }
+  y=pdfSectionTitle(doc,y,pageW,'Payments by method (period)');
+  const methodRows=Object.keys(d.byMethod).map(m=>[m,String(d.byMethod[m].count),ghs(d.byMethod[m].total)]);
+  if(methodRows.length) y=pdfSimpleTable(doc,y,pageW,['METHOD','COUNT','TOTAL'],methodRows,[0.5,0.2,0.3]);
+  else{ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120); doc.text('No payments recorded in this period.',12,y); doc.setTextColor(20,20,20); y+=10; }
+
+  if(Object.keys(d.byCategory).length){
+    if(y>250){ doc.addPage(); y=16; }
+    y=pdfSectionTitle(doc,y,pageW,'Expenses by category (period)');
+    y=pdfSimpleTable(doc,y,pageW,['CATEGORY','TOTAL'],Object.keys(d.byCategory).map(c=>[c,ghs(d.byCategory[c])]),[0.7,0.3]);
+  }
+
+  const fname='Management_Report_'+range.from+'_to_'+range.to+'.pdf';
+  const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
+  toast('Report downloaded');
 }
 function paintTeamToggle(b,isActive){
   b.dataset.active=isActive;
