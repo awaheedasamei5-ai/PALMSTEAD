@@ -2821,10 +2821,11 @@ async function apiLoadPricingHistory(){
     return (data||[]).map(r=>({id:r.id,changedBy:r.changed_by,changedByName:r.changed_by_name,field:r.field,fieldLabel:r.field_label,oldValue:r.old_value,newValue:r.new_value,changedAt:r.changed_at})); }
   catch(e){ return []; }
 }
-async function apiSaveStaffDetails(agentKey,{birthday,position,address}){
+async function apiSaveStaffDetails(agentKey,{birthday,position,address,idNumber}){
   if(DEMO_MODE){ const d=await demoLoad(); d.profileBirthdays=d.profileBirthdays||{}; if(birthday) d.profileBirthdays[agentKey]=birthday; else delete d.profileBirthdays[agentKey];
-    d.profileDetails=d.profileDetails||{}; d.profileDetails[agentKey]={position,address}; await demoSave(); return; }
-  const {error}=await sb.from('profiles').update({birthday,position,address}).eq('agent_key',agentKey); if(error) throw error;
+    d.profileDetails=d.profileDetails||{}; d.profileDetails[agentKey]={position,address,idNumber}; await demoSave(); return; }
+  const patch={birthday,position,address}; if(idNumber!==undefined) patch.id_number=idNumber;
+  const {error}=await sb.from('profiles').update(patch).eq('agent_key',agentKey); if(error) throw error;
 }
 // Runs from a Management session only (avoids two different agents' sessions both
 // posting/DMing the same birthday within seconds of each other). Only the month and
@@ -9694,6 +9695,14 @@ function formAccount(){
     <div class="mini" style="margin-top:2px">These show up on your contact card wherever clients or teammates need to reach you.</div>
     <div class="formactions"><button class="btn primary" id="saveContactBtn">Save contact info</button></div>
   </div>
+  ${(()=>{ const mp=(DB.profiles||[]).find(p=>p.agent_key===PROFILE.key)||{}; return `${settingsSectionHead('people','About me','position, address, ID &amp; birthday')}
+  <div class="formwrap">
+    <p class="mini" style="margin:-2px 0 14px">Position and address are stamped automatically at the sign-off of any memo you write. Birthday posts to the news banner and messages you automatically — only the month and day are used, the year doesn't matter.</p>
+    <div class="grid2">${fld('Position','<input id="ad_position" placeholder="e.g. Operations Officer" value="'+esc(mp.position||'')+'"/>')}${fld('Birthday','<input id="ad_birthday" type="date" value="'+esc(mp.birthday||'')+'"/>')}</div>
+    ${fld('Address','<input id="ad_address" placeholder="Street, city" value="'+esc(mp.address||'')+'"/>')}
+    ${fld('ID number','<input id="ad_idnumber" placeholder="Ghana Card / Voter ID / Passport no." value="'+esc(mp.id_number||'')+'"/>')}
+    <div class="formactions"><button class="btn primary" id="saveAboutMeBtn">Save my details</button></div>
+  </div>`; })()}
   ${settingsSectionHead('gear','Display settings','this device only')}
   <div class="formwrap">
     ${fld('Font',`<select id="dispFontFamily">
@@ -9754,6 +9763,7 @@ function formAccount(){
   }
   document.getElementById('saveAcct').onclick=saveAccountPw;
   document.getElementById('saveContactBtn').onclick=saveAccountContact;
+  document.getElementById('saveAboutMeBtn').onclick=saveAccountAboutMe;
   if(hasPin){ document.getElementById('removePinBtn').onclick=()=>{ if(!confirm('Remove PIN sign-in from this device?')) return; removePinLock(PROFILE.key); toast('PIN removed from this device'); formAccount(); }; }
   else{ document.getElementById('savePinBtn').onclick=saveAccountPin; }
 }
@@ -9769,6 +9779,20 @@ async function saveAccountContact(){
     toast('Contact info saved');
   }catch(e){ toast('Could not save: '+(e.message||e)); }
   btn.disabled=false; btn.textContent='Save contact info';
+}
+// Self-service replacement for what used to be a manager-only bulk form -- every
+// staff member now maintains their own position/address/ID/birthday directly,
+// instead of Management typing it in on their behalf.
+async function saveAccountAboutMe(){
+  const position=val('ad_position').trim(), address=val('ad_address').trim(), birthday=val('ad_birthday'), idNumber=val('ad_idnumber').trim();
+  const btn=document.getElementById('saveAboutMeBtn'); btn.disabled=true; btn.textContent='Saving…';
+  try{
+    await apiSaveStaffDetails(PROFILE.key,{birthday:birthday||null,position:position||null,address:address||null,idNumber:idNumber||null});
+    const mine=(DB.profiles||[]).find(p=>p.agent_key===PROFILE.key);
+    if(mine) Object.assign(mine,{birthday:birthday||null,position:position||null,address:address||null,id_number:idNumber||null});
+    toast('Your details are saved');
+  }catch(e){ toast('Could not save: '+(e.message||e)); }
+  btn.disabled=false; btn.textContent='Save my details';
 }
 /* ================= QUOTATION REQUEST (available on every dashboard) ================= */
 const QUOTE_DEPOSIT_PCT=0.3;
@@ -12552,20 +12576,14 @@ function mgrStaffSettingsHtml(){
   <div class="formwrap" style="padding:6px 15px">${teamRows||'<div class="empty">No agents yet</div>'}
   <p class="mini" style="margin-top:12px">Deactivating someone here blocks their sign-in but keeps their historical leads and stats intact everywhere, including the Sales League.</p></div>
 
-  ${settingsSectionHead('edit','Staff details','powers birthday posts & the memo letterhead')}
-  <div class="formwrap">
-  <p class="mini" style="margin:-2px 0 14px">Position and address are stamped automatically at the sign-off of any memo this person writes, so they only ever have to fill in the heading and body.</p>
-  ${agentStaff.map(s=>{ const p=(DB.profiles||[]).find(x=>x.agent_key===s.key); return `
-  <div class="rowcard" style="margin-bottom:10px">
-    <div class="mini" style="font-weight:800;margin-bottom:8px">${esc(s.name)}</div>
-    <div class="grid2">
-      ${fld('Position','<input id="pos_'+s.key+'" placeholder="e.g. Operations Officer" value="'+esc((p&&p.position)||'')+'"/>')}
-      ${fld('Birthday','<input id="bday_'+s.key+'" type="date" value="'+esc((p&&p.birthday)||'')+'"/>')}
-    </div>
-    ${fld('Address','<input id="addr_'+s.key+'" placeholder="Street, city" value="'+esc((p&&p.address)||'')+'"/>')}
-  </div>`; }).join('')}
-  <div class="mini" style="margin-top:-6px;margin-bottom:12px">Birthday year doesn't matter — only month and day are used, to post to the news banner and message the person automatically.</div>
-  <div class="formactions"><button class="btn primary" id="saveStaffDetails">Save staff details</button></div>
+  ${settingsSectionHead('edit','Staff details','each person keeps their own up to date')}
+  <div class="formwrap" style="padding:6px 15px">
+  <p class="mini" style="margin:0 0 12px">Position, address, ID number and birthday are now entered by each staff member themselves, in their own Settings › About me — this is just a read-only view of what's currently on file.</p>
+  ${agentStaff.map(s=>{ const p=(DB.profiles||[]).find(x=>x.agent_key===s.key)||{};
+    const rows=[['Position',p.position],['Address',p.address],['ID number',p.id_number],['Birthday',p.birthday?fmtLongDate(p.birthday).replace(/,?\s*\d{4}$/,''):'']];
+    const missing=rows.filter(([,v])=>!v).length;
+    return `<div class="agentrow"><div class="ai"><div><div class="nm">${esc(s.name)}</div><div class="mini">${rows.filter(([,v])=>v).map(([l,v])=>l+': '+esc(v)).join(' · ')||'Nothing on file yet'}</div></div></div>${missing?`<span class="tag warnt">${missing} missing</span>`:'<span class="tag ok">Complete</span>'}</div>`;
+  }).join('')}
   </div>`;
 }
 function bindStaffSettingsCtrls(){
@@ -12597,20 +12615,6 @@ function bindStaffSettingsCtrls(){
       b.disabled=false;
     };
   });
-  const saveStaffBtn=document.getElementById('saveStaffDetails');
-  if(saveStaffBtn) saveStaffBtn.onclick=async()=>{
-    saveStaffBtn.disabled=true; saveStaffBtn.textContent='Saving…';
-    try{
-      for(const s of STAFF_LIST.filter(x=>x.role==='agent')){
-        const bday=val('bday_'+s.key), pos=val('pos_'+s.key).trim(), addr=val('addr_'+s.key).trim();
-        await apiSaveStaffDetails(s.key,{birthday:bday||null,position:pos||null,address:addr||null});
-        const p=(DB.profiles||[]).find(x=>x.agent_key===s.key);
-        if(p){ p.birthday=bday||null; p.position=pos||null; p.address=addr||null; }
-      }
-      toast('Staff details saved');
-    }catch(e){ toast('Save failed: '+(e.message||e)); }
-    saveStaffBtn.disabled=false; saveStaffBtn.textContent='Save staff details';
-  };
 }
 function mgrCompanySettingsHtml(){
   return `${settingsSectionHead('building','Company contact info','shown to clients company-wide')}
