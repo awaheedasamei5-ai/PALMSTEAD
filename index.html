@@ -84,8 +84,8 @@ a{color:var(--green2)}
 @keyframes ringPulse{0%{box-shadow:0 0 0 0 rgba(132,204,22,.45)}100%{box-shadow:0 0 0 14px rgba(132,204,22,0)}}
 @keyframes logoRevealIn{0%{opacity:0;transform:scale(.25) rotate(-14deg)}60%{opacity:1}100%{opacity:1;transform:scale(1) rotate(0)}}
 @keyframes glowPulseOnce{0%{opacity:0;transform:scale(.6)}40%{opacity:1}100%{opacity:0;transform:scale(1.5)}}
-@keyframes letterDrop{0%{opacity:0;transform:translateY(-22px) scale(.5)}55%{opacity:1}100%{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes letterDropDown{0%{opacity:0;transform:translateY(22px) scale(.5)}55%{opacity:1}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes letterDrop{0%{opacity:0;transform:translateY(-34px) scale(.5)}55%{opacity:1}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes letterDropDown{0%{opacity:0;transform:translateY(34px) scale(.5)}55%{opacity:1}100%{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes fleckIn{0%{opacity:0;transform:scale(0) translateY(6px)}45%{opacity:1;transform:scale(1.3) translateY(-3px)}100%{opacity:.85;transform:scale(1) translateY(0)}}
 .view-enter{animation:fadeUp .38s cubic-bezier(.2,.8,.2,1) both}
 .skel{background:linear-gradient(90deg,#EDEAE0 25%,#F6F4EC 37%,#EDEAE0 63%);background-size:400px 100%;animation:shimmer 1.3s infinite linear;border-radius:10px}
@@ -448,10 +448,13 @@ a{color:var(--green2)}
 .appGridIcon:hover{background:#F4F6F5;transform:translateY(-4px)}
 .appGridIcon:hover .fic{transform:scale(1.06)}
 .appGridIcon:active{transform:translateY(-1px) scale(.97)}
-.appGridBadge{position:absolute;top:6px;right:14%;min-width:17px;height:17px;padding:0 4px;border-radius:100px;
+/* Was positioned relative to the whole tile button (icon + label stacked below it),
+   so on any tile wider than the 52px icon itself the badge landed off to the side of
+   the icon instead of sitting on its corner. Now anchored to .appGridGlyph directly. */
+.appGridBadge{position:absolute;top:-3px;right:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:100px;
   background:linear-gradient(150deg,#EF4444,#B91C1C);color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--card);z-index:1;animation:badgePop .25s ease}
 @keyframes badgePop{from{transform:scale(0)}to{transform:scale(1)}}
-.appGridGlyph{width:52px;height:52px;display:flex;align-items:center;justify-content:center}
+.appGridGlyph{width:52px;height:52px;display:flex;align-items:center;justify-content:center;position:relative}
 .appGridGlyph .fic{width:100%;height:100%;transition:transform .2s cubic-bezier(.34,1.4,.64,1)}
 body.dark .appGridIcon:hover{background:#182541}
 .appGridLabel{font-size:11.5px;font-weight:700;color:var(--ink);text-align:center;line-height:1.25}
@@ -606,6 +609,8 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .field input:hover:not(:focus),.field select:hover:not(:focus){border-color:#C7D0DC}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media (max-width:430px){.grid2{grid-template-columns:1fr}}
+.acctMediaRow{display:flex;align-items:center;gap:16px}
+@media (max-width:430px){.acctMediaRow{flex-direction:column;align-items:flex-start}}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip2{border:1.5px solid var(--line);background:var(--card);border-radius:100px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--text);transition:.15s}
 .lvCalNav{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
@@ -739,12 +744,12 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
   background:var(--wave-bg,radial-gradient(130% 100% at 50% 30%, #163B7A 0%, var(--ink) 60%, #050E1F 100%));
   opacity:1;transition:opacity .5s ease;overflow:hidden}
 .bootscreen.fade{opacity:0;pointer-events:none}
-.bootLockup{display:flex;align-items:center;gap:16px;position:relative}
-.bootscreen .glyphwrap{position:relative;width:104px;height:104px;display:grid;place-items:center;animation:logoRevealIn .85s cubic-bezier(.34,1.56,.64,1) .15s both}
-.bootscreen .glowPulse{position:absolute;inset:-30%;border-radius:50%;background:radial-gradient(circle,rgba(103,232,249,.55) 0%,transparent 70%);opacity:0;animation:glowPulseOnce 1s ease-out .95s both}
-.bootscreen .glyph{width:88px;height:88px;border-radius:26px;overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.5);position:relative;z-index:1}
+.bootLockup{display:flex;flex-direction:column;align-items:center;gap:22px;position:relative}
+.bootscreen .glyphwrap{position:relative;width:132px;height:132px;display:grid;place-items:center;animation:logoRevealIn .85s cubic-bezier(.34,1.56,.64,1) .15s both}
+.bootscreen .glowPulse{position:absolute;inset:-30%;border-radius:50%;background:radial-gradient(circle,rgba(103,232,239,.55) 0%,transparent 70%);opacity:0;animation:glowPulseOnce 1s ease-out .95s both}
+.bootscreen .glyph{width:112px;height:112px;border-radius:32px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.5);position:relative;z-index:1}
 .bootscreen .glyph img{width:100%;height:100%;display:block}
-.bootscreen .boot-word{display:flex;gap:2px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:28px;color:#fff;position:relative}
+.bootscreen .boot-word{display:flex;gap:1px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:46px;letter-spacing:.01em;color:#fff;position:relative}
 .bootscreen .boot-word span{display:inline-block;opacity:0;animation:letterDrop .55s cubic-bezier(.2,.9,.25,1.3) forwards}
 .bootscreen .boot-word span:nth-child(odd){animation-name:letterDropDown}
 .bootscreen .boot-word span:nth-child(1){animation-delay:.5s}
@@ -764,6 +769,11 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 .bootscreen .fleck.f4{width:6px;height:6px;top:15%;left:85%;animation-delay:.85s}
 .bootscreen .fleck.f5{width:3px;height:3px;top:45%;left:5%;animation-delay:.6s}
 .bootscreen .bootTap{position:absolute;bottom:34px;font-size:10.5px;color:#5E7396;opacity:0;animation:fadeIn .6s 1.9s ease forwards;letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
+@media (max-width:380px){
+  .bootscreen .glyphwrap{width:104px;height:104px}
+  .bootscreen .glyph{width:88px;height:88px;border-radius:26px}
+  .bootscreen .boot-word{font-size:34px}
+}
 .greetScreen{position:fixed;inset:0;z-index:250;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
   background:var(--wave-bg,radial-gradient(130% 100% at 50% 30%, #163B7A 0%, var(--ink) 60%, #050E1F 100%));opacity:1;transition:opacity .5s ease;cursor:pointer;padding:24px;text-align:center}
 .greetScreen .chip-insight{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);border-radius:100px;padding:8px 16px;font-size:12px;font-weight:600;color:#EAF7FA;
@@ -932,14 +942,18 @@ const WAVE_VARIANTS=[
   {bg:'linear-gradient(160deg,#050B14 0%,#0B1E3D 30%,#0C7A93 60%,#C9A227 85%,#67E8F9 100%)',orb1:'rgba(201,162,39,.4)',orb2:'rgba(14,165,183,.5)',orb3:'rgba(103,232,249,.3)'},
   {bg:'linear-gradient(0deg,#050B14 0%,#0B1E3D 28%,#0C7A93 62%,#67E8F9 85%,#F2F6F7 100%)',orb1:'rgba(103,232,249,.45)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(34,211,238,.35)'}
 ];
-(function applyWaveVariant(){
+// Was an IIFE that only ever ran once at script load -- so within one browser tab,
+// signing out and back in (no real page reload happens) kept showing the exact same
+// background every time. Now callable again on every return to the sign-in screen.
+function applyWaveVariant(){
   const v=WAVE_VARIANTS[Math.floor(Math.random()*WAVE_VARIANTS.length)];
   const root=document.documentElement.style;
   root.setProperty('--wave-bg',v.bg);
   root.setProperty('--wave-orb1',v.orb1);
   root.setProperty('--wave-orb2',v.orb2);
   root.setProperty('--wave-orb3',v.orb3);
-})();
+}
+applyWaveVariant();
 /* ====================== EMBEDDED LOGO ====================== */
 const LOGO_SRC = "./logo.png";
 const TRULANDER_LOGO_SRC = "./trulander-logo.png";
@@ -4215,6 +4229,7 @@ document.getElementById('logoutBtn').onclick=async()=>{
   const ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   USER=PROFILE=pickStaff=null; IS_CLIENT=false; CLIENT_PROFILE=null; CLIENT_DB=null;
   DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[]};
+  applyWaveVariant();
   document.getElementById('app').classList.add('hidden'); document.getElementById('login').classList.remove('hidden');
   document.getElementById('clientCard').classList.add('hidden'); document.getElementById('authCard').classList.add('hidden');
   document.getElementById('roleChoice').classList.remove('hidden');
@@ -4784,7 +4799,7 @@ function viewSalesDesk(){
   ].filter(g=>g.items.length);
   const items=groups.flatMap(g=>g.items);
   V.innerHTML=`<div class="pagehead"><div><h2>Sales</h2><p>Leads, pipeline, plots &amp; client touchpoints — everything for your book of clients</p></div></div>
-  ${groups.map(g=>`<div class="appGridGroupLabel">${esc(g.title)}</div><div class="appGrid">${g.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}">${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`).join('')}`;
+  ${groups.map(g=>`<div class="appGridGroupLabel">${esc(g.title)}</div><div class="appGrid">${g.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`).join('')}`;
   V.querySelectorAll('[data-hubroute]').forEach(b=>{
     const item=items.find(a=>a.r===b.dataset.hubroute);
     b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); if(item&&item.badgeCountKey&&DB.badgeCounts){ DB.badgeCounts[item.badgeCountKey]=0; refreshAllBadges(); } route(b.dataset.hubroute); };
@@ -4812,7 +4827,7 @@ function mgrAppRoute(key){
   else route('mgrTabView',key);
 }
 function mgrAppGridHtml(items){
-  return items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+  return items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
 }
 // Same tiles as mgrAppGridHtml, but broken into labelled clusters of related apps
 // instead of one long undifferentiated grid -- groups with no visible items (role
@@ -4820,7 +4835,7 @@ function mgrAppGridHtml(items){
 function groupedAppGridHtml(groups){
   return groups.filter(g=>g.items.length).map(g=>`
     <div class="appGridGroupLabel">${esc(g.title)}</div>
-    <div class="appGrid">${g.items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`).join('');
+    <div class="appGrid">${g.items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`).join('');
 }
 function bindMgrAppGrid(grid,items){
   grid.querySelectorAll('[data-moreapp]').forEach(b=>{
@@ -4883,7 +4898,7 @@ function viewMore(){
       {key:'sms',fic:'sms',label:'SMS'},
       {key:'account',fic:'settings',label:'Settings'}
     ];
-    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
     grid.querySelectorAll('[data-moreapp]').forEach(b=>{
       const item=items.find(a=>a.key===b.dataset.moreapp);
       b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); if(item&&item.badgeCountKey&&DB.badgeCounts){ DB.badgeCounts[item.badgeCountKey]=0; refreshAllBadges(); } route(b.dataset.moreapp); };
@@ -9326,15 +9341,15 @@ function formAccount(){
   const hasPin = pinLockExists(PROFILE.key);
   V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><div class="eyebrow">Account</div><h2>Change password</h2><p>${esc(PROFILE.email)}</p></div></div>
   <div class="sectitle" style="margin-top:0"><h3>Profile picture</h3></div>
-  <div class="formwrap" style="display:flex;align-items:center;gap:16px">
+  <div class="formwrap acctMediaRow">
     <div id="avatarPreview" style="width:64px;height:64px;border-radius:100px;overflow:hidden;flex:0 0 auto;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted);font-size:22px">${PROFILE.avatar?`<img src="${PROFILE.avatar}" style="width:100%;height:100%;object-fit:cover"/>`:esc((PROFILE.name||'?')[0])}</div>
-    <div style="flex:1"><input type="file" id="avatarInput" accept="image/*"/><div class="mini" style="margin-top:6px">You'll be able to crop and zoom before it's saved.</div></div>
+    <div style="flex:1;min-width:0"><input type="file" id="avatarInput" accept="image/*"/><div class="mini" style="margin-top:6px">You'll be able to crop and zoom before it's saved.</div></div>
   </div>
   <div class="sectitle"><h3>E-signature</h3><span class="cnt">used to auto-sign documents you approve</span></div>
   <div class="formwrap">
-    <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px">
+    <div class="acctMediaRow" style="margin-bottom:12px">
       <div id="signaturePreview" style="width:120px;height:60px;border-radius:10px;overflow:hidden;flex:0 0 auto;background:#F4F6F5;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">${PROFILE.signature_data?`<img src="${PROFILE.signature_data}" style="max-width:100%;max-height:100%;object-fit:contain"/>`:'No signature yet'}</div>
-      <div style="flex:1"><input type="file" id="signatureInput" accept="image/png,image/jpeg"/><div class="mini" style="margin-top:6px">PNG or JPEG, ideally on a white or transparent background. Used to automatically sign Site Visit Authorization Forms, contracts and other documents when you approve them.</div></div>
+      <div style="flex:1;min-width:0"><input type="file" id="signatureInput" accept="image/png,image/jpeg"/><div class="mini" style="margin-top:6px">PNG or JPEG, ideally on a white or transparent background. Used to automatically sign Site Visit Authorization Forms, contracts and other documents when you approve them.</div></div>
     </div>
     ${PROFILE.signature_data?'<button class="btn ghost" id="removeSigBtn" style="width:100%">Remove signature</button>':''}
   </div>
