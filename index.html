@@ -552,9 +552,14 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip2{border:1.5px solid var(--line);background:var(--card);border-radius:100px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--text);transition:.15s}
-.lvCalGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:12px}
-.lvCalWd{text-align:center;font-size:11px;font-weight:700;color:var(--muted);padding:3px 0}
-.lvCalCell{aspect-ratio:1;border:1.5px solid var(--line);background:var(--card);border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--text);transition:.12s}
+.lvCalNav{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
+.lvCalNavBtn{width:34px;height:34px;border-radius:10px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;transition:.12s}
+.lvCalNavBtn:hover{background:var(--paper);border-color:var(--green2)}
+.lvCalNavBtn:active{transform:scale(.92)}
+.lvCalNavLabel{font-weight:800;font-size:15px;color:var(--ink);letter-spacing:.01em}
+.lvCalGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px}
+.lvCalWd{text-align:center;font-size:10.5px;font-weight:700;color:var(--muted);padding:2px 0}
+.lvCalCell{height:34px;border:1.5px solid var(--line);background:var(--card);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;color:var(--text);transition:.12s}
 .lvCalCell.empty{border:none;background:transparent;cursor:default}
 .lvCalCell.past:not(.taken){opacity:.35;cursor:not-allowed}
 .lvCalCell.taken{background:var(--paper);color:var(--muted);cursor:not-allowed;text-decoration:line-through}
@@ -12853,9 +12858,13 @@ function leaveMineHtml(){
   return `
   ${upcoming.length?`<div class="rowcard" style="border-color:var(--danger);background:#FBEDEA;margin-bottom:14px"><div class="top"><div><div class="nm" style="color:var(--danger)">🔴 Leave coming up</div><div class="mini">${upcoming.map(fmtLongDate).join(', ')} — make sure any handovers are sorted.</div></div></div></div>`:''}
   <div class="kpis">${kpi('Total days/yr',total)}${kpi('Used in '+year,used)}${kpi('Remaining',remaining)}</div>
-  <div class="sectitle" style="margin-top:4px"><h3>Pick your leave dates</h3><span class="cnt">${year}</span></div>
+  <div class="sectitle" style="margin-top:4px"><h3>Pick your leave dates</h3></div>
   <div class="formwrap">
-  <div class="grid2">${fld('Year',sel('lv_year',[String(year-1),String(year),String(year+1)],String(year)))}${fld('Month',sel('lv_month',LEAVE_MONTH_NAMES,LEAVE_MONTH_NAMES[leaveCalMonth]))}</div>
+  <div class="lvCalNav">
+    <button class="lvCalNavBtn" id="lvPrevMonth" aria-label="Previous month">‹</button>
+    <div class="lvCalNavLabel" id="lvCalNavLabel">${esc(LEAVE_MONTH_NAMES[leaveCalMonth])} ${leaveCalYear}</div>
+    <button class="lvCalNavBtn" id="lvNextMonth" aria-label="Next month">›</button>
+  </div>
   <div id="lvCalGrid" class="lvCalGrid"></div>
   <div class="lvCalLegend"><span><i style="background:var(--ink)"></i>Selected</span><span><i style="background:var(--paper);opacity:.55"></i>Weekend</span><span><i style="background:#F6EBD3"></i>Public holiday</span><span><i style="background:var(--paper)"></i>Already taken / colleague's leave</span></div>
   <div class="mini" style="margin:12px 0 6px">Selected: <span id="lvSelSummary">${leaveSelDates.length?leaveSelDates.length+' day(s) selected':'none yet'}</span></div>
@@ -12922,9 +12931,20 @@ function paintLeaveSelSummary(){
     chips.querySelectorAll('[data-lvchipremove]').forEach(c=>c.onclick=()=>{ leaveSelDates=leaveSelDates.filter(x=>x!==c.dataset.lvchipremove); paintLeaveCalendar(); paintLeaveSelSummary(); });
   }
 }
+function leaveNavMonth(delta){
+  leaveCalMonth+=delta;
+  let yearChanged=false;
+  if(leaveCalMonth<0){ leaveCalMonth=11; leaveCalYear--; yearChanged=true; }
+  else if(leaveCalMonth>11){ leaveCalMonth=0; leaveCalYear++; yearChanged=true; }
+  if(yearChanged) paintLeaveApp();
+  else{
+    paintLeaveCalendar(); paintLeaveSelSummary();
+    const lbl=document.getElementById('lvCalNavLabel'); if(lbl) lbl.textContent=LEAVE_MONTH_NAMES[leaveCalMonth]+' '+leaveCalYear;
+  }
+}
 function bindLeaveMineCtrls(){
-  document.getElementById('lv_year').onchange=e=>{ leaveCalYear=num(e.target.value); leaveSelDates=[]; paintLeaveApp(); };
-  document.getElementById('lv_month').onchange=e=>{ leaveCalMonth=LEAVE_MONTH_NAMES.indexOf(e.target.value); paintLeaveCalendar(); };
+  document.getElementById('lvPrevMonth').onclick=()=>leaveNavMonth(-1);
+  document.getElementById('lvNextMonth').onclick=()=>leaveNavMonth(1);
   paintLeaveCalendar(); paintLeaveSelSummary();
   document.getElementById('lvClearSel').onclick=()=>{ leaveSelDates=[]; paintLeaveCalendar(); paintLeaveSelSummary(); };
   document.getElementById('lvApplyBtn').onclick=()=>openLeaveApplyModal();
