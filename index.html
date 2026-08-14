@@ -1898,7 +1898,7 @@ function seedDemoPlots(){
   ];
 }
 function seedDemo(){
-  const m={version:DEMO_VERSION,leads:{},enquiries:[],complaints:[],sitevisits:[],activity:[],config:defaultConfig(),employees:[],overrides:{},invites:[],plots:seedDemoPlots(),payments:[],announcements:[],allocations:[],messages:[],notes:[]};
+  const m={version:DEMO_VERSION,leads:{},enquiries:[],complaints:[],sitevisits:[],activity:[],config:defaultConfig(),employees:[],overrides:{},invites:[],plots:seedDemoPlots(),payments:[],announcements:[],allocations:[],messages:[],notes:[],todos:[]};
   Object.keys(DEMO_PIPELINES).forEach(k=>{ m.leads[k]=DEMO_PIPELINES[k].map(l=>({id:uid(),agent:k,...l,
     netTotal:l.netTotal,grandTotal:l.grandTotal,balance:l.balance})); });
   // backfill: one opening payment per lead with money already paid, dated to when it was added
@@ -1922,6 +1922,7 @@ async function demoLoad(){
     if(!demoMem.allocations) demoMem.allocations=[];
     if(!demoMem.messages) demoMem.messages=[];
     if(!demoMem.notes) demoMem.notes=[];
+    if(!demoMem.todos) demoMem.todos=[];
     return demoMem; }
   demoMem=seedDemo();
   await demoSave();
@@ -6464,22 +6465,217 @@ function computeDutiesSummary(tasks){
   const avgDays=done.length?Math.round(done.reduce((s,t)=>s+(daysBetween(t.createdAt,t.completedAt)||0),0)/done.length):null;
   return {openCount:open.length,overdueCount:overdue.length,doneCount:done.length,avgDaysToClose:avgDays};
 }
-function viewDuties(){
+/* ================= TO-DO LIST (time-boxed personal planner, w/ alarms) ================= */
+let DUTIES_TAB='tasks';
+let TODO_LOADED=false, TODO_LIST=[], TODO_DATE='';
+let TODO_ALARM_TIMERS=[], TODO_ALARM_ARMED_IDS=new Set();
+function mapTodo(r){ return {id:r.id,ownerKey:r.owner_key,ownerName:r.owner_name,title:r.title,notes:r.notes,contact:r.contact,
+  date:r.item_date,startTime:(r.start_time||'').slice(0,5),endTime:(r.end_time||'').slice(0,5),status:r.status,
+  rescheduledToId:r.rescheduled_to_id,createdAt:r.created_at,closedAt:r.closed_at}; }
+async function apiLoadTodos(fromDate,toDate){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.todos||[]).filter(t=>t.ownerKey===PROFILE.key&&t.date>=fromDate&&t.date<=toDate).slice().sort((a,b)=>a.date===b.date?a.startTime.localeCompare(b.startTime):a.date.localeCompare(b.date)); }
+  const {data,error}=await sb.from('todo_items').select('*').eq('owner_key',PROFILE.key).gte('item_date',fromDate).lte('item_date',toDate).order('item_date').order('start_time');
+  if(error) throw error; return (data||[]).map(mapTodo);
+}
+async function apiInsertTodo(t){
+  if(DEMO_MODE){ const d=await demoLoad(); d.todos=d.todos||[];
+    const rec={id:uid(),ownerKey:PROFILE.key,ownerName:PROFILE.name,title:t.title,notes:t.notes,contact:t.contact,date:t.date,startTime:t.startTime,endTime:t.endTime,status:'open',createdAt:new Date().toISOString()};
+    d.todos.push(rec); await demoSave(); return rec; }
+  const {data,error}=await sb.from('todo_items').insert({owner_key:PROFILE.key,owner_name:PROFILE.name,title:t.title,notes:t.notes||null,contact:t.contact||null,
+    item_date:t.date,start_time:t.startTime,end_time:t.endTime}).select().single();
+  if(error) throw error; return mapTodo(data);
+}
+async function apiUpdateTodoStatus(id,status){
+  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.todos||[]).find(x=>x.id===id); if(t){ t.status=status; if(status==='closed') t.closedAt=new Date().toISOString(); } await demoSave(); return; }
+  const patch={status}; if(status==='closed') patch.closed_at=new Date().toISOString();
+  const {error}=await sb.from('todo_items').update(patch).eq('id',id); if(error) throw error;
+}
+async function apiRescheduleTodo(id,newDate,newStart,newEnd){
+  const orig=TODO_LIST.find(x=>x.id===id); if(!orig) throw new Error('Task not found');
+  const rec=await apiInsertTodo({title:orig.title,notes:orig.notes,contact:orig.contact,date:newDate,startTime:newStart,endTime:newEnd});
+  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.todos||[]).find(x=>x.id===id); if(t){ t.status='rescheduled'; t.rescheduledToId=rec.id; } await demoSave(); }
+  else{ const {error}=await sb.from('todo_items').update({status:'rescheduled',rescheduled_to_id:rec.id}).eq('id',id); if(error) throw error; }
+  return rec;
+}
+function todoWorkHours(){ const h=[]; for(let i=8;i<=17;i++) h.push((i<10?'0':'')+i+':00'); return h; }
+function todoStatusTag(s){
+  if(s==='closed') return '<span class="tag ok">Closed</span>';
+  if(s==='rescheduled') return '<span class="tag warnt">Rescheduled</span>';
+  return '<span class="tag ghost">Open</span>';
+}
+function todoTabHtml(){
+  const dayList=TODO_LIST.filter(t=>t.date===TODO_DATE);
+  return `<div class="formwrap"><div class="grid2">${fld('Date','<input id="todo_dateNav" type="date" value="'+TODO_DATE+'"/>')}<div></div></div></div>
+  <div style="margin:0 0 16px"><button class="btn primary" id="todoAddBtn" style="width:100%">+ New to-do</button></div>
+  <div class="list" id="todoList">${dayList.length?dayList.map(t=>todoRowHtml(t)).join(''):emptyState(ic.calendar,'Nothing scheduled for this day','Add a time-boxed task and it will alarm you when it starts.')}</div>
+  <div class="formactions" style="margin-top:20px"><button class="chip" id="todoReportBtn" style="width:100%">Download period report (PDF)</button></div>`;
+}
+function todoRowHtml(t){
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(t.startTime)}–${esc(t.endTime)} · ${esc(t.title)}</div>${t.notes?`<div class="meta">${esc(t.notes)}</div>`:''}</div>${todoStatusTag(t.status)}</div>
+  ${t.contact?`<div style="margin-top:8px">${contactLinks(t.contact)}</div>`:''}
+  ${t.status==='open'?`<div class="foot" style="gap:7px;flex-wrap:wrap;margin-top:10px"><button class="chip" data-todoreschedule="${esc(t.id)}">Reschedule</button><button class="btn primary" data-todoclose="${esc(t.id)}" style="padding:8px 18px;font-size:12.5px">Mark closed</button></div>`:''}
+  ${t.status==='rescheduled'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Moved to a new time</div>`:''}</div>`;
+}
+function bindTodoCtrls(){
+  const dateNav=document.getElementById('todo_dateNav');
+  if(dateNav) dateNav.onchange=async()=>{ TODO_DATE=dateNav.value; await todoEnsureRangeLoaded(); paintTodoTab(); };
+  const addBtn=document.getElementById('todoAddBtn'); if(addBtn) addBtn.onclick=openTodoNewModal;
+  document.querySelectorAll('[data-todoclose]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true;
+    try{ await apiUpdateTodoStatus(b.dataset.todoclose,'closed'); const t=TODO_LIST.find(x=>x.id===b.dataset.todoclose); if(t){ t.status='closed'; t.closedAt=new Date().toISOString(); } toast('Marked closed'); paintTodoTab(); }
+    catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
+  });
+  document.querySelectorAll('[data-todoreschedule]').forEach(b=>b.onclick=()=>{
+    const t=TODO_LIST.find(x=>x.id===b.dataset.todoreschedule); if(t) openTodoRescheduleModal(t);
+  });
+  const reportBtn=document.getElementById('todoReportBtn'); if(reportBtn) reportBtn.onclick=openTodoReportModal;
+}
+async function todoEnsureRangeLoaded(){
+  try{ TODO_LIST=await apiLoadTodos(isoPlusDays(TODO_DATE,-3),isoPlusDays(TODO_DATE,3)); TODO_LOADED=true; todoArmAlarms(); }
+  catch(e){ toast('Could not load to-dos: '+(e.message||e)); }
+}
+function paintTodoTab(){
+  const body=document.getElementById('dutiesTodoBody');
+  if(body) body.innerHTML=todoTabHtml();
+  bindTodoCtrls();
+}
+function openTodoNewModal(){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">New to-do</div><button id="closeTodoNew" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Title *','<input id="td_title" placeholder="e.g. Call Mr. Antwi about deposit"/>')}
+    ${fld('Date','<input id="td_date" type="date" value="'+TODO_DATE+'"/>')}
+    <div class="grid2">${fld('Start time',sel('td_start',todoWorkHours(),'09:00'))}${fld('End time',sel('td_end',todoWorkHours(),'10:00'))}</div>
+    ${fld('Contact number','<input id="td_contact" placeholder="0244…"/>','optional — enables Call/WhatsApp quick actions')}
+    ${fld('Notes','<textarea id="td_notes" placeholder="Any detail to remember"></textarea>','optional')}
+    <div class="formactions"><button class="btn primary" id="td_save" style="width:100%">Save to-do</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeTodoNew').onclick=()=>ov.remove();
+  document.getElementById('td_save').onclick=async()=>{
+    const title=val('td_title').trim(); if(!title){ toast('Give it a title'); return; }
+    const start=val('td_start'), end=val('td_end');
+    if(end<=start){ toast('End time must be after start time'); return; }
+    const btn=document.getElementById('td_save'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const rec=await apiInsertTodo({title,notes:val('td_notes').trim(),contact:val('td_contact').trim(),date:val('td_date')||TODO_DATE,startTime:start,endTime:end});
+      TODO_LIST.push(rec); TODO_LIST.sort((a,b)=>a.date===b.date?a.startTime.localeCompare(b.startTime):a.date.localeCompare(b.date));
+      toast('To-do saved'); ov.remove(); todoArmAlarms(); paintTodoTab();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save to-do'; }
+  };
+}
+function openTodoRescheduleModal(t){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Reschedule "${esc(t.title)}"</div><button id="closeTodoResched" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('New date','<input id="tr_date" type="date" value="'+t.date+'"/>')}
+    <div class="grid2">${fld('Start time',sel('tr_start',todoWorkHours(),t.startTime))}${fld('End time',sel('tr_end',todoWorkHours(),t.endTime))}</div>
+    <div class="formactions"><button class="btn primary" id="tr_save" style="width:100%">Reschedule</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeTodoResched').onclick=()=>ov.remove();
+  document.getElementById('tr_save').onclick=async()=>{
+    const newDate=val('tr_date'), start=val('tr_start'), end=val('tr_end');
+    if(end<=start){ toast('End time must be after start time'); return; }
+    const btn=document.getElementById('tr_save'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const rec=await apiRescheduleTodo(t.id,newDate,start,end);
+      t.status='rescheduled'; t.rescheduledToId=rec.id; TODO_LIST.push(rec);
+      toast('Rescheduled'); ov.remove(); todoArmAlarms(); paintTodoTab();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Reschedule'; }
+  };
+}
+function openTodoReportModal(){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">To-do report</div><button id="closeTodoReport" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="grid2">${fld('From','<input id="tp_from" type="date" value="'+isoPlusDays(today(),-7)+'"/>')}${fld('To','<input id="tp_to" type="date" value="'+today()+'"/>')}</div>
+    <div class="formactions"><button class="btn primary" id="tp_go" style="width:100%">Generate PDF</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeTodoReport').onclick=()=>ov.remove();
+  document.getElementById('tp_go').onclick=async()=>{
+    const from=val('tp_from'), to=val('tp_to');
+    const btn=document.getElementById('tp_go'); btn.disabled=true; btn.textContent='Building…';
+    try{ const list=await apiLoadTodos(from,to); buildTodoReportPDF(from,to,list); ov.remove(); }
+    catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Generate PDF'; }
+  };
+}
+function buildTodoReportPDF(from,to,list){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  let y=pdfBrandedHeader(doc,'TO-DO REPORT',PROFILE.name+'  ·  '+from+' to '+to,['Generated '+new Date().toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})]);
+  y+=6;
+  const closed=list.filter(t=>t.status==='closed').length, open=list.filter(t=>t.status==='open').length, resch=list.filter(t=>t.status==='rescheduled').length;
+  y=pdfDarkStatBar(doc,y,pageW,[{label:'Total',value:list.length},{label:'Closed',value:closed},{label:'Open',value:open},{label:'Rescheduled',value:resch}]);
+  y=pdfSectionTitle(doc,y,pageW,'Detail');
+  if(list.length) y=pdfSimpleTable(doc,y,pageW,['DATE','TIME','TITLE','STATUS'],
+    list.map(t=>[t.date,t.startTime+'–'+t.endTime,t.title,t.status]),[0.16,0.16,0.48,0.2]);
+  else{ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120); doc.text('Nothing logged in this period.',12,y); doc.setTextColor(20,20,20); }
+  const fname='Todo_Report_'+from+'_to_'+to+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
+  toast('Report downloaded');
+}
+/* Alarm engine: while this tab is open, arms a setTimeout per open to-do whose start
+   time is still ahead today, then rings a short tone + speaks the task title via the
+   Web Speech API (screen-reader-style TTS -- no audio asset needed, works offline). */
+function todoArmAlarms(){
+  TODO_ALARM_TIMERS.forEach(clearTimeout); TODO_ALARM_TIMERS=[];
+  const now=new Date();
+  TODO_LIST.filter(t=>t.status==='open'&&t.date===today()).forEach(t=>{
+    if(TODO_ALARM_ARMED_IDS.has(t.id)) return;
+    const [h,m]=t.startTime.split(':').map(Number);
+    const fireAt=new Date(); fireAt.setHours(h,m,0,0);
+    const ms=fireAt.getTime()-now.getTime();
+    if(ms<=0||ms>9*3600*1000) return;
+    TODO_ALARM_ARMED_IDS.add(t.id);
+    const timer=setTimeout(()=>todoFireAlarm(t),ms);
+    TODO_ALARM_TIMERS.push(timer);
+  });
+}
+function todoFireAlarm(t){
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    [0,0.35,0.7].forEach(off=>{ const o=ctx.createOscillator(),g=ctx.createGain();
+      o.connect(g); g.connect(ctx.destination); o.frequency.value=880; g.gain.value=0.15;
+      o.start(ctx.currentTime+off); o.stop(ctx.currentTime+off+0.25); });
+  }catch(e){}
+  try{
+    if(window.speechSynthesis){ const u=new SpeechSynthesisUtterance('Reminder: '+t.title); u.rate=0.95; window.speechSynthesis.speak(u); }
+  }catch(e){}
+  toast('⏰ '+t.title);
+}
+async function viewDuties(){
   const all=DB.tasks||[];
   const mine=all.filter(t=>t.assignedTo===PROFILE.key);
   const byMe=all.filter(t=>t.assignedBy===PROFILE.key&&t.assignedTo!==PROFILE.key);
   const isMgr=PROFILE.role==='manager';
   const teamSummary=computeDutiesSummary(isMgr?all:mine);
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Operations Tracker</h2><p>${isMgr?'Every task, who owns it, and how long it’s been open':'Your tasks, and anything you’ve assigned or been escalated'}</p></div></div>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"><button class="chip ${DUTIES_TAB==='tasks'?'on':''}" data-dutiestab="tasks">Tasks</button><button class="chip ${DUTIES_TAB==='todo'?'on':''}" data-dutiestab="todo">To-Do List</button></div>
+  <div id="dutiesTasksBody" class="${DUTIES_TAB==='tasks'?'':'hidden'}">
   <div class="kpis">${kpi('Open',teamSummary.openCount)}${kpi('Overdue',teamSummary.overdueCount)}${kpi('Completed',teamSummary.doneCount)}${kpi('Avg days to close',teamSummary.avgDaysToClose!=null?teamSummary.avgDaysToClose:'—')}</div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><button class="chip ${dutiesFilter==='mine'?'on':''}" data-dutiesfilter="mine">Mine (${mine.length})</button><button class="chip ${dutiesFilter==='byme'?'on':''}" data-dutiesfilter="byme">Assigned by me (${byMe.length})</button>${isMgr?`<button class="chip ${dutiesFilter==='all'?'on':''}" data-dutiesfilter="all">Team (${all.length})</button>`:''}</div>
   <div class="searchbar" style="margin-bottom:10px"><input id="dutiesSearchInput" placeholder="Filter by name or title…" value="${esc(dutiesSearch)}"/>
   <select id="dutiesCatSelect"><option value="">All categories</option>${TASK_CATEGORIES.map(c=>`<option value="${esc(c)}" ${c===dutiesCatFilter?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">${TASK_STATUSES.map(s=>`<button class="chip ${dutiesStatusFilter===s?'on':''}" data-dutiesstatus="${esc(s)}">${esc(s)}</button>`).join('')}${dutiesStatusFilter?`<button class="chip" data-dutiesstatus="">✕ Clear status</button>`:''}</div>
   <div style="margin-bottom:16px"><button class="btn primary" id="newTaskBtn" style="width:100%">+ New task</button></div>
-  <div class="list" id="dutiesList"></div>`;
-  bindDutiesCtrls();
-  paintDuties();
+  <div class="list" id="dutiesList"></div>
+  </div>
+  <div id="dutiesTodoBody" class="${DUTIES_TAB==='todo'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>`;
+  document.querySelectorAll('[data-dutiestab]').forEach(b=>b.onclick=async()=>{ DUTIES_TAB=b.dataset.dutiestab; await viewDuties(); });
+  if(DUTIES_TAB==='tasks'){ bindDutiesCtrls(); paintDuties(); }
+  else{
+    if(!TODO_DATE) TODO_DATE=today();
+    await todoEnsureRangeLoaded();
+    paintTodoTab();
+  }
   renderBottomNavNow();
 }
 function paintDuties(){
