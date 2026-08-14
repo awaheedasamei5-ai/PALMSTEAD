@@ -10151,6 +10151,7 @@ async function managerView(){
   else if(mgrTab==='Pricing & Targets'){ if(!PRICING_HISTORY_LOADED){ try{ PRICING_HISTORY_LIST=await apiLoadPricingHistory(); PRICING_HISTORY_LOADED=true; }catch(e){} } body.innerHTML=mgrPricingTargetsHtml(); bindPricingTargetsCtrls(); }
   else if(mgrTab==='Staff Settings'){ TEAM_ROSTER=await apiLoadFullRoster(); INVITE_LIST=await apiListInvites().catch(()=>[]); body.innerHTML=mgrStaffSettingsHtml(); bindStaffSettingsCtrls(); }
   else if(mgrTab==='Company Settings'){ body.innerHTML=mgrCompanySettingsHtml(); bindCompanySettingsCtrls(); }
+  else if(mgrTab==='Backup & Restore'){ if(!BACKUPS_LOADED){ try{ BACKUPS_LIST=await apiLoadBackups(); BACKUPS_LOADED=true; }catch(e){} } body.innerHTML=mgrBackupHtml(); bindMgrBackupCtrls(); }
   else if(mgrTab==='System'){ body.innerHTML=mgrSystemHtml(); bindSystemCtrls(); }
 }
 function allAgentLists(){
@@ -10935,6 +10936,7 @@ const SETTINGS_APPS=[
   {key:'Pricing & Targets',fic:'analytics',label:'Pricing & Targets',section:'settingshub'},
   {key:'Staff Settings',fic:'briefcase',label:'Staff Settings',section:'settingshub'},
   {key:'Company Settings',fic:'location',label:'Company Settings',section:'settingshub'},
+  {key:'Backup & Restore',fic:'backup',label:'Backup & Restore',section:'settingshub'},
   {key:'System',fic:'settings',label:'System',section:'settingshub'}
 ];
 function mgrSettingsHubHtml(){
@@ -10984,6 +10986,7 @@ function bindCommissionSettingsCtrls(){
   };
 }
 let PRICING_HISTORY_LOADED=false, PRICING_HISTORY_LIST=[];
+let BACKUPS_LOADED=false, BACKUPS_LIST=[];
 function mgrPricingTargetsHtml(){
   const agentStaff=STAFF_LIST.filter(s=>s.role==='agent');
   return `<div class="sectitle" style="margin-top:0"><h3>Plot pricing</h3><span class="cnt">applies to new leads immediately</span></div>
@@ -11195,6 +11198,94 @@ function bindSystemCtrls(){
       toast('Backup downloaded');
     }catch(e){ toast('Backup failed: '+(e.message||e)); }
     sysBackupBtn.disabled=false; sysBackupBtn.innerHTML=`<span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Download full data backup (.json)`;
+  };
+}
+/* Server-side backup/restore of core business records (leads, plots, payments, contracts,
+   pricing history, site visits, tasks, feedback, etc.) -- runs automatically 3x/day via
+   pg_cron plus on-demand here. Chat messages and file attachments are deliberately out of
+   scope (ephemeral/regeneratable, and their base64 payloads would balloon every snapshot). */
+async function apiLoadBackups(){
+  if(DEMO_MODE) return [];
+  const {data,error}=await sb.from('backups').select('id,created_at,trigger_type,triggered_by,triggered_by_name,table_counts,size_bytes,checksum').order('created_at',{ascending:false}).limit(30);
+  if(error) throw error; return data||[];
+}
+async function apiCreateBackupNow(){
+  const {data,error}=await sb.rpc('create_backup',{p_trigger:'manual',p_by:PROFILE.key,p_by_name:PROFILE.name});
+  if(error) throw error; return data;
+}
+async function apiDownloadBackupSnapshot(id){
+  const {data,error}=await sb.from('backups').select('*').eq('id',id).single();
+  if(error) throw error; return data;
+}
+async function apiRestoreBackupNow(id){
+  const {data,error}=await sb.rpc('restore_backup',{p_backup_id:id,p_by:PROFILE.key,p_by_name:PROFILE.name});
+  if(error) throw error; return data;
+}
+function fmtBytes(n){ n=num(n); if(n<1024) return n+' B'; if(n<1024*1024) return (n/1024).toFixed(1)+' KB'; return (n/1024/1024).toFixed(2)+' MB'; }
+function fmtBackupWhen(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})+' · '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); }
+function backupTriggerTag(t){
+  if(t==='scheduled') return '<span class="tag">Scheduled</span>';
+  if(t==='pre_restore') return '<span class="tag warnt">Pre-restore safety net</span>';
+  return '<span class="tag ok">Manual</span>';
+}
+function mgrBackupHtml(){
+  if(DEMO_MODE) return `<div class="formwrap" style="padding:6px 15px">${emptyState(ic.save,'Only available live','Backup & Restore protects your real Supabase data — connect to Supabase (Portal settings) to use it. Nothing to protect in demo mode.')}</div>`;
+  const list=BACKUPS_LIST||[];
+  return `<div class="formwrap" style="padding:6px 15px">
+    <div class="mini" style="margin:-2px 0 14px">Backups run automatically at 6:00am, 2:00pm and 10:00pm every day, and cover core business records — leads, plots, payments, contracts, pricing history, site visits, tasks, feedback, leave, memos, SMS log and similar. Chat messages and file attachments are not included. The last 30 backups are kept; a restore always takes a fresh safety backup of the current data first, before changing anything.</div>
+    <button class="chip" id="bkNowBtn" style="width:100%;margin-bottom:16px"><span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Backup now</button>
+  </div>
+  <div class="sectitle"><h3>Backup history</h3><span class="cnt">${list.length}</span></div>
+  <div class="list" id="bkList">${list.length?list.map(b=>backupRowHtml(b)).join(''):emptyState(ic.save,'No backups yet','Tap "Backup now" above, or wait for the next scheduled run.')}</div>`;
+}
+function backupRowHtml(b){
+  const counts=b.table_counts||{}; const totalRows=Object.values(counts).reduce((s,n)=>s+num(n),0);
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${fmtBackupWhen(b.created_at)}</div><div class="meta">${totalRows.toLocaleString()} records · ${fmtBytes(b.size_bytes)}${b.triggered_by_name?' · by '+esc(b.triggered_by_name):''}</div></div>${backupTriggerTag(b.trigger_type)}</div>
+    <div class="foot" style="gap:8px;flex-wrap:wrap"><button class="chip" data-bkdownload="${esc(b.id)}">Download JSON</button><button class="chip" data-bkrestore="${esc(b.id)}" data-bkwhen="${esc(fmtBackupWhen(b.created_at))}" style="color:#B91C1C">Restore this backup</button></div></div>`;
+}
+function bindMgrBackupCtrls(){
+  const nowBtn=document.getElementById('bkNowBtn');
+  if(nowBtn) nowBtn.onclick=async()=>{
+    nowBtn.disabled=true; nowBtn.textContent='Backing up…';
+    try{ await apiCreateBackupNow(); BACKUPS_LIST=await apiLoadBackups(); toast('Backup created'); managerView(); }
+    catch(e){ toast('Backup failed: '+(e.message||e)); nowBtn.disabled=false; nowBtn.innerHTML=`<span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Backup now`; }
+  };
+  document.querySelectorAll('[data-bkdownload]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true; const orig=b.textContent; b.textContent='Preparing…';
+    try{
+      const full=await apiDownloadBackupSnapshot(b.dataset.bkdownload);
+      const blob=new Blob([JSON.stringify(full,null,2)],{type:'application/json'});
+      const url=URL.createObjectURL(blob);
+      triggerDownload(url,'PEP_Landbank_Backup_'+full.created_at.slice(0,10)+'.json','backup',blob);
+      toast('Backup downloaded');
+    }catch(e){ toast('Download failed: '+(e.message||e)); }
+    b.disabled=false; b.textContent=orig;
+  });
+  document.querySelectorAll('[data-bkrestore]').forEach(b=>b.onclick=()=>openRestoreConfirmModal(b.dataset.bkrestore,b.dataset.bkwhen));
+}
+function openRestoreConfirmModal(backupId,whenLabel){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px;color:#B91C1C">Restore backup from ${esc(whenLabel)}?</div><button id="closeRestoreConfirm" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="mini" style="margin-bottom:12px;color:#B91C1C;font-weight:600">This replaces every current lead, plot, payment, contract, pricing record, task and similar business record with what's in this backup. Anything entered after ${esc(whenLabel)} in those tables will be lost.</div>
+    <div class="mini" style="margin-bottom:14px">A fresh safety backup of the current data is taken automatically first, so this can always be undone by restoring that safety backup afterwards.</div>
+    ${fld('Type RESTORE to confirm','<input id="rc_confirm" placeholder="RESTORE" autocomplete="off"/>')}
+    <div class="formactions"><button class="btn primary" id="rc_go" style="width:100%;background:#B91C1C" disabled>Restore now</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeRestoreConfirm').onclick=()=>ov.remove();
+  const input=document.getElementById('rc_confirm'), goBtn=document.getElementById('rc_go');
+  input.oninput=()=>{ goBtn.disabled=input.value.trim()!=='RESTORE'; };
+  goBtn.onclick=async()=>{
+    goBtn.disabled=true; goBtn.textContent='Restoring…';
+    try{
+      await apiRestoreBackupNow(backupId);
+      toast('Restore complete'); ov.remove();
+      await apiLoadAll(); BACKUPS_LOADED=false; BACKUPS_LIST=await apiLoadBackups(); BACKUPS_LOADED=true;
+      managerView();
+    }catch(e){ toast('Restore failed: '+(e.message||e)); goBtn.disabled=false; goBtn.textContent='Restore now'; }
   };
 }
 function paintTeamToggle(b,isActive){
