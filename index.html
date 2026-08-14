@@ -600,6 +600,29 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
    interactivity, just laid out as a swipeable row of fixed-width panels instead. */
 .insightCarousel{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;margin-bottom:18px;scroll-snap-type:x proximity}
 .insightCarousel>.rowcard{flex:0 0 280px;margin-bottom:0!important;scroll-snap-align:start}
+/* Home screen hero: replaces a plain black-on-white <h2> + a separate pale-blue
+   commission rowcard with one cohesive premium header, in the same navy->teal
+   family as sign-in rather than a plain white card like every other screen. */
+.homeHero{position:relative;overflow:hidden;border-radius:24px;padding:24px 20px 22px;margin-bottom:20px;color:#fff;
+  background:linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%);
+  box-shadow:0 20px 44px -14px rgba(11,30,61,.5);animation:fadeUp .4s ease both}
+.homeHero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 88% -15%,rgba(103,232,249,.4),transparent 55%);pointer-events:none}
+.homeHero::after{content:'';position:absolute;left:-10%;bottom:-30%;width:60%;padding-bottom:60%;border-radius:50%;background:radial-gradient(circle,rgba(201,162,39,.22),transparent 70%);pointer-events:none}
+.homeHero .heroTop{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1;gap:10px}
+.homeHero .heroGreet{font-size:19px;font-weight:800;font-family:'Space Grotesk',sans-serif}
+.homeHero .heroDate{font-size:11.5px;color:rgba(255,255,255,.65);margin-top:3px}
+.homeHero .heroRefresh{width:34px;height:34px;border-radius:100px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s;flex:0 0 auto}
+.homeHero .heroRefresh:hover{background:rgba(255,255,255,.22)}
+.homeHero .heroRefresh.spinning svg{animation:spin .7s linear infinite}
+.homeHero .heroStat{margin-top:20px;position:relative;z-index:1}
+.homeHero .heroStatLabel{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.6);font-weight:700}
+.homeHero .heroStatValue{font-size:32px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-top:3px;letter-spacing:-.01em}
+.homeHero .heroSecondary{display:flex;gap:10px;margin-top:18px;position:relative;z-index:1}
+.homeHero .heroChip{flex:1;min-width:0;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:10px 13px;cursor:pointer;transition:.15s;backdrop-filter:blur(6px)}
+.homeHero .heroChip:hover{background:rgba(255,255,255,.17);transform:translateY(-1px)}
+.homeHero .heroChip .l{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.6);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.homeHero .heroChip .v{font-size:16px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tag.ghost{background:#F1EFE7;color:#6C7269}
 .tag.ok{background:#DCEEE4;color:#1E7A56}
 .tag.warnt{background:#F6EBD3;color:#8A6E12}
@@ -5783,33 +5806,39 @@ function renderSmartInsights(leads,paymentsForScope){
   </button>`).join('')}</div>`;
 }
 function bindSmartInsights(){ document.querySelectorAll('[data-insightroute]').forEach(b=>b.onclick=()=>route(b.dataset.insightroute,b.dataset.insightarg||undefined)); }
+function homeHeroGreeting(){
+  const h=new Date().getHours();
+  return h>=5&&h<12?'Good morning':h>=12&&h<17?'Good afternoon':h>=17&&h<21?'Good evening':'Working late';
+}
 function agentHome(){ const k=kpisOf(DB.leads);
   const thisMonth=today().slice(0,7);
   const wonAll=DB.leads.filter(l=>isFullyPaid(l));
   const monthCollected=DB.payments.filter(p=>(p.date||'').slice(0,7)===thisMonth).reduce((s,p)=>s+num(p.amount),0);
   const target=num((CONFIG.targets||{})[PROFILE.key])||0;
   const myCommission=computeMyPersonalCommission(thisMonth);
-  V.innerHTML=`<div class="pagehead"><div><h2>${esc(PROFILE.name.split(' ')[0])}'s Dashboard</h2><p>Royal Palm Enclave · Trulander JSF Limited</p></div>
-  <div style="display:flex;gap:8px;flex:0 0 auto">
-  <button class="dashRefreshBtn" id="dashRefreshBtn" title="Refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-  </div></div>
+  V.innerHTML=`
+  <div class="homeHero">
+    <div class="heroTop">
+      <div><div class="heroGreet">${homeHeroGreeting()}, ${esc(PROFILE.name.split(' ')[0])}</div><div class="heroDate">${esc(fmtLongDate(today()))} · Royal Palm Enclave</div></div>
+      <button class="heroRefresh" id="dashRefreshBtn" title="Refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
+    <div class="heroStat"><div class="heroStatLabel">Pipeline value</div><div class="heroStatValue">${ghs(k.val)}</div></div>
+    <div class="heroSecondary">
+      <div class="heroChip" id="heroCommissionChip"><div class="l">My commission · ${monthLabel(thisMonth)}</div><div class="v">${ghs(myCommission)}</div></div>
+      <div class="heroChip" id="heroQuoteChip"><div class="l">Documents</div><div class="v" style="font-size:13px">Request quotation →</div></div>
+    </div>
+  </div>
   ${renderBannerSlideshow()}
   ${renderAllocationBanners()}
   ${renderComplaintAssignBanners()}
-  <div class="rowcard" style="margin-bottom:18px;padding:16px;background:linear-gradient(120deg,#F4F8FF,#EEF6F1);border:1px solid rgba(59,130,246,.18);cursor:pointer" data-gomycommission="1">
-    <div style="display:flex;align-items:center;gap:12px"><span class="kpi-ic blue" style="margin-bottom:0">${kpiIc.coins||kpiIc.check}</span>
-    <div><div style="font-weight:700;font-size:13.5px">My commission — ${monthLabel(thisMonth)}</div><div class="mini">Personal only · tap for the breakdown</div></div>
-    <div style="margin-left:auto;font-size:22px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--text)">${ghs(myCommission)}</div></div>
-  </div>
-  <div class="kpis">${kpi('Active leads',k.leads,'','pipeline')}${kpi('Pipeline value',ghs(k.val),'gold','pipeline')}${kpi('Collected',ghs(k.coll),'','paid')}${kpi('Outstanding',ghs(k.out),'gold','owed')}${kpi('Site visits',k.sv,'','visits')}${kpi('Fully paid',wonAll.length,'','donepaying')}${kpi('Monthly collected',ghs(monthCollected),'gold','monthlyclosed')}</div>
-  <div style="margin-bottom:18px"><button class="chip" id="reqQuoteBtn" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.doc}</span>Request a quotation →</button></div>
+  <div class="kpis">${kpi('Active leads',k.leads,'','pipeline')}${kpi('Collected',ghs(k.coll),'','paid')}${kpi('Outstanding',ghs(k.out),'gold','owed')}${kpi('Site visits',k.sv,'','visits')}${kpi('Fully paid',wonAll.length,'','donepaying')}${kpi('Monthly collected',ghs(monthCollected),'gold','monthlyclosed')}</div>
   <div class="insightCarousel">${renderTargetCard(monthCollected,target)}${renderMonthlyPlanCard(DB.leads)}${renderPipelineHealthCard(DB.leads)}</div>
   <div class="footer-note">${DEMO_MODE?'<span class="demoflag"><span class="d"></span>Demo data</span>':''} Signed in as ${esc(PROFILE.email)}</div>
   <div class="footer-note" style="padding-top:2px">System created by Abdul Waheed (Digital Operations) © ${new Date().getFullYear()}</div>`;
   V.classList.remove('view-enter'); void V.offsetWidth; V.classList.add('view-enter');
   bindTasks(); bindAllocationBanners(); bindComplaintAssignBanners(); animateKpiCounts(); bindTargetCard(); bindMonthlyPlanCard(); bindPipelineHealthCard(); bindBannerSlideshow();
-  document.querySelector('[data-gomycommission]').onclick=()=>route('myCommission');
-  document.getElementById('reqQuoteBtn').onclick=openQuotationRequest;
+  document.getElementById('heroCommissionChip').onclick=()=>route('myCommission');
+  document.getElementById('heroQuoteChip').onclick=openQuotationRequest;
   document.getElementById('dashRefreshBtn').onclick=async(e)=>{
     const btn=e.currentTarget; btn.classList.add('spinning'); btn.disabled=true;
     try{ await apiLoadAll(); toast('Up to date'); agentHome(); }
@@ -10906,13 +10935,18 @@ const MGR_APPS=[
 async function managerView(){
   const mgrAppDef=MGR_APPS.find(a=>a.key===mgrTab);
   const mgrBackTarget=mgrAppDef&&mgrAppDef.section==='salesdesk'?'mgrSalesDesk':mgrAppDef&&mgrAppDef.section==='settingshub'?'mgrSettingsHub':mgrAppDef&&mgrAppDef.section==='officedesk'?'officedesk':'mgr';
-  V.innerHTML=`${mgrTab!=='overview'?back(mgrBackTarget):''}<div class="pagehead"><div><h2>${mgrTab==='overview'?'Management Dashboard':esc((mgrAppDef||{label:mgrTab}).label)}</h2><p>${mgrTab==='overview'?'Live across all agents':'Management'}</p></div>
-  <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
+  const isOverview=mgrTab==='overview';
+  // Overview gets its own hero card (with its own refresh button) inside mgrOverview()
+  // instead of the generic pagehead every other manager sub-screen uses here.
+  V.innerHTML=`${!isOverview?back(mgrBackTarget):''}${!isOverview?`<div class="pagehead"><div><h2>${esc((mgrAppDef||{label:mgrTab}).label)}</h2><p>Management</p></div>
+  <div style="display:flex;gap:8px"><button class="iconbtn" id="mgrRefresh" title="Refresh live data" style="background:#F1EFE7;border-color:var(--line);color:var(--ink)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M4 12a8 8 0 0113.7-5.6L20 8m0 0V4m0 4h-4M20 12a8 8 0 01-13.7 5.6L4 16m0 0v4m0-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>`:''}
   <div id="mbody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>
   <div class="footer-note">System created by Abdul Waheed (Digital Operations) © ${new Date().getFullYear()}</div>`;
-  document.getElementById('mgrRefresh').onclick=async()=>{ toast('Refreshing…'); try{ await apiLoadAll(); managerView(); toast('Up to date'); }catch(e){ toast('Refresh failed'); } };
+  if(!isOverview) document.getElementById('mgrRefresh').onclick=async()=>{ toast('Refreshing…'); try{ await apiLoadAll(); managerView(); toast('Up to date'); }catch(e){ toast('Refresh failed'); } };
   const body=document.getElementById('mbody');
-  if(mgrTab==='overview'){ body.innerHTML=mgrOverview(); bindTasks(); bindOverviewCtrls(); animateKpiCounts(body); bindExpectedRevenueCard(); bindPipelineHealthCard(); bindBannerSlideshow(); }
+  if(mgrTab==='overview'){ body.innerHTML=mgrOverview(); bindTasks(); bindOverviewCtrls(); animateKpiCounts(body); bindExpectedRevenueCard(); bindPipelineHealthCard(); bindBannerSlideshow();
+    document.getElementById('mgrHeroRefresh').onclick=async(e)=>{ const btn=e.currentTarget; btn.classList.add('spinning'); btn.disabled=true; try{ await apiLoadAll(); toast('Up to date'); managerView(); }catch(err){ toast('Refresh failed'); btn.classList.remove('spinning'); btn.disabled=false; } };
+  }
   else if(mgrTab==='Data Check'){ const renderMgrDataCheck=()=>{ body.innerHTML=renderDataCheck(null); bindDataCheckCtrls(null,renderMgrDataCheck); }; renderMgrDataCheck(); }
   else if(mgrTab==='Leaderboard'){ if(!LEADERBOARD_TODOS_LOADED){ try{ LEADERBOARD_TODOS_LIST=await apiLoadAllTodosForLeaderboard(isoPlusDays(today(),-90),today()); LEADERBOARD_TODOS_LOADED=true; }catch(e){} } body.innerHTML=mgrLeaderboard(); bindLeagueCtrls(); }
   else if(mgrTab==='Reports'){ body.innerHTML=mgrReports(); bindReportCtrls(); }
@@ -11062,15 +11096,26 @@ function mgrOverview(){ let tot={leads:0,val:0,coll:0,out:0,sv:0,hi:0};
   const fullyPaid=allLeads.filter(l=>isFullyPaid(l));
 
   const mySmartInsightsMgr=computeSmartInsights(allLeads,DB.payments);
-  return `${renderBannerSlideshow()}
+  return `
+  <div class="homeHero">
+    <div class="heroTop">
+      <div><div class="heroGreet">${homeHeroGreeting()}, Management</div><div class="heroDate">${esc(fmtLongDate(today()))} · Live across all agents</div></div>
+      <button class="heroRefresh" id="mgrHeroRefresh" title="Refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
+    <div class="heroStat"><div class="heroStatLabel">Pipeline value</div><div class="heroStatValue">${ghs(tot.val)}</div></div>
+    <div class="heroSecondary">
+      <div class="heroChip"><div class="l">Collected</div><div class="v">${ghs(tot.coll)}</div></div>
+      <div class="heroChip" id="heroQuoteChipMgr"><div class="l">Documents</div><div class="v" style="font-size:13px">Request quotation →</div></div>
+    </div>
+  </div>
+  ${renderBannerSlideshow()}
   <button class="rowcard" id="mgrInsightsTeaser" style="margin-bottom:18px;padding:16px;width:100%;text-align:left;display:flex;align-items:center;gap:12px;cursor:pointer;border:1px solid rgba(52,211,153,.25);background:linear-gradient(120deg,#F4FBEA,#F4F8FF)">
     <span class="kpi-ic green" style="margin-bottom:0">${ic.spark}</span>
     <div style="flex:1"><div style="font-weight:700;font-size:13.5px">Smart Insights</div><div class="mini">${mySmartInsightsMgr.length} auto-generated ${mySmartInsightsMgr.length===1?'insight':'insights'} from live company data</div></div>
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="color:var(--muted)"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
   </button>
   <div class="insightCarousel">${renderExpectedRevenueCard()}${renderPipelineHealthCard(allLeads)}</div>
-  <div class="kpis">${kpi('Total leads',tot.leads,'','pipeline')}${kpi('Pipeline value',ghs(tot.val),'gold','pipeline')}${kpi('Collected',ghs(tot.coll),'','paid')}${kpi('Outstanding',ghs(tot.out),'gold','owed')}${kpi('Fully paid',fullyPaid.length,'','donepaying')}${kpi('Open complaints',DB.complaints.filter(c=>c.status!=='Resolved').length)}${kpi('Escalated',escalated,escalated?'gold':'')}</div>
-  <div style="margin-bottom:18px"><button class="chip" id="reqQuoteBtnMgr" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.doc}</span>Request a quotation →</button></div>
+  <div class="kpis">${kpi('Total leads',tot.leads,'','pipeline')}${kpi('Outstanding',ghs(tot.out),'gold','owed')}${kpi('Fully paid',fullyPaid.length,'','donepaying')}${kpi('Open complaints',DB.complaints.filter(c=>c.status!=='Resolved').length)}${kpi('Escalated',escalated,escalated?'gold':'')}</div>
 
   <div class="sectitle"><h3>By agent</h3><span class="cnt">tap an agent for their full client breakdown</span></div><div class="formwrap" style="padding:6px 15px">${rows||'<div class="empty">No agent profiles yet</div>'}</div>
 
@@ -11083,7 +11128,7 @@ function bindOverviewCtrls(){
   V.querySelectorAll('[data-agentkey]').forEach(b=>b.onclick=()=>route('agentDetail',b.dataset.agentkey));
   V.querySelectorAll('[data-stage]').forEach(b=>b.onclick=()=>route('stageList',b.dataset.stage));
   const insightsTeaser=document.getElementById('mgrInsightsTeaser'); if(insightsTeaser) insightsTeaser.onclick=()=>route('insights');
-  const quoteBtn=document.getElementById('reqQuoteBtnMgr'); if(quoteBtn) quoteBtn.onclick=openQuotationRequest;
+  const quoteBtn=document.getElementById('heroQuoteChipMgr'); if(quoteBtn) quoteBtn.onclick=openQuotationRequest;
 }
 function viewStageList(stage){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
