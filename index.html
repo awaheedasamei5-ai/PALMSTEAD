@@ -1197,6 +1197,7 @@ function defaultConfig(){ return {
   companyAddress:'',
   leaveTotalDays:20,
   eidObservingStaff:[],
+  leaderboardWeights:{collected:1/500,dealsClosed:20,siteVisits:5,tasksCompleted:8,todosCompleted:3,taskSpeedBonus:5},
   contractCeoName:'FRANK ADU PEPRAH',
   contractCoverImage:'', contractWordmarkImage:'',
   contractPreamble:[
@@ -2463,7 +2464,8 @@ async function apiLoadConfig(){
       contractDefinitions:data.contract_definitions||defaultConfig().contractDefinitions,
       contractTerms:data.contract_terms||defaultConfig().contractTerms,
       contractCoverImage:data.contract_cover_image||'',
-      contractWordmarkImage:data.contract_wordmark_image||''}; }
+      contractWordmarkImage:data.contract_wordmark_image||'',
+      leaderboardWeights:data.leaderboard_weights||defaultConfig().leaderboardWeights}; }
   }catch(e){}
   return CONFIG;
 }
@@ -2483,7 +2485,8 @@ async function apiSaveConfig(patch){
     quote_land_note_text:CONFIG.quoteLandNoteText||'',quote_footer_address:CONFIG.quoteFooterAddress||'',
     receipt_thanks_text:CONFIG.receiptThanksText||'',
     contract_ceo_name:CONFIG.contractCeoName||'',contract_preamble:CONFIG.contractPreamble||'',contract_definitions:CONFIG.contractDefinitions||'',contract_terms:CONFIG.contractTerms||'',
-    contract_cover_image:CONFIG.contractCoverImage||null,contract_wordmark_image:CONFIG.contractWordmarkImage||null};
+    contract_cover_image:CONFIG.contractCoverImage||null,contract_wordmark_image:CONFIG.contractWordmarkImage||null,
+    leaderboard_weights:CONFIG.leaderboardWeights||defaultConfig().leaderboardWeights};
   const {error}=await sb.from('app_config').upsert(row); if(error) throw error;
 }
 /* ---- pricing change audit trail --------------------------------------------
@@ -10319,7 +10322,7 @@ async function managerView(){
   const body=document.getElementById('mbody');
   if(mgrTab==='overview'){ body.innerHTML=mgrOverview(); bindTasks(); bindOverviewCtrls(); animateKpiCounts(body); bindExpectedRevenueCard(); bindPipelineHealthCard(); bindBannerSlideshow(); }
   else if(mgrTab==='Data Check'){ const renderMgrDataCheck=()=>{ body.innerHTML=renderDataCheck(null); bindDataCheckCtrls(null,renderMgrDataCheck); }; renderMgrDataCheck(); }
-  else if(mgrTab==='Leaderboard'){ body.innerHTML=mgrLeaderboard(); bindLeagueCtrls(); }
+  else if(mgrTab==='Leaderboard'){ if(!LEADERBOARD_TODOS_LOADED){ try{ LEADERBOARD_TODOS_LIST=await apiLoadAllTodosForLeaderboard(isoPlusDays(today(),-90),today()); LEADERBOARD_TODOS_LOADED=true; }catch(e){} } body.innerHTML=mgrLeaderboard(); bindLeagueCtrls(); }
   else if(mgrTab==='Reports'){ body.innerHTML=mgrReports(); bindReportCtrls(); }
   else if(mgrTab==='Plots'){ PLOTS_CONTEXT='manager'; body.innerHTML=renderPlotsGrid(); bindPlotsGrid(); }
   else if(mgrTab==='Allocations'){
@@ -10590,9 +10593,51 @@ function exportCSV(rows,cols,filename){
   triggerDownload(url,filename,'csv',blob);
   toast('Downloaded '+filename);
 }
-function agentPoints(r){ return Math.round(r.totalCollected/500 + r.dealsClosedYear*20 + r.siteVisits*5); }
+function agentPoints(r){
+  const w=(CONFIG&&CONFIG.leaderboardWeights)||defaultConfig().leaderboardWeights;
+  const speedBonus=r.avgTaskDays!=null?Math.max(0,w.taskSpeedBonus*(1-Math.min(r.avgTaskDays,10)/10)):0;
+  return Math.round(r.totalCollected*w.collected + r.dealsClosedYear*w.dealsClosed + r.siteVisits*w.siteVisits
+    + (r.tasksCompleted||0)*w.tasksCompleted + (r.todosCompleted||0)*w.todosCompleted + speedBonus*(r.tasksCompleted||0?1:0));
+}
+let LEADERBOARD_TODOS_LOADED=false, LEADERBOARD_TODOS_LIST=[];
+async function apiLoadAllTodosForLeaderboard(fromDate,toDate){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.todos||[]).filter(t=>t.date>=fromDate&&t.date<=toDate); }
+  const {data,error}=await sb.from('todo_items').select('*').gte('item_date',fromDate).lte('item_date',toDate);
+  if(error) throw error; return (data||[]).map(mapTodo);
+}
+function openLeaderboardWeightsModal(){
+  const w=CONFIG.leaderboardWeights||defaultConfig().leaderboardWeights;
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Leaderboard point weights</div><button id="closeLbWeights" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <p class="mini" style="margin:-2px 0 14px">Points aren't sales-only — task and to-do activity count too. Tune how much each factor is worth.</p>
+    ${fld('GHS collected → 1 point per','<input id="lbw_collected" type="number" min="1" value="'+Math.round(1/w.collected)+'"/>','e.g. 500 means every GHS 500 collected = 1 point')}
+    ${fld('Points per deal closed (this year)','<input id="lbw_deals" type="number" min="0" value="'+w.dealsClosed+'"/>')}
+    ${fld('Points per site visit','<input id="lbw_visits" type="number" min="0" value="'+w.siteVisits+'"/>')}
+    ${fld('Points per task completed (last 90 days)','<input id="lbw_tasks" type="number" min="0" value="'+w.tasksCompleted+'"/>','Management-assigned tasks')}
+    ${fld('Points per to-do completed (last 90 days)','<input id="lbw_todos" type="number" min="0" value="'+w.todosCompleted+'"/>','self-created, from the To-Do List')}
+    ${fld('Fast-completion bonus (max points)','<input id="lbw_speed" type="number" min="0" value="'+w.taskSpeedBonus+'"/>','awarded on a sliding scale for closing tasks quickly, on average')}
+    <div class="formactions"><button class="btn primary" id="lbw_save" style="width:100%">Save weights</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeLbWeights').onclick=()=>ov.remove();
+  document.getElementById('lbw_save').onclick=async()=>{
+    const btn=document.getElementById('lbw_save'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const perPoint=num(val('lbw_collected'))||500;
+      await apiSaveConfig({leaderboardWeights:{collected:1/perPoint,dealsClosed:num(val('lbw_deals')),siteVisits:num(val('lbw_visits')),
+        tasksCompleted:num(val('lbw_tasks')),todosCompleted:num(val('lbw_todos')),taskSpeedBonus:num(val('lbw_speed'))}});
+      toast('Weights saved'); ov.remove(); managerView();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save weights'; }
+  };
+}
 function mgrLeaderboard(){
   const agents=allAgentLists();
+  const ninetyAgo=isoPlusDays(today(),-90);
+  const recentTasks=(DB.tasks||[]).filter(t=>t.status==='Done'&&(t.completedAt||'').slice(0,10)>=ninetyAgo);
+  const recentTodos=(LEADERBOARD_TODOS_LIST||[]).filter(t=>t.status==='closed');
   const years=new Set([slYear]);
   agents.forEach(a=>a.list.forEach(l=>{ const mk=monthKey(l.date); if(mk) years.add(+mk.slice(0,4)); }));
   const yearList=[...years].sort((a,b)=>b-a);
@@ -10612,8 +10657,14 @@ function mgrLeaderboard(){
     const monthsActive=monthVals.filter(v=>v>0).length||1;
     const avgMonthly=Math.round(monthVals.reduce((s,v)=>s+v,0)/monthsActive);
     const profile=(DB.profiles||[]).find(p=>p.agent_key===a.key);
+    const myDoneTasks=recentTasks.filter(t=>t.assignedTo===a.key);
+    const tasksCompleted=myDoneTasks.length;
+    const taskDurations=myDoneTasks.map(t=>{ const c=new Date(t.createdAt), d=new Date(t.completedAt); return (d-c)/86400000; }).filter(n=>n>=0&&isFinite(n));
+    const avgTaskDays=taskDurations.length?Math.round((taskDurations.reduce((s,n)=>s+n,0)/taskDurations.length)*10)/10:null;
+    const todosCompleted=recentTodos.filter(t=>t.ownerKey===a.key).length;
+    const workloadVolume=(DB.tasks||[]).filter(t=>t.assignedTo===a.key).length + (LEADERBOARD_TODOS_LIST||[]).filter(t=>t.ownerKey===a.key).length;
     const r={name:a.name,key:a.key,avatar:profile?profile.avatar:null,totalCollected:k.coll,dealsClosedYear:wonYear.length,closedValueYear,
-      totalPipeline:k.val,winRate,health,siteVisits,avgMonthly,monthVals};
+      totalPipeline:k.val,winRate,health,siteVisits,avgMonthly,monthVals,tasksCompleted,avgTaskDays,todosCompleted,workloadVolume};
     r.points=agentPoints(r);
     return r;
   }).sort((x,y)=>y.points-x.points);
@@ -10652,21 +10703,26 @@ function mgrLeaderboard(){
     <td class="mono">${r.siteVisits}</td>
     <td class="mono">${r.dealsClosedYear}</td>
     <td class="mono">${r.winRate}%</td>
+    <td class="mono">${r.tasksCompleted}</td>
+    <td class="mono">${r.todosCompleted}</td>
+    <td class="mono">${r.workloadVolume}</td>
     <td><span class="tag ${r.health.cls}">${r.health.label}</span></td>
   </tr>`).join('');
 
   const combinedMonthVals=months.map((mk,i)=>rows.reduce((s,r)=>s+r.monthVals[i],0));
 
   return `<div class="pagehead" style="margin-bottom:12px"><div><div class="eyebrow">Leaderboard</div><h2>Ranked by points</h2><p>Tap a row for that agent's full dashboard</p></div>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select id="slYearSel" style="padding:10px 12px;border:1.5px solid var(--line);border-radius:11px;background:#fff;font-weight:600">${yearList.map(y=>`<option value="${y}" ${y===slYear?'selected':''}>${y}</option>`).join('')}</select>
       <button class="chip" id="slExport">⬇ Export CSV</button>
+      <button class="chip" id="lbWeightsBtn">⚙ Weights</button>
     </div></div>
   ${leaderBanner}
   <div class="league-wrap" style="margin-top:18px"><table class="league-table">
-    <thead><tr><th>Rank</th><th>Agent</th><th>Points</th><th>Total Collected</th><th>Avg Monthly</th><th>Site Visits</th><th>Deals Closed (${slYear})</th><th>Win Rate</th><th>Pipeline</th></tr></thead>
-    <tbody>${rowsHtml || '<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted)">No data yet.</td></tr>'}</tbody>
+    <thead><tr><th>Rank</th><th>Agent</th><th>Points</th><th>Total Collected</th><th>Avg Monthly</th><th>Site Visits</th><th>Deals Closed (${slYear})</th><th>Win Rate</th><th>Tasks Done (90d)</th><th>To-Dos Done (90d)</th><th>Workload</th><th>Pipeline</th></tr></thead>
+    <tbody>${rowsHtml || '<tr><td colspan="12" style="text-align:center;padding:30px;color:var(--muted)">No data yet.</td></tr>'}</tbody>
   </table></div>
+  <p class="mini" style="margin-top:8px">Tasks/To-Dos Done and Workload are counted over the last 90 days. Workload is everything assigned or self-created regardless of completion — a measure of load, not performance.</p>
   <div class="sectitle"><h3>Collected — last 6 months</h3><span class="cnt">whole company</span></div>
   <div class="formwrap">${svgLineChart(combinedMonthVals,months.map(m=>monthLabel2(m).split(' ')[0]))}</div>
   <p class="mini" style="margin-top:12px"><b>Points</b> blend money collected (biggest factor), deals closed this year, and site visits done — a rough measure of overall momentum, not a formal KPI. <b>Total Collected</b> is all-time. <b>Avg Monthly</b> is collected value averaged across months with any activity in the last 6.</p>`;
@@ -10683,6 +10739,7 @@ function bindLeagueCtrls(){
     ], 'PEP_Landbank_Leaderboard_'+slYear+'.csv');
   };
   document.querySelectorAll('[data-leagueagent]').forEach(tr=>tr.onclick=()=>route('agentDetail',tr.dataset.leagueagent));
+  document.getElementById('lbWeightsBtn').onclick=openLeaderboardWeightsModal;
 }
 
 /* ================= REPORTS (Excel workbook + CSV) ================= */
