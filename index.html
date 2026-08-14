@@ -437,6 +437,8 @@ a{color:var(--green2)}
 .commentItem{font-size:12.5px;padding:8px 0;border-top:1px solid var(--line)}
 .commentItem b{color:var(--text)}
 .appGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.appGridGroupLabel{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:22px 0 12px}
+.appGridGroupLabel:first-child{margin-top:0}
 .appGridIcon{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;cursor:pointer;padding:14px 6px;border-radius:16px;transition:.15s}
 .appGridIcon:hover{background:#F4F6F5;transform:translateY(-4px)}
 .appGridIcon:hover .fic{transform:scale(1.06)}
@@ -942,7 +944,7 @@ urlToDataUri(TRULANDER_LOGO_SRC).then(u=>TRULANDER_LOGO_DATA_URI=u).catch(()=>{}
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
-let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],pendingPayments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[],leaveRequests:[],memos:[],banners:[],contracts:[],contractRequests:[]};
+let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],pendingPayments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[],leaveRequests:[],memos:[],banners:[],contracts:[],contractRequests:[],badgeCounts:{memo:0,contractRequest:0,approvals:0}};
 /* ---- display preferences (font size / family), applied via CSS custom
    properties so they take effect instantly with no per-page rework ---- */
 const DISPLAY_FONT_FAMILIES={
@@ -2034,6 +2036,7 @@ async function apiLoadAll(){
     DB.tasks=await apiLoadTasks();
     DB.feedback=await apiLoadFeedback();
     DB.downloads=await apiLoadDownloads();
+    DB.badgeCounts=await apiLoadBadgeCounts();
     return;
   }
   const q=async t=>{const {data,error}=await sb.from(t).select('*').order('created_at',{ascending:false});if(error)throw error;return data||[];};
@@ -2070,7 +2073,7 @@ async function apiLoadAll(){
     q('leads'),q('enquiries'),q('complaints'),q('site_visits'),q('activity_log'),
     loadProfiles(),loadPayments(),loadPlots(),loadContracts(),
     apiLoadAnnouncements(),apiLoadAllocations(),apiLoadMessages(),apiLoadTargetSelections(today().slice(0,7),PROFILE.role==='manager'),
-    apiLoadAgentMonthStats(),apiLoadTasks(),apiLoadFeedback(),apiLoadDownloads()
+    apiLoadAgentMonthStats(),apiLoadTasks(),apiLoadFeedback(),apiLoadDownloads(),apiLoadBadgeCounts()
   ]);
   const [le,en,cm,sv,ac]=results;
   DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key||PROFILE.role==='manager').map(mapLead);
@@ -2081,6 +2084,32 @@ async function apiLoadAll(){
   DB.agentMonthStats=results[13];
   DB.feedback=results[15];
   DB.downloads=results[16];
+  DB.badgeCounts=results[17];
+}
+// Cheap COUNT-only queries (no row data) so the "this app needs you" dots on Memo,
+// Contract of Sale and Expenses/Fund Requests can show up on the dashboard itself,
+// without pulling every memo body or contract note just to size a badge.
+async function apiLoadBadgeCounts(){
+  const counts={memo:0,contractRequest:0,approvals:0};
+  if(DEMO_MODE){
+    try{ const d=await demoLoad(); counts.memo=(d.memos||[]).filter(m=>m.toKey===PROFILE.key&&!m.read).length; }catch(e){}
+    if(canManageContracts()){ try{ const d=await demoLoad(); counts.contractRequest=(d.contractRequests||[]).filter(r=>r.status==='pending').length; }catch(e){} }
+    return counts;
+  }
+  try{ const {count}=await sb.from('memos').select('id',{count:'exact',head:true}).eq('to_key',PROFILE.agent_key).eq('read',false); counts.memo=count||0; }catch(e){}
+  if(canManageContracts()){
+    try{ const {count}=await sb.from('contract_requests').select('id',{count:'exact',head:true}).eq('status','pending'); counts.contractRequest=count||0; }catch(e){}
+  }
+  if(PROFILE.role==='manager'){
+    try{
+      const [{count:expCount},{count:fundCount}]=await Promise.all([
+        sb.from('expenses').select('id',{count:'exact',head:true}).eq('status','pending'),
+        sb.from('fund_requests').select('id',{count:'exact',head:true}).eq('status','pending')
+      ]);
+      counts.approvals=(expCount||0)+(fundCount||0);
+    }catch(e){}
+  }
+  return counts;
 }
 async function apiInsertLead(l,c,agentKeyOverride){
   if(DEMO_MODE){ const key=agentKeyOverride||PROFILE.key; const d=await demoLoad(); const row={id:uid(),agent:key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal,
@@ -2482,7 +2511,7 @@ async function logNewPayment(lead,amount,date,method,activityDetail){
   } else {
     DB.pendingPayments=DB.pendingPayments||[]; DB.pendingPayments.unshift(prec);
     await addActivity(lead.name,'Payment submitted for approval',activityDetail,'','',null);
-    try{ await apiSendMessage('manager','New payment pending approval: '+lead.name+' — '+ghs(amount)+' logged by '+PROFILE.name+'. Open Office Desk › Log Payment › Pending Approvals to review.'); }catch(e){}
+    try{ await apiSendMessage('manager','New payment pending approval: '+lead.name+' — '+ghs(amount)+' logged by '+PROFILE.name+'. Open Office › Log Payment › Pending Approvals to review.'); }catch(e){}
     toast('Payment submitted — awaiting Management approval before the receipt is sent to '+lead.name+'.');
   }
   return {payment:prec,status,offerReceipt:status==='approved'};
@@ -4370,8 +4399,8 @@ function renderBottomNavNow(){
   // CRM Tools + Plot Inventory tabs) so the nav shape matches across roles.
   const tabDefs=[
     {key:'home',label:'Home',icon:ic.home,r:isMgr?'mgr':'home'},
-    {key:'salesdesk',label:'Sales Desk',icon:ic.briefcase2,r:isMgr?'mgrSalesDesk':'salesdesk',badge:salesDeskBadge},
-    {key:'officedesk',label:'Office Desk',icon:ic.desk,r:'officedesk',badge:openTasks},
+    {key:'salesdesk',label:'Sales',icon:ic.briefcase2,r:isMgr?'mgrSalesDesk':'salesdesk',badge:salesDeskBadge},
+    {key:'officedesk',label:'Office',icon:ic.desk,r:'officedesk',badge:openTasks},
     {key:'chat',label:'Chat',icon:ic.chat,r:'chat',badge:unread,badgeId:'bnChatBadge'},
     {key:'more',label:'More',icon:ic.more,r:'more'}
   ];
@@ -4465,10 +4494,12 @@ const FIC_DEFS='<svg width="0" height="0" style="position:absolute" aria-hidden=
  +'<linearGradient id="fic-gGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F0D998"/><stop offset="1" stop-color="#B8860B"/></linearGradient>'
  +'<linearGradient id="fic-gSlate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6B7C93"/><stop offset="1" stop-color="#3A4A63"/></linearGradient>'
  +'<radialGradient id="fic-hi" cx="0.5" cy="0.05" r="0.9"><stop offset="0" stop-color="#fff" stop-opacity="0.38"/><stop offset="0.55" stop-color="#fff" stop-opacity="0"/></radialGradient>'
- +'<filter id="fic-soft" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="3" stdDeviation="3.2" flood-color="#0B1E3D" flood-opacity="0.42"/></filter>'
  +'</defs></svg>';
 if(document.body) document.body.insertAdjacentHTML('afterbegin',FIC_DEFS);
-function ficChip(g){return '<rect x="4" y="3" width="48" height="48" rx="15" fill="url(#fic-'+g+')" filter="url(#fic-soft)"/><rect x="4" y="3" width="48" height="48" rx="15" fill="url(#fic-hi)"/><rect x="4.5" y="3.5" width="47" height="47" rx="14.5" fill="none" stroke="#fff" stroke-opacity="0.16"/>';}
+// Flat, uniform chips -- no per-icon drop shadow "pop" at rest (that's now only a
+// hover cue, see .appGridIcon:hover in CSS). Keeps the subtle top sheen, which reads
+// as premium flat design rather than the skeuomorphic look the shadow gave it.
+function ficChip(g){return '<rect x="4" y="3" width="48" height="48" rx="15" fill="url(#fic-'+g+')"/><rect x="4" y="3" width="48" height="48" rx="15" fill="url(#fic-hi)"/><rect x="4.5" y="3.5" width="47" height="47" rx="14.5" fill="none" stroke="#fff" stroke-opacity="0.16"/>';}
 const FIC_GLYPHS={
  leaderboard:{g:'gGold',p:'<path d="M20 15h16v5a8 8 0 01-16 0z" fill="#fff"/><path d="M20 17h-4v1a4 4 0 004 4M36 17h4v1a4 4 0 01-4 4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><rect x="26" y="28" width="4" height="6" fill="#fff"/><rect x="20" y="34" width="16" height="4.5" rx="1.6" fill="#fff"/>'},
  announce:{g:'gLime',p:'<path d="M18 24l16-6v20l-16-6z" fill="#fff"/><rect x="14" y="24" width="5" height="8" rx="1.5" fill="#fff"/><path d="M20 33v5a2 2 0 004 0v-4" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round"/><path d="M37 26a5 5 0 010 6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>'},
@@ -4498,7 +4529,7 @@ const FIC_GLYPHS={
  clientdb:{g:'gLime',p:'<rect x="15" y="17" width="20" height="14" rx="2.5" fill="#fff" fill-opacity=".55"/><rect x="19" y="21" width="20" height="14" rx="2.5" fill="#fff"/><circle cx="26" cy="26.5" r="2.6" fill="var(--green)"/><path d="M22 32.5c0-2.2 1.8-3.5 4-3.5s4 1.3 4 3.5" fill="none" stroke="var(--green)" stroke-width="1.8" stroke-linecap="round"/>'},
  feedback:{g:'gBlue',p:'<path d="M16 20h24a3 3 0 013 3v9a3 3 0 01-3 3H27l-7 5.5V35h-4a3 3 0 01-3-3v-9a3 3 0 013-3z" fill="#fff"/><path d="M28 30.5c-3.6-2.4-5.5-4.3-5.5-6.4a2.9 2.9 0 015.5-1.3 2.9 2.9 0 015.5 1.3c0 2.1-1.9 4-5.5 6.4z" fill="var(--green)"/>'},
  memo:{g:'gNavy',p:'<path d="M21 16h14l4 4v20a1.5 1.5 0 01-1.5 1.5h-16A1.5 1.5 0 0120 40V17.5A1.5 1.5 0 0121.5 16z" fill="#fff"/><path d="M21 16v4a1.5 1.5 0 001.5 1.5H27" fill="none" stroke="#0B1E3D" stroke-width="1.6"/><path d="M24 27h10M24 31h10M24 35h6" stroke="#0B1E3D" stroke-width="2" stroke-linecap="round"/>'},
- billboard:{g:'gBlue',p:'<rect x="14" y="16" width="28" height="14" rx="2" fill="#fff"/><path d="M20 16v-3M36 16v-3" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M23 30v10M33 30v10" stroke="var(--green)" stroke-width="2.8" stroke-linecap="round"/><path d="M19 23h18" stroke="var(--green2)" stroke-width="2" stroke-opacity=".6"/>'},
+ billboard:{g:'gBlue',p:'<g transform="translate(0,1.5)"><rect x="14" y="16" width="28" height="14" rx="2" fill="#fff"/><path d="M20 16v-3M36 16v-3" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M23 30v10M33 30v10" stroke="var(--green)" stroke-width="2.8" stroke-linecap="round"/><path d="M19 23h18" stroke="var(--green2)" stroke-width="2" stroke-opacity=".6"/></g>'},
  sitevisitauth:{g:'gNavy',p:'<rect x="16" y="19" width="24" height="21" rx="3.5" fill="#fff"/><rect x="16" y="19" width="24" height="7" rx="3.5" fill="var(--green2)"/><rect x="22" y="15" width="3" height="7" rx="1.5" fill="#fff"/><rect x="31" y="15" width="3" height="7" rx="1.5" fill="#fff"/><path d="M22.5 32.5l3 3 7-7" fill="none" stroke="var(--green)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'},
  contract:{g:'gGold',p:'<path d="M20 16h11l7 7v16a1.5 1.5 0 01-1.5 1.5h-16.5A1.5 1.5 0 0119 39V17.5A1.5 1.5 0 0120.5 16z" fill="#fff"/><path d="M31 16v6.5A1.5 1.5 0 0032.5 24H38" fill="none" stroke="#B8860B" stroke-width="1.6"/><path d="M23 29h11M23 33h7" stroke="#B8860B" stroke-width="1.8" stroke-linecap="round"/><path d="M23 37.5c3-2.5 5-2.5 8 0" fill="none" stroke="#B8860B" stroke-width="1.8" stroke-linecap="round"/>'},
  payment:{g:'gLime',p:'<rect x="14" y="20" width="28" height="18" rx="3.5" fill="#fff"/><rect x="14" y="24" width="28" height="4" fill="var(--green)"/><circle cx="34" cy="33" r="4.5" fill="var(--green)"/><path d="M32.2 33l1.3 1.3 2.3-2.6" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'},
@@ -4507,7 +4538,7 @@ const FIC_GLYPHS={
  downloads:{g:'gBlue',p:'<path d="M28 16v14" stroke="#fff" stroke-width="2.8" stroke-linecap="round"/><path d="M22 25l6 6 6-6" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><rect x="16" y="34" width="24" height="6" rx="2" fill="var(--green2)"/>'},
  notes:{g:'gNavy',p:'<rect x="17" y="18" width="22" height="22" rx="3" fill="#fff"/><circle cx="22" cy="18" r="1.6" fill="var(--paper)"/><circle cx="28" cy="18" r="1.6" fill="var(--paper)"/><circle cx="34" cy="18" r="1.6" fill="var(--paper)"/><path d="M21 25h14M21 29h14M21 33h9" stroke="#0B1E3D" stroke-width="1.8" stroke-linecap="round"/>'},
  sms:{g:'gLime',p:'<rect x="20" y="14" width="16" height="26" rx="3.5" fill="#fff"/><rect x="22.5" y="18" width="11" height="15" rx="1.5" fill="var(--green)"/><circle cx="28" cy="36" r="1.4" fill="var(--green)"/><path d="M25 22h6M25 25h4" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>'},
- quote:{g:'gLime',p:'<path d="M18 16h20v20l-3-2.3-3 2.3-3-2.3-3 2.3-3-2.3-3 2.3-2-1.5z" fill="#fff"/><path d="M28 22.5v7M25.3 24.2c0-1.3 1.2-2.2 2.7-2.2s2.7.9 2.7 2c0 2.6-5.4 1.8-5.4 4.4 0 1.1 1.2 2 2.7 2s2.7-.9 2.7-2.2" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round"/>'},
+ quote:{g:'gLime',p:'<g transform="translate(0,2)"><path d="M18 16h20v20l-3-2.3-3 2.3-3-2.3-3 2.3-3-2.3-3 2.3-2-1.5z" fill="#fff"/><path d="M28 22.5v7M25.3 24.2c0-1.3 1.2-2.2 2.7-2.2s2.7.9 2.7 2c0 2.6-5.4 1.8-5.4 4.4 0 1.1 1.2 2 2.7 2s2.7-.9 2.7-2.2" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round"/></g>'},
  staffteam:{g:'gNavy',p:'<circle cx="22" cy="21" r="4.5" fill="#fff"/><circle cx="33" cy="23" r="3.6" fill="#fff" fill-opacity=".75"/><path d="M14.5 37c0-4.7 3.4-7.5 7.5-7.5s7.5 2.8 7.5 7.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M31 30.5c3.3.4 5.5 2.7 5.5 6.5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-opacity=".8"/><circle cx="37" cy="36" r="4" fill="var(--green2)" stroke="#fff" stroke-width="1.6"/><path d="M35.6 36h2.8M37 34.6v2.8" stroke="#0B1E3D" stroke-width="1.3" stroke-linecap="round"/>'},
  building:{g:'gBlue',p:'<rect x="18" y="16" width="20" height="24" rx="1.5" fill="#fff"/><rect x="22" y="20" width="3.5" height="3.5" fill="var(--green)"/><rect x="29" y="20" width="3.5" height="3.5" fill="var(--green)"/><rect x="22" y="27" width="3.5" height="3.5" fill="var(--green)"/><rect x="29" y="27" width="3.5" height="3.5" fill="var(--green)"/><rect x="24.5" y="34" width="7" height="6" fill="var(--green)"/>'},
  serverconfig:{g:'gSlate',p:'<rect x="17" y="16" width="22" height="8" rx="2" fill="#fff"/><rect x="17" y="26" width="22" height="8" rx="2" fill="#fff" fill-opacity=".8"/><circle cx="22" cy="20" r="1.4" fill="var(--green2)"/><circle cx="22" cy="30" r="1.4" fill="var(--green2)"/><circle cx="34" cy="38" r="5" fill="var(--green2)" stroke="#fff" stroke-width="1.6"/><path d="M34 35.5v1.2M34 39.3v1.2M31.5 38h1.2M35.3 38h1.2" stroke="#0B1E3D" stroke-width="1.1" stroke-linecap="round"/>'},
@@ -4580,7 +4611,7 @@ function chartLegend(segments){
 }
 function bindTasks(){ V.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>route(b.dataset.r)); }
 const AGENT_HUBS={
-  salesdesk:{title:'Sales Desk',items:[
+  salesdesk:{title:'Sales',items:[
     {r:'addlead',fic:'addlead',label:'New lead'},
     {r:'update',fic:'editpipeline',label:'Update pipeline'},
     {r:'myDataCheck',fic:'datacheck',label:'Data check'},
@@ -4590,10 +4621,16 @@ const AGENT_HUBS={
 };
 // Small red count badge overlaid on an appGrid tile -- data-badgekind lets
 // refreshAllBadges() update it live without a full screen re-render.
-function appGridBadgeHtml(kind){
-  if(!kind) return '';
-  const n=unreadByKind(kind);
-  return `<span class="appGridBadge${n>0?'':' hidden'}" data-badgekind="${esc(kind)}">${n>9?'9+':n}</span>`;
+// Two badge sources: `kind` reads the messages/notifications table (live, kept in
+// sync by refreshAllBadges as notifications arrive); `countKey` reads a plain number
+// off DB.badgeCounts (populated once per apiLoadAll -- for apps like Memo or Contract
+// of Sale that need a "how many pending" count but don't have a per-item notification
+// row for every single one).
+function appGridBadgeHtml(kind,countKey){
+  if(!kind && !countKey) return '';
+  const n=kind?unreadByKind(kind):((DB.badgeCounts&&DB.badgeCounts[countKey])||0);
+  const attr=kind?`data-badgekind="${esc(kind)}"`:`data-badgecountkey="${esc(countKey)}"`;
+  return `<span class="appGridBadge${n>0?'':' hidden'}" ${attr}>${n>9?'9+':n}</span>`;
 }
 function viewSmartInsights(){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
@@ -4606,19 +4643,25 @@ function viewSmartInsights(){
 // plot-inventory items that used to live in a separate CRM Tools tab, so agents and
 // managers share the same nav shape (Home / Sales Desk / Office Desk / Chat / More).
 function viewSalesDesk(){
-  const items=[...AGENT_HUBS.salesdesk.items,
-    {r:'sitevisit',fic:'location',label:'Site visit',badgeKind:'sitevisit'},
-    {r:'enquiry',fic:'enquiry',label:'Client enquiry',badgeKind:'enquiry'},
-    {r:'complaint',fic:'alert',label:'Client feedback',badgeKind:'complaint'},
-    {r:'plotrequests',fic:'plotrequest',label:'Plot Requests',badgeKind:'plotrequest'},
-    ...(canManagePlots()?[{r:'allocations',fic:'allocation',label:'Allocations'}]:[]),
-    ...(canViewClientDatabase()?[{r:'clientdb',fic:'clientdb',label:'Client Database'}]:[])
-  ];
-  V.innerHTML=`<div class="pagehead"><div><h2>Sales Desk</h2><p>Leads, pipeline, plots &amp; client touchpoints — everything for your book of clients</p></div></div>
-  <div class="appGrid">${items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`;
+  const groups=[
+    {title:'My pipeline',items:AGENT_HUBS.salesdesk.items},
+    {title:'Client touchpoints',items:[
+      {r:'sitevisit',fic:'location',label:'Site visit',badgeKind:'sitevisit'},
+      {r:'enquiry',fic:'enquiry',label:'Client enquiry',badgeKind:'enquiry'},
+      {r:'complaint',fic:'alert',label:'Client feedback',badgeKind:'complaint'},
+      {r:'plotrequests',fic:'plotrequest',label:'Plot Requests',badgeKind:'plotrequest'}
+    ]},
+    {title:'Inventory & records',items:[
+      ...(canManagePlots()?[{r:'allocations',fic:'allocation',label:'Allocations'}]:[]),
+      ...(canViewClientDatabase()?[{r:'clientdb',fic:'clientdb',label:'Client Database'}]:[])
+    ]}
+  ].filter(g=>g.items.length);
+  const items=groups.flatMap(g=>g.items);
+  V.innerHTML=`<div class="pagehead"><div><h2>Sales</h2><p>Leads, pipeline, plots &amp; client touchpoints — everything for your book of clients</p></div></div>
+  ${groups.map(g=>`<div class="appGridGroupLabel">${esc(g.title)}</div><div class="appGrid">${g.items.map(a=>`<button class="appGridIcon" data-hubroute="${esc(a.r)}">${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`).join('')}`;
   V.querySelectorAll('[data-hubroute]').forEach(b=>{
     const item=items.find(a=>a.r===b.dataset.hubroute);
-    b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); route(b.dataset.hubroute); };
+    b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); if(item&&item.badgeCountKey&&DB.badgeCounts){ DB.badgeCounts[item.badgeCountKey]=0; refreshAllBadges(); } route(b.dataset.hubroute); };
   });
 }
 // Shared by More (manager's leftover apps), the new CRM Tools tab, and the new Plot
@@ -4643,42 +4686,59 @@ function mgrAppRoute(key){
   else route('mgrTabView',key);
 }
 function mgrAppGridHtml(items){
-  return items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+  return items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+}
+// Same tiles as mgrAppGridHtml, but broken into labelled clusters of related apps
+// instead of one long undifferentiated grid -- groups with no visible items (role
+// gating emptied them out) are skipped rather than showing an empty heading.
+function groupedAppGridHtml(groups){
+  return groups.filter(g=>g.items.length).map(g=>`
+    <div class="appGridGroupLabel">${esc(g.title)}</div>
+    <div class="appGrid">${g.items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`).join('');
 }
 function bindMgrAppGrid(grid,items){
   grid.querySelectorAll('[data-moreapp]').forEach(b=>{
     const item=items.find(a=>a.key===b.dataset.moreapp);
-    b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); mgrAppRoute(b.dataset.moreapp); };
+    b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); if(item&&item.badgeCountKey&&DB.badgeCounts){ DB.badgeCounts[item.badgeCountKey]=0; refreshAllBadges(); } mgrAppRoute(b.dataset.moreapp); };
   });
 }
 // Replaces the old separate CRM Tools / Plot Inventory tabs with one Sales Desk hub,
 // mirroring the agent-side consolidation -- same nav shape for both roles.
 function viewMgrSalesDesk(){
   const items=MGR_APPS.filter(a=>a.section==='salesdesk');
-  V.innerHTML=`<div class="pagehead"><div><h2>Sales Desk</h2><p>Client database, plots, allocations, site visits, enquiries &amp; plot requests</p></div></div>
+  V.innerHTML=`<div class="pagehead"><div><h2>Sales</h2><p>Client database, plots, allocations, site visits, enquiries &amp; plot requests</p></div></div>
   <div class="appGrid" id="mgrSalesGrid">${mgrAppGridHtml(items)}</div>`;
   bindMgrAppGrid(document.getElementById('mgrSalesGrid'),items);
 }
 function viewOfficeDesk(){
   const isMgr=PROFILE.role==='manager';
   const showCompanyLeads=isMgr||canViewClientDatabase();
-  const items=[
-    {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
-    {key:'Feedback',fic:'feedback',label:'Team Feedback'},
-    {key:'Leave Schedules',fic:'calendar',label:'Leave Schedules'},
-    {key:'Memorandum',fic:'memo',label:'Memorandum'},
-    {key:'Banner Tracking',fic:'billboard',label:'Banner Tracking'},
-    ...(showCompanyLeads?[{key:'Site Visit Auth',fic:'sitevisitauth',label:'Site Visit Auth'}]:[]),
-    ...(canManageContracts()?[{key:'Contract of Sale',fic:'contract',label:'Contract of Sale'}]:[]),
-    ...(canManagePayments()?[{key:'Log Payment',fic:'payment',label:'Log Payment'}]:[]),
-    ...(canManageExpenses()?[{key:'Expenses',fic:'expense',label:'Expenses'}]:[]),
-    ...(isMgr?[{key:'Commission',fic:'commission',label:'Commission'}]:[]),
-    ...(isMgr?[{key:'Management Reports',fic:'reportdoc',label:'Reports'}]:[]),
-    ...(isMgr?[{key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'}]:[]),
-    ...(showCompanyLeads?[{key:'Company Leads',fic:'companyleads',label:'Company Leads'}]:[])
+  const groups=[
+    {title:'Documents & communication',items:[
+      {key:'Memorandum',fic:'memo',label:'Memorandum',badgeCountKey:'memo'},
+      {key:'Banner Tracking',fic:'billboard',label:'Banner Tracking'},
+      ...(canManageContracts()?[{key:'Contract of Sale',fic:'contract',label:'Contract of Sale',badgeCountKey:'contractRequest'}]:[])
+    ]},
+    {title:'Operations',items:[
+      {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
+      {key:'Feedback',fic:'feedback',label:'Team Feedback'},
+      {key:'Leave Schedules',fic:'calendar',label:'Leave Schedules'},
+      ...(showCompanyLeads?[{key:'Site Visit Auth',fic:'sitevisitauth',label:'Site Visit Auth'}]:[])
+    ]},
+    {title:'Money',items:[
+      ...(canManagePayments()?[{key:'Log Payment',fic:'payment',label:'Log Payment'}]:[]),
+      ...(canManageExpenses()?[{key:'Expenses',fic:'expense',label:'Expenses',badgeCountKey:PROFILE.role==='manager'?'approvals':null}]:[]),
+      ...(isMgr?[{key:'Commission',fic:'commission',label:'Commission'}]:[])
+    ]},
+    {title:'Insights',items:[
+      ...(isMgr?[{key:'Management Reports',fic:'reportdoc',label:'Reports'}]:[]),
+      ...(isMgr?[{key:'Leaderboard',fic:'leaderboard',label:'Leaderboard'}]:[]),
+      ...(showCompanyLeads?[{key:'Company Leads',fic:'companyleads',label:'Company Leads'}]:[])
+    ]}
   ];
-  V.innerHTML=`<div class="pagehead"><div><h2>Office Desk</h2><p>Operations, feedback${isMgr?', the leaderboard':''}${showCompanyLeads?' &amp; company leads':''} — everything off to the side of your daily pipeline</p></div></div>
-  <div class="appGrid" id="officeDeskGrid">${mgrAppGridHtml(items)}</div>`;
+  const items=groups.flatMap(g=>g.items);
+  V.innerHTML=`<div class="pagehead"><div><h2>Office</h2><p>Operations, feedback${isMgr?', the leaderboard':''}${showCompanyLeads?' &amp; company leads':''} — everything off to the side of your daily pipeline</p></div></div>
+  <div id="officeDeskGrid">${groupedAppGridHtml(groups)}</div>`;
   bindMgrAppGrid(document.getElementById('officeDeskGrid'),items);
 }
 function viewMore(){
@@ -4697,10 +4757,10 @@ function viewMore(){
       {key:'sms',fic:'sms',label:'SMS'},
       {key:'account',fic:'settings',label:'Settings'}
     ];
-    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
+    grid.innerHTML=items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}">${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}<span class="appGridGlyph">${fic(a.fic)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('');
     grid.querySelectorAll('[data-moreapp]').forEach(b=>{
       const item=items.find(a=>a.key===b.dataset.moreapp);
-      b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); route(b.dataset.moreapp); };
+      b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); if(item&&item.badgeCountKey&&DB.badgeCounts){ DB.badgeCounts[item.badgeCountKey]=0; refreshAllBadges(); } route(b.dataset.moreapp); };
     });
   }
 }
@@ -6377,6 +6437,11 @@ function refreshAllBadges(){
     el.textContent=n>9?'9+':String(n);
     el.classList.toggle('hidden',n<=0);
   });
+  document.querySelectorAll('[data-badgecountkey]').forEach(el=>{
+    const n=(DB.badgeCounts&&DB.badgeCounts[el.dataset.badgecountkey])||0;
+    el.textContent=n>9?'9+':String(n);
+    el.classList.toggle('hidden',n<=0);
+  });
   const bellBadge=document.getElementById('staffBellBadge');
   if(bellBadge && typeof PROFILE!=='undefined' && PROFILE){
     const n=totalUnread();
@@ -7751,7 +7816,7 @@ function openContractRequestModal(lead){
       const rec=await apiInsertContractRequest(lead.id,lead.name,note);
       DB.contractRequests=DB.contractRequests||[]; DB.contractRequests.unshift(rec);
       for(const key of selectedKeys){
-        try{ await apiSendMessage(key,'Contract requested for '+lead.name+' by '+PROFILE.name+(note?(': "'+note+'"'):'')+'. Open Office Desk › Contract of Sale › Requests to review.'); }catch(e){}
+        try{ await apiSendMessage(key,'Contract requested for '+lead.name+' by '+PROFILE.name+(note?(': "'+note+'"'):'')+'. Open Office › Contract of Sale › Requests to review.'); }catch(e){}
       }
       const wantsEmail=document.getElementById('cr_email').checked, wantsWa=document.getElementById('cr_wa').checked;
       if(wantsEmail||wantsWa){
@@ -13107,7 +13172,7 @@ function openLeaveApplyModal(){
       DB.leaveRequests.unshift(rec);
       leaveSelDates=[];
       ov.remove();
-      try{ await apiSendMessage('manager','New leave request from '+PROFILE.name+' — '+rec.daysCount+' day(s) in '+rec.year+'. Open Office Desk › Leave Schedules › Leave Requests to review.'); }catch(e){}
+      try{ await apiSendMessage('manager','New leave request from '+PROFILE.name+' — '+rec.daysCount+' day(s) in '+rec.year+'. Open Office › Leave Schedules › Leave Requests to review.'); }catch(e){}
       toast('Leave request sent');
       offerSendLeaveLetter(rec);
       paintLeaveApp();
@@ -13206,7 +13271,7 @@ function openLeaveReviewModal(id){
         const updated=await apiDecideLeaveRequest(rec.id,true);
         Object.assign(rec,updated);
         toast('Approved'); ov.remove();
-        try{ await apiSendMessage(rec.agentKey,'Your leave request for '+rec.daysCount+' day(s) in '+rec.year+' has been approved — you can now download the signed letter from Office Desk › Leave Schedules.'); }catch(e){}
+        try{ await apiSendMessage(rec.agentKey,'Your leave request for '+rec.daysCount+' day(s) in '+rec.year+' has been approved — you can now download the signed letter from Office › Leave Schedules.'); }catch(e){}
         paintLeaveApp();
       }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Approve & sign'; }
     };
@@ -13426,7 +13491,7 @@ function bindMemoComposeCtrls(){
     try{
       const rec=await apiInsertMemo(recipient.key,recipient.name,subject,bodyHtml,seed&&seed.parentId||null,seed&&seed.kind||'memo');
       DB.memos.unshift(rec);
-      try{ await apiSendMessage(recipient.key,'New memo from '+PROFILE.name+': "'+subject+'" — open Office Desk › Memorandum to read it.'); }catch(e){}
+      try{ await apiSendMessage(recipient.key,'New memo from '+PROFILE.name+': "'+subject+'" — open Office › Memorandum to read it.'); }catch(e){}
       toast('Memo sent to '+recipient.name);
       memoAppTab='sent'; paintMemoApp();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Send memo'; }
