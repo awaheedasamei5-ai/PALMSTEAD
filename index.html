@@ -8450,10 +8450,11 @@ function logPaymentSearchResultsHtml(q){
   const query=(q||'').toLowerCase();
   const list=CLIENTDB_LIST.filter(l=>!query||(l.name||'').toLowerCase().includes(query)||String(l.contact||'').includes(query));
   if(!list.length) return `<div class="empty" style="padding:20px 0">No clients found</div>`;
-  return list.slice(0,40).map(l=>{
+  return list.slice(0,40).map((l,i)=>{
     const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0);
-    return `<button class="rowcard" style="text-align:left;width:100%;margin-bottom:8px" data-lpsel="${esc(l.id)}">
-      <div class="top"><div><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''} · agent ${esc(soldByLabel(l.agent)||l.agent||'—')}</div></div>
+    const initials=(l.name||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    return `<button class="rowcard pipeCard stage-${esc(l.stage||'')}" style="text-align:left;width:100%;margin-bottom:8px;animation-delay:${Math.min(i*20,200)}ms" data-lpsel="${esc(l.id)}">
+      <div class="top"><div class="pipeAvatar">${esc(initials)}</div><div style="flex:1;min-width:0"><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''} · agent ${esc(soldByLabel(l.agent)||l.agent||'—')}</div></div>
       <div style="text-align:right"><div class="amt">${bal>0?ghs(bal):'Paid'}</div><div class="meta">${bal>0?'balance':'in full'}</div></div></div></button>`;
   }).join('');
 }
