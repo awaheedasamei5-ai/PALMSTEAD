@@ -7168,11 +7168,11 @@ function paintDuties(){
   if(q) list=list.filter(t=>(t.assignedToName||t.assignedTo||'').toLowerCase().includes(q)||(t.title||'').toLowerCase().includes(q));
   if(dutiesCatFilter) list=list.filter(t=>t.category===dutiesCatFilter);
   if(dutiesStatusFilter) list=list.filter(t=>t.status===dutiesStatusFilter);
-  const statusMeta={Open:{cls:'ghost'},'In Progress':{cls:'warnt'},Done:{cls:'ok'},Cancelled:{cls:'dgr'}};
+  const statusMeta={Open:{cls:'ghost',rail:'#6C7269'},'In Progress':{cls:'warnt',rail:'#8A6E12'},Done:{cls:'ok',rail:'#1E7A56'},Cancelled:{cls:'dgr',rail:'#B4472F'}};
   const rowOf=t=>{
     const overdue=t.dueDate&&t.dueDate<today()&&t.status!=='Done'&&t.status!=='Cancelled';
     const daysOpen=taskDaysOpen(t);
-    return `<div class="rowcard" data-taskopen="${esc(t.id)}" style="cursor:pointer">
+    return `<div class="rowcard" data-taskopen="${esc(t.id)}" style="cursor:pointer;position:relative;overflow:hidden;padding-left:18px"><div style="position:absolute;left:0;top:0;bottom:0;width:4px;background:${statusMeta[t.status].rail}"></div>
     <div class="top"><div><div class="nm">${esc(t.title)}${t.assignedTo===PROFILE.key&&!t.openedAt?'<span class="tag ghost" style="margin-left:8px;font-size:9.5px">NEW</span>':''}</div><div class="meta">${esc(t.category)} · ${esc(t.assignedToName||t.assignedTo)}${t.assignedBy!==t.assignedTo?(' · assigned by '+esc(t.assignedByName||t.assignedBy)):' · self-assigned'}</div></div>
     <span class="tag ${statusMeta[t.status].cls}">${esc(t.status)}</span></div>
     ${t.description?`<div class="mini" style="margin-top:4px">${esc(t.description)}</div>`:''}
