@@ -12294,11 +12294,11 @@ async function viewNotesApp(){
 }
 function notesBodyHtml(){
   return `<div style="margin-bottom:14px"><button class="btn primary" id="notesAddBtn" style="width:100%">+ New note</button></div>
-  <div class="list" id="notesList">${NOTES_LIST.length?NOTES_LIST.map(n=>noteRowHtml(n)).join(''):emptyState(ic.doc,'No notes yet','Tap "+ New note" to jot something down.')}</div>`;
+  <div class="list" id="notesList">${NOTES_LIST.length?NOTES_LIST.map((n,i)=>noteRowHtml(n,i)).join(''):emptyState(ic.doc,'No notes yet','Tap "+ New note" to jot something down.')}</div>`;
 }
-function noteRowHtml(n){
+function noteRowHtml(n,i){
   const snippet=(n.body||'').replace(/\s+/g,' ').trim().slice(0,90);
-  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(n.title||'Untitled note')}</div><div class="meta">${fmtBackupWhen(n.updatedAt)}</div></div></div>
+  return `<div class="rowcard" style="position:relative;overflow:hidden;padding-left:18px;animation-delay:${Math.min((i||0)*25,250)}ms"><div style="position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--premium,#C9A227)"></div><div class="top"><div><div class="nm">${esc(n.title||'Untitled note')}</div><div class="meta">${fmtBackupWhen(n.updatedAt)}</div></div></div>
   ${snippet?`<div class="note">${esc(snippet)}${(n.body||'').length>90?'…':''}</div>`:''}
   <div class="foot" style="gap:8px;flex-wrap:wrap"><button class="chip" data-noteedit="${esc(n.id)}">Open</button><button class="chip" data-notesend="${esc(n.id)}">Send</button><button class="chip" data-notedl="${esc(n.id)}">Download</button><button class="chip" data-notedel="${esc(n.id)}" style="color:#B91C1C">Delete</button></div></div>`;
 }
