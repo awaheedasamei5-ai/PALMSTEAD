@@ -3340,13 +3340,19 @@ function clientDatabaseStatStripHtml(){
   return `<div class="pipeStatStrip"><div class="pipeStat"><div class="v">${CLIENTDB_LIST.length}</div><div class="l">Clients</div></div><div class="pipeStat"><div class="v">${paidCount}</div><div class="l">Paid in full</div></div><div class="pipeStat"><div class="v">${ghs(totalBal)}</div><div class="l">Outstanding</div></div></div>`;
 }
 const LEAD_SOURCES=['Social Media','Radio','TV','Recommendation','Banner'];
+function companyLeadsStatStripHtml(){
+  const totalVal=COMPANY_LEADS_LIST.reduce((s,l)=>{ const c=computeLead(l); return s+(l.grandTotal!=null?num(l.grandTotal):c.grand); },0);
+  const unsourced=COMPANY_LEADS_LIST.filter(l=>!l.leadSource).length;
+  return `<div class="pipeStatStrip"><div class="pipeStat"><div class="v">${COMPANY_LEADS_LIST.length}</div><div class="l">Company leads</div></div><div class="pipeStat"><div class="v">${ghs(totalVal)}</div><div class="l">Total value</div></div><div class="pipeStat"><div class="v">${unsourced}</div><div class="l">Missing source</div></div></div>`;
+}
 function companyLeadsListHtml(){
   if(!COMPANY_LEADS_LIST.length) return emptyState(ic.lead,'No company leads yet','Clients who come to the company directly -- not through a specific agent -- land here until assigned.');
-  return COMPANY_LEADS_LIST.map(l=>{
+  return COMPANY_LEADS_LIST.map((l,i)=>{
     const c=computeLead(l); const g=l.grandTotal!=null?num(l.grandTotal):c.grand; const bal=Math.max(g-num(l.amtPaid),0);
     const banner=l.bannerId?(DB.banners||[]).find(b=>b.id===l.bannerId):null;
     const sourceTag=l.leadSource?`<span class="tag ghost">${esc(l.leadSource)}${banner?' · '+esc(banner.name):''}</span>`:'';
-    return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'—')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''} · stage ${esc(l.stage||'')}</div></div>
+    const initials=(l.name||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    return `<div class="rowcard pipeCard stage-${esc(l.stage||'')}" style="animation-delay:${Math.min(i*25,250)}ms"><div class="top"><div class="pipeAvatar">${esc(initials)}</div><div style="flex:1;min-width:0"><div class="nm">${esc(l.name)}</div><div class="meta">${esc(l.contact||'—')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''} · stage ${esc(l.stage||'')}</div></div>
       <div style="text-align:right"><div class="amt">${ghs(g)}</div><div class="meta">${bal>0?('Bal '+ghs(bal)):'Paid in full'}</div></div></div>
       ${l.nextAction?`<div class="note"><b>Next:</b> ${esc(l.nextAction)}</div>`:''}
       ${sourceTag?`<div style="margin-top:8px">${sourceTag}</div>`:''}
@@ -3417,7 +3423,8 @@ async function openLeadSourceModal(lead,onSaved){
   };
 }
 function companyLeadsBodyHtml(){
-  return `<div style="margin-bottom:14px"><button class="btn primary" id="companyLeadsAddBtn" style="width:100%">+ Add company lead</button></div>
+  return `${companyLeadsStatStripHtml()}
+  <div style="margin-bottom:14px"><button class="btn primary" id="companyLeadsAddBtn" style="width:100%">+ Add company lead</button></div>
   <div class="list" id="companyLeadsList">${companyLeadsListHtml()}</div>`;
 }
 async function viewCompanyPipeline(){
