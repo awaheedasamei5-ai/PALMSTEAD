@@ -3049,18 +3049,33 @@ async function apiDeleteFeedback(id){
   const {error}=await sb.from('feedback').delete().eq('id',id); if(error) throw error;
 }
 /* ---- leave requests ---- */
-const mapLeaveRequest=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,year:r.year,dates:r.dates||[],daysCount:r.days_count,letterText:r.letter_text,status:r.status,createdAt:r.created_at,decidedAt:r.decided_at,decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedSignature:r.decided_signature});
+const mapLeaveRequest=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,year:r.year,dates:r.dates||[],daysCount:r.days_count,letterText:r.letter_text,status:r.status,createdAt:r.created_at,decidedAt:r.decided_at,decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedSignature:r.decided_signature,
+  isEmergency:!!r.is_emergency,deductQuota:r.deduct_quota!==false,rescheduleNote:r.reschedule_note});
 async function apiLoadLeaveRequests(){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.leaveRequests||[]).slice(); }
   try{ const {data,error}=await sb.from('leave_requests').select('*').order('created_at',{ascending:false}); if(error) throw error;
     return (data||[]).map(mapLeaveRequest); }
   catch(e){ return []; }
 }
-async function apiInsertLeaveRequest(dates,letterText,year){
+// status is 'planned' when just logged against the annual calendar (private, not
+// visible to Management yet) or 'pending' for anything sent straight away (emergency
+// leave skips the planning stage entirely, since it's immediate by nature).
+async function apiInsertLeaveRequest(dates,letterText,year,opts){
+  opts=opts||{};
   const daysCount=dates.length;
-  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),agentKey:PROFILE.key,agentName:PROFILE.name,year,dates,daysCount,letterText,status:'pending',createdAt:new Date().toISOString(),decidedAt:null,decidedBy:null,decidedByName:null,decidedSignature:null};
+  const status=opts.status||'pending';
+  const isEmergency=!!opts.isEmergency, deductQuota=opts.deductQuota!==false;
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),agentKey:PROFILE.key,agentName:PROFILE.name,year,dates,daysCount,letterText,status,createdAt:new Date().toISOString(),decidedAt:null,decidedBy:null,decidedByName:null,decidedSignature:null,isEmergency,deductQuota,rescheduleNote:null};
     d.leaveRequests=d.leaveRequests||[]; d.leaveRequests.unshift(rec); await demoSave(); return rec; }
-  const {data,error}=await sb.from('leave_requests').insert({agent_key:PROFILE.key,agent_name:PROFILE.name,year,dates,days_count:daysCount,letter_text:letterText,status:'pending'}).select().single();
+  const {data,error}=await sb.from('leave_requests').insert({agent_key:PROFILE.key,agent_name:PROFILE.name,year,dates,days_count:daysCount,letter_text:letterText,status,is_emergency:isEmergency,deduct_quota:deductQuota}).select().single();
+  if(error) throw error; return mapLeaveRequest(data);
+}
+// The "leave coming up" placeholder calls this when staff tap it -- turns a private
+// planned date into a live request Management actually sees, right when it's due.
+async function apiSendPlannedLeaveRequest(id){
+  const patch={status:'pending'};
+  if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.leaveRequests||[]).find(x=>x.id===id); if(rec) rec.status='pending'; await demoSave(); return rec; }
+  const {data,error}=await sb.from('leave_requests').update(patch).eq('id',id).select().single();
   if(error) throw error; return mapLeaveRequest(data);
 }
 async function apiDecideLeaveRequest(id,approve){
@@ -3068,6 +3083,18 @@ async function apiDecideLeaveRequest(id,approve){
   const patch={status:approve?'approved':'declined',decided_at:new Date().toISOString(),decided_by:PROFILE.key,decided_by_name:PROFILE.name,decided_signature:sig};
   if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.leaveRequests||[]).find(x=>x.id===id);
     if(rec) Object.assign(rec,{status:patch.status,decidedAt:patch.decided_at,decidedBy:patch.decided_by,decidedByName:patch.decided_by_name,decidedSignature:patch.decided_signature});
+    await demoSave(); return rec; }
+  const {data,error}=await sb.from('leave_requests').update(patch).eq('id',id).select().single();
+  if(error) throw error; return mapLeaveRequest(data);
+}
+// Reschedule is its own outcome, distinct from decline -- the staff member's dates
+// weren't rejected outright, Management just needs different ones, with a note saying
+// why. Frees up the dates (leaveConflictDatesFromOthers/myTaken both treat
+// 'rescheduled' as no-longer-blocking) so the staff member can plan fresh ones.
+async function apiRescheduleLeaveRequest(id,note){
+  const patch={status:'rescheduled',reschedule_note:note,decided_at:new Date().toISOString(),decided_by:PROFILE.key,decided_by_name:PROFILE.name};
+  if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.leaveRequests||[]).find(x=>x.id===id);
+    if(rec) Object.assign(rec,{status:patch.status,rescheduleNote:note,decidedAt:patch.decided_at,decidedBy:patch.decided_by,decidedByName:patch.decided_by_name});
     await demoSave(); return rec; }
   const {data,error}=await sb.from('leave_requests').update(patch).eq('id',id).select().single();
   if(error) throw error; return mapLeaveRequest(data);
@@ -13625,18 +13652,35 @@ function leaveHolidayMapForYear(year){
 // Every OTHER staff member's pending/approved leave date, plus the working day
 // immediately before/after each, so nobody can pick a day that's adjacent to a
 // colleague's leave either.
+// A date is "occupied" (blocks re-picking, counts toward quota) while it's planned,
+// awaiting a decision, or approved. Declined and rescheduled both free the date back
+// up -- declined because it was rejected, rescheduled because Management is asking
+// for different dates, so the old ones shouldn't keep sitting on the calendar.
+function leaveIsBlocking(status){ return status==='planned'||status==='pending'||status==='approved'; }
 function leaveConflictDatesFromOthers(agentKey){
   const blocked=new Set();
-  DB.leaveRequests.filter(r=>r.agentKey!==agentKey&&r.status!=='declined').forEach(r=>{
+  DB.leaveRequests.filter(r=>r.agentKey!==agentKey&&leaveIsBlocking(r.status)).forEach(r=>{
     (r.dates||[]).forEach(d=>{ blocked.add(d); blocked.add(nextWorkingDayIso(d)); blocked.add(prevWorkingDayIso(d)); });
   });
   return blocked;
 }
-function leaveDaysUsed(agentKey,year){ return DB.leaveRequests.filter(r=>r.agentKey===agentKey&&r.year===year&&r.status!=='declined').reduce((s,r)=>s+(r.daysCount||0),0); }
+// Only counts dates the staff member chose to have deducted -- an emergency leave
+// filed as "don't deduct" never touches this number, matching the point of offering
+// that choice in the first place.
+function leaveDaysUsed(agentKey,year){ return DB.leaveRequests.filter(r=>r.agentKey===agentKey&&r.year===year&&leaveIsBlocking(r.status)&&r.deductQuota!==false).reduce((s,r)=>s+(r.daysCount||0),0); }
+function leaveDaysApproved(agentKey,year){ return DB.leaveRequests.filter(r=>r.agentKey===agentKey&&r.year===year&&r.status==='approved'&&r.deductQuota!==false).reduce((s,r)=>s+(r.daysCount||0),0); }
 function leaveDaysRemaining(agentKey,year){ return Math.max(0,(num(CONFIG.leaveTotalDays)||20)-leaveDaysUsed(agentKey,year)); }
 function leaveUpcomingSoonList(){
   const soon=today(); const in7=new Date(); in7.setDate(in7.getDate()+7); const in7s=in7.toISOString().slice(0,10);
   return DB.leaveRequests.filter(r=>r.agentKey===PROFILE.key&&r.status==='approved').flatMap(r=>(r.dates||[]).filter(d=>d>=soon&&d<=in7s)).sort();
+}
+// The "click to send" placeholder -- planned (not yet requested) dates that are
+// due within a week. This is the whole point of the two-stage flow: logging a date
+// in January doesn't nag Management until it's actually approaching.
+function leavePlannedDueSoonList(){
+  const soon=today(); const in7=new Date(); in7.setDate(in7.getDate()+7); const in7s=in7.toISOString().slice(0,10);
+  return DB.leaveRequests.filter(r=>r.agentKey===PROFILE.key&&r.status==='planned'&&(r.dates||[]).some(d=>d>=soon&&d<=in7s))
+    .sort((a,b)=>Math.min(...a.dates)<Math.min(...b.dates)?-1:1);
 }
 function leavePendingCountForMgr(){ return DB.leaveRequests.filter(r=>r.status==='pending').length; }
 function buildLeaveLetterText(agentName,dates,year){
@@ -13750,10 +13794,15 @@ function leaveMineHtml(){
   const remaining=Math.max(0,total-used);
   const mine=DB.leaveRequests.filter(r=>r.agentKey===PROFILE.key).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
   const upcoming=leaveUpcomingSoonList();
+  const dueSoon=leavePlannedDueSoonList();
   return `
+  ${dueSoon.length?`<div class="sectitle" style="margin-top:0"><h3>🔔 Ready to send</h3><span class="cnt">${dueSoon.length}</span></div>
+  <div class="list" style="margin-bottom:14px">${dueSoon.map(r=>`<button type="button" class="rowcard" data-lvsendplanned="${r.id}" style="text-align:left;width:100%;border-color:var(--gold);background:#FBF3E0;cursor:pointer">
+    <div class="top"><div><div class="nm">Your planned leave is coming up</div><div class="mini">${(r.dates||[]).slice().sort().map(fmtLongDate).join(', ')} — tap to send this request to Management now.</div></div><span class="tag warnt">Tap to send →</span></div>
+  </button>`).join('')}</div>`:''}
   ${upcoming.length?`<div class="rowcard" style="border-color:var(--danger);background:#FBEDEA;margin-bottom:14px"><div class="top"><div><div class="nm" style="color:var(--danger)">🔴 Leave coming up</div><div class="mini">${upcoming.map(fmtLongDate).join(', ')} — make sure any handovers are sorted.</div></div></div></div>`:''}
   <div class="kpis">${kpi('Total days/yr',total)}${kpi('Used in '+year,used)}${kpi('Remaining',remaining)}</div>
-  <div class="sectitle" style="margin-top:4px"><h3>Pick your leave dates</h3></div>
+  <div class="sectitle" style="margin-top:4px"><h3>Plan your leave for the year</h3><span class="cnt">saved privately until it's due</span></div>
   <div class="formwrap">
   <div class="lvCalNav">
     <button class="lvCalNavBtn" id="lvPrevMonth" aria-label="Previous month">‹</button>
@@ -13764,18 +13813,27 @@ function leaveMineHtml(){
   <div class="lvCalLegend"><span><i style="background:var(--ink)"></i>Selected</span><span><i style="background:var(--paper);opacity:.55"></i>Weekend</span><span><i style="background:#F6EBD3"></i>Public holiday</span><span><i style="background:var(--paper)"></i>Already taken / colleague's leave</span></div>
   <div class="mini" style="margin:12px 0 6px">Selected: <span id="lvSelSummary">${leaveSelDates.length?leaveSelDates.length+' day(s) selected':'none yet'}</span></div>
   <div class="chips" id="lvSelChips"></div>
+  <p class="mini" style="margin:10px 0 0">This just saves your plan — nothing is sent to Management yet. About a week before each date, it'll show up above under "Ready to send" for you to tap and actually submit.</p>
   <div class="formactions">
     <button class="btn ghost" id="lvClearSel">Clear selection</button>
-    <button class="btn primary" id="lvApplyBtn">Apply for leave</button>
+    <button class="btn primary" id="lvApplyBtn">Save to my leave plan</button>
   </div>
   </div>
+  <div style="margin:14px 0"><button class="btn ghost" id="lvEmergencyBtn" style="width:100%">🚨 Apply for emergency leave</button></div>
   <div class="sectitle"><h3>My leave requests</h3><span class="cnt">${mine.length}</span></div>
-  <div class="list">${mine.length?mine.map(leaveRowHtml).join(''):emptyState(ic.calendar,'No leave requests yet','Pick some dates above and apply.')}</div>`;
+  <div class="list">${mine.length?mine.map(leaveRowHtml).join(''):emptyState(ic.calendar,'No leave requests yet','Pick some dates above and save your plan.')}</div>`;
 }
 function leaveRowHtml(r){
-  const badge=r.status==='approved'?'<span class="tag ok">Approved</span>':r.status==='declined'?'<span class="tag dgr">Declined</span>':'<span class="tag warnt">Pending approval</span>';
-  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.agentName)} · ${r.daysCount} day${r.daysCount===1?'':'s'} (${r.year})</div><div class="meta">${(r.dates||[]).slice().sort().map(fmtLongDate).join(', ')}</div></div>${badge}</div>
+  const badge=r.status==='approved'?'<span class="tag ok">Approved</span>'
+    :r.status==='declined'?'<span class="tag dgr">Declined</span>'
+    :r.status==='rescheduled'?'<span class="tag dgr">Rescheduled — see note</span>'
+    :r.status==='planned'?'<span class="tag ghost">Planned — not sent yet</span>'
+    :'<span class="tag warnt">Pending approval</span>';
+  const emTag=r.isEmergency?`<span class="tag warnt" style="margin-left:6px">🚨 Emergency${r.deductQuota===false?' · not deducted':''}</span>`:'';
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.agentName)} · ${r.daysCount} day${r.daysCount===1?'':'s'} (${r.year})${emTag}</div><div class="meta">${(r.dates||[]).slice().sort().map(fmtLongDate).join(', ')}</div></div>${badge}</div>
+  ${r.status==='rescheduled'&&r.rescheduleNote?`<div class="note"><b>Management's note:</b> ${esc(r.rescheduleNote)}</div>`:''}
   <div class="foot" style="display:flex;gap:7px;flex-wrap:wrap">
+    ${r.status==='planned'?`<button class="chip" data-leavesendnow="${r.id}">Send to Management now</button>`:''}
     <button class="chip" data-leavepreview="${r.id}">Preview letter</button>
     ${r.status==='approved'?`<button class="chip" data-leavedownload="${r.id}">⬇ Download</button>`:''}
   </div></div>`;
@@ -13785,7 +13843,7 @@ function paintLeaveCalendar(){
   const year=leaveCalYear, month=leaveCalMonth;
   const nDays=leaveDaysInMonth(year,month);
   const firstDow=new Date(year,month,1).getDay();
-  const myTaken=new Set(DB.leaveRequests.filter(r=>r.agentKey===PROFILE.key&&r.status!=='declined').flatMap(r=>r.dates||[]));
+  const myTaken=new Set(DB.leaveRequests.filter(r=>r.agentKey===PROFILE.key&&leaveIsBlocking(r.status)).flatMap(r=>r.dates||[]));
   const otherConflicts=leaveConflictDatesFromOthers(PROFILE.key);
   const holidays=leaveHolidayMapForYear(year);
   const observesEid=(CONFIG.eidObservingStaff||[]).includes(PROFILE.key);
@@ -13843,8 +13901,22 @@ function bindLeaveMineCtrls(){
   paintLeaveCalendar(); paintLeaveSelSummary();
   document.getElementById('lvClearSel').onclick=()=>{ leaveSelDates=[]; paintLeaveCalendar(); paintLeaveSelSummary(); };
   document.getElementById('lvApplyBtn').onclick=()=>openLeaveApplyModal();
+  const emBtn=document.getElementById('lvEmergencyBtn'); if(emBtn) emBtn.onclick=()=>openEmergencyLeaveModal();
   document.querySelectorAll('[data-leavepreview]').forEach(b=>b.onclick=()=>previewLeaveLetter(b.dataset.leavepreview));
   document.querySelectorAll('[data-leavedownload]').forEach(b=>b.onclick=()=>downloadLeaveLetter(b.dataset.leavedownload));
+  document.querySelectorAll('[data-lvsendplanned],[data-leavesendnow]').forEach(b=>b.onclick=()=>sendPlannedLeaveNow(b.dataset.lvsendplanned||b.dataset.leavesendnow));
+}
+async function sendPlannedLeaveNow(id){
+  const rec=DB.leaveRequests.find(x=>x.id===id); if(!rec) return;
+  if(!confirm('Send this leave request to Management now?')) return;
+  try{
+    const updated=await apiSendPlannedLeaveRequest(id);
+    Object.assign(rec,updated);
+    try{ await apiSendMessage('manager','New leave request from '+PROFILE.name+' — '+rec.daysCount+' day(s) in '+rec.year+'. Open Office › Leave Schedules › Leave Requests to review.'); }catch(e){}
+    toast('Sent to Management');
+    offerSendLeaveLetter(rec);
+    paintLeaveApp();
+  }catch(e){ toast('Failed: '+(e.message||e)); }
 }
 // Re-checked both when the letter modal opens and again right before the insert,
 // since time can pass between the two (a colleague's request could land in between).
@@ -13871,27 +13943,80 @@ function openLeaveApplyModal(){
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal" style="max-width:560px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Review your leave letter</div><button id="closeLeaveApply" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
-    <p class="mini" style="margin:-4px 0 12px">We've drafted this for you — edit anything before sending.</p>
+    <p class="mini" style="margin:-4px 0 12px">We've drafted this for you — edit anything before saving. This just saves your plan; it won't reach Management until it's due and you tap "Send" on it.</p>
     <textarea id="lv_lettertext" rows="16" style="font-family:Georgia,'Times New Roman',serif;line-height:1.5">${esc(letterText)}</textarea>
-    <div class="formactions"><button class="btn primary" id="lvSendBtn" style="width:100%">Send to Management</button></div>
+    <div class="formactions"><button class="btn primary" id="lvSendBtn" style="width:100%">Save to my leave plan</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeLeaveApply').onclick=()=>ov.remove();
   document.getElementById('lvSendBtn').onclick=async()=>{
-    const btn=document.getElementById('lvSendBtn'); btn.disabled=true; btn.textContent='Sending…';
+    const btn=document.getElementById('lvSendBtn'); btn.disabled=true; btn.textContent='Saving…';
     try{
       const text=document.getElementById('lv_lettertext').value.trim();
-      if(!text){ toast('The letter is empty'); btn.disabled=false; btn.textContent='Send to Management'; return; }
+      if(!text){ toast('The letter is empty'); btn.disabled=false; btn.textContent='Save to my leave plan'; return; }
       try{ DB.leaveRequests=await apiLoadLeaveRequests(); }catch(e){}
       const raceConflict=leaveDatesConflictReason(leaveSelDates,PROFILE.key);
       if(raceConflict){ toast('A colleague just booked a conflicting date — '+raceConflict+' Please review your selection and try again.'); ov.remove(); paintLeaveApp(); return; }
-      const rec=await apiInsertLeaveRequest(leaveSelDates.slice().sort(),text,leaveCalYear);
+      const rec=await apiInsertLeaveRequest(leaveSelDates.slice().sort(),text,leaveCalYear,{status:'planned'});
       DB.leaveRequests.unshift(rec);
       leaveSelDates=[];
       ov.remove();
-      try{ await apiSendMessage('manager','New leave request from '+PROFILE.name+' — '+rec.daysCount+' day(s) in '+rec.year+'. Open Office › Leave Schedules › Leave Requests to review.'); }catch(e){}
-      toast('Leave request sent');
+      toast('Added to your leave plan — you\'ll be asked to send it once the date is close');
+      paintLeaveApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save to my leave plan'; }
+  };
+}
+function computeConsecutiveWeekdays(startIso,count){
+  const dates=[]; let d=new Date(startIso+'T00:00:00');
+  while(dates.length<count){ const iso=d.toISOString().slice(0,10); if(!isWeekendIso(iso)) dates.push(iso); d.setDate(d.getDate()+1); }
+  return dates;
+}
+// Emergency leave skips the plan-then-send flow entirely (it's immediate by
+// definition) and, unlike planned leave, doesn't block against colleague conflicts --
+// an emergency isn't something to reject over a scheduling clash, that's Management's
+// call to weigh when they see the request, not something to hard-stop here.
+function openEmergencyLeaveModal(){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal" style="max-width:520px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">🚨 Emergency leave</div><button id="closeEmLeave" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <p class="mini" style="margin:-4px 0 12px">For something urgent that can't wait for the usual planning flow — this goes straight to Management.</p>
+    ${fld('Start date','<input id="em_start" type="date" value="'+today()+'"/>')}
+    ${fld('Number of days','<input id="em_days" type="number" min="1" value="1"/>','weekends are skipped automatically')}
+    ${fld('Reason','<textarea id="em_reason" rows="3" placeholder="What\'s the emergency?"></textarea>')}
+    <div class="field"><label>Deduct from my annual leave days?</label>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="chip on" id="em_deductYes">Yes, deduct</button>
+        <button type="button" class="chip" id="em_deductNo">No, don't deduct</button>
+      </div>
+    </div>
+    <div class="formactions"><button class="btn primary" id="em_send" style="width:100%">Send to Management</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeEmLeave').onclick=()=>ov.remove();
+  let deduct=true;
+  document.getElementById('em_deductYes').onclick=()=>{ deduct=true; document.getElementById('em_deductYes').classList.add('on'); document.getElementById('em_deductNo').classList.remove('on'); };
+  document.getElementById('em_deductNo').onclick=()=>{ deduct=false; document.getElementById('em_deductNo').classList.add('on'); document.getElementById('em_deductYes').classList.remove('on'); };
+  document.getElementById('em_send').onclick=async()=>{
+    const btn=document.getElementById('em_send');
+    const start=val('em_start'), days=Math.max(1,num(val('em_days'))||1), reason=val('em_reason').trim();
+    if(!start){ toast('Pick a start date'); return; }
+    if(!reason){ toast('Add a reason'); return; }
+    const dates=computeConsecutiveWeekdays(start,days);
+    if(deduct){
+      const remaining=leaveDaysRemaining(PROFILE.key,leaveCalYear);
+      if(dates.length>remaining){ toast("That's "+dates.length+' day(s), but you only have '+remaining+' left this year — you can still send without deducting.'); return; }
+    }
+    btn.disabled=true; btn.textContent='Sending…';
+    try{
+      const letterText=buildLeaveLetterText(PROFILE.name,dates,new Date(start).getFullYear())+'\n\n(Emergency leave — '+reason+')';
+      const rec=await apiInsertLeaveRequest(dates,letterText,new Date(start).getFullYear(),{status:'pending',isEmergency:true,deductQuota:deduct});
+      DB.leaveRequests.unshift(rec);
+      ov.remove();
+      try{ await apiSendMessage('manager','🚨 Emergency leave request from '+PROFILE.name+' — '+rec.daysCount+' day(s) starting '+fmtLongDate(dates[0])+'. Open Office › Leave Schedules › Leave Requests to review.'); }catch(e){}
+      toast('Emergency leave sent to Management');
       offerSendLeaveLetter(rec);
       paintLeaveApp();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Send to Management'; }
@@ -13946,8 +14071,12 @@ function downloadLeaveLetter(id){
   doc.save('Leave_Request_'+rec.agentName.replace(/\s+/g,'_')+'_'+rec.year+'.pdf');
 }
 function leaveRequestsHtml(){
+  // 'planned' entries are a staff member's private plan, not yet sent -- RLS lets
+  // Management read every row (needed for the calendar's conflict checking), but
+  // they should never show up in Management's own request queue until the staff
+  // member actually taps "Send" on them.
   const pending=DB.leaveRequests.filter(r=>r.status==='pending').sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
-  const decided=DB.leaveRequests.filter(r=>r.status!=='pending').sort((a,b)=>(b.decidedAt||b.createdAt||'').localeCompare(a.decidedAt||a.createdAt||'')).slice(0,20);
+  const decided=DB.leaveRequests.filter(r=>r.status!=='pending'&&r.status!=='planned').sort((a,b)=>(b.decidedAt||b.createdAt||'').localeCompare(a.decidedAt||a.createdAt||'')).slice(0,20);
   return `
   <div class="sectitle" style="margin-top:0"><h3>Pending approval</h3><span class="cnt">${pending.length}</span></div>
   <div class="list">${pending.length?pending.map(leaveMgrRowHtml).join(''):emptyState(ic.calendar,'Nothing pending','New leave requests will show up here.')}</div>
@@ -13955,8 +14084,12 @@ function leaveRequestsHtml(){
   <div class="list">${decided.length?decided.map(leaveMgrRowHtml).join(''):emptyState(ic.calendar,'Nothing yet','')}</div>`;
 }
 function leaveMgrRowHtml(r){
-  const badge=r.status==='approved'?'<span class="tag ok">Approved</span>':r.status==='declined'?'<span class="tag dgr">Declined</span>':'<span class="tag warnt">Pending</span>';
-  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.agentName)} · ${r.daysCount} day${r.daysCount===1?'':'s'} (${r.year})</div><div class="meta">${(r.dates||[]).slice().sort().map(fmtLongDate).join(', ')}</div></div>${badge}</div>
+  const badge=r.status==='approved'?'<span class="tag ok">Approved</span>'
+    :r.status==='declined'?'<span class="tag dgr">Declined</span>'
+    :r.status==='rescheduled'?'<span class="tag dgr">Asked to reschedule</span>'
+    :'<span class="tag warnt">Pending</span>';
+  const emTag=r.isEmergency?`<span class="tag warnt" style="margin-left:6px">🚨 Emergency${r.deductQuota===false?' · not deducted':''}</span>`:'';
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.agentName)} · ${r.daysCount} day${r.daysCount===1?'':'s'} (${r.year})${emTag}</div><div class="meta">${(r.dates||[]).slice().sort().map(fmtLongDate).join(', ')}</div></div>${badge}</div>
   <div class="foot" style="display:flex;gap:7px;flex-wrap:wrap">
     <button class="chip" data-leavereview="${r.id}">Preview &amp; decide</button>
   </div></div>`;
@@ -13972,10 +14105,11 @@ function openLeaveReviewModal(id){
   ov.innerHTML=`<div id="announceModal" style="max-width:560px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(rec.agentName)} — leave letter</div><button id="closeLeaveReview" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     <div class="formwrap" style="white-space:pre-wrap;font-family:Georgia,'Times New Roman',serif;line-height:1.6;font-size:13.5px;max-height:45vh;overflow:auto">${esc(rec.letterText||'')}</div>
-    ${isPending?`<div class="formactions" style="margin-top:14px">
+    ${isPending?`<div class="formactions" style="margin-top:14px;flex-wrap:wrap">
       <button class="btn ghost" id="lvDeclineBtn" style="flex:1">Decline</button>
+      <button class="btn ghost" id="lvRescheduleBtn" style="flex:1">Reschedule</button>
       <button class="btn primary" id="lvApproveBtn" style="flex:1">Approve &amp; sign</button>
-    </div>`:`<div class="mini" style="margin-top:14px">${rec.status==='approved'?'Approved':'Declined'} by ${esc(rec.decidedByName||'')} on ${(rec.decidedAt||'').slice(0,10)}</div>
+    </div>`:`<div class="mini" style="margin-top:14px">${rec.status==='approved'?'Approved':rec.status==='rescheduled'?'Asked to reschedule':'Declined'} by ${esc(rec.decidedByName||'')} on ${(rec.decidedAt||'').slice(0,10)}${rec.status==='rescheduled'&&rec.rescheduleNote?' — "'+esc(rec.rescheduleNote)+'"':''}</div>
     <div class="formactions" style="margin-top:14px"><button class="btn ghost" id="lvReviewDownload" style="width:100%">⬇ Download PDF</button></div>`}
   </div>`;
   document.body.appendChild(ov);
@@ -14004,9 +14138,38 @@ function openLeaveReviewModal(id){
         paintLeaveApp();
       }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Decline'; }
     };
+    document.getElementById('lvRescheduleBtn').onclick=()=>openLeaveRescheduleNoteModal(rec,ov);
   } else {
     document.getElementById('lvReviewDownload').onclick=()=>downloadLeaveLetter(rec.id);
   }
+}
+// A reschedule isn't a decline -- the dates just don't work, so it asks for a reason
+// and frees the dates back up (see leaveIsBlocking) so the staff member can plan
+// fresh ones once they've read why.
+function openLeaveRescheduleNoteModal(rec,parentOv){
+  let ov2=document.getElementById('announceOverlayReschedule'); if(ov2) ov2.remove();
+  ov2=document.createElement('div'); ov2.id='announceOverlayReschedule'; ov2.className='overlay';
+  ov2.style.zIndex='10001';
+  ov2.innerHTML=`<div id="announceModal" style="max-width:480px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Ask ${esc(rec.agentName)} to reschedule</div><button id="closeReschedNote" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Why do these dates need to change?','<textarea id="lv_reschednote" rows="4" placeholder="e.g. Two other agents are already off that week"></textarea>')}
+    <div class="formactions"><button class="btn primary" id="lv_reschedSend" style="width:100%">Send &amp; ask to reschedule</button></div>
+  </div>`;
+  document.body.appendChild(ov2);
+  ov2.addEventListener('click',e=>{ if(e.target===ov2) ov2.remove(); });
+  document.getElementById('closeReschedNote').onclick=()=>ov2.remove();
+  document.getElementById('lv_reschedSend').onclick=async()=>{
+    const note=val('lv_reschednote').trim();
+    if(!note){ toast('Add a short note explaining why'); return; }
+    const btn=document.getElementById('lv_reschedSend'); btn.disabled=true; btn.textContent='Sending…';
+    try{
+      const updated=await apiRescheduleLeaveRequest(rec.id,note);
+      Object.assign(rec,updated);
+      toast('Sent back for rescheduling'); ov2.remove(); if(parentOv) parentOv.remove();
+      try{ await apiSendMessage(rec.agentKey,'Management has asked you to reschedule your leave request for '+rec.daysCount+' day(s) in '+rec.year+': "'+note+'" — open Office › Leave Schedules to pick new dates.'); }catch(e){}
+      paintLeaveApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Send & ask to reschedule'; }
+  };
 }
 function leaveSettingsHtml(){
   const agentStaff=STAFF_LIST.filter(s=>s.role==='agent');
