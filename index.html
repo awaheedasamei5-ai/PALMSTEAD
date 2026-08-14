@@ -90,15 +90,15 @@ a{color:var(--green2)}
 
 /* ---------- LOGIN ---------- */
 #login{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;justify-content:center;align-items:center;
-  padding:32px 20px;background:radial-gradient(130% 100% at 50% -10%, #163B7A 0%, var(--ink) 52%, #050E1F 100%);
-  color:#EAF0FB;position:relative;overflow:hidden}
+  padding:32px 20px;background:var(--wave-bg,radial-gradient(130% 100% at 50% -10%, #163B7A 0%, var(--ink) 52%, #050E1F 100%));
+  color:#EAF0FB;position:relative;overflow:hidden;transition:background 1.2s ease}
 
 @keyframes kenburns{0%{transform:scale(1.02) translate(0,0)}100%{transform:scale(1.13) translate(-1.5%,-1.5%)}}
 #login::before{content:"";position:absolute;inset:0;opacity:.09;pointer-events:none;
   background-image:linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px);
   background-size:46px 46px;mask:radial-gradient(120% 80% at 50% 0%,#000,transparent 75%)}
 #login::after{content:"";position:absolute;left:50%;top:8%;width:520px;height:520px;transform:translateX(-50%);
-  background:radial-gradient(circle,rgba(190,242,100,.16),transparent 65%);pointer-events:none}
+  background:radial-gradient(circle,var(--wave-orb2,rgba(103,232,249,.16)),transparent 65%);pointer-events:none}
 .brand{position:relative;text-align:center;margin-bottom:24px;animation:fadeUp .5s ease both}
 .brand .mark{display:flex;justify-content:center;align-items:center;margin-bottom:16px}
 .brand .glyph{width:76px;height:76px;border-radius:22px;overflow:hidden;box-shadow:0 10px 26px rgba(11,30,61,.4),0 0 0 1px rgba(255,255,255,.08) inset;animation:floaty 5s ease-in-out infinite}
@@ -107,7 +107,7 @@ a{color:var(--green2)}
 .brand h1{font-family:'Space Grotesk',sans-serif;font-size:30px;line-height:1.06;letter-spacing:.03em;text-transform:uppercase;color:#fff}
 .brand-big{margin-bottom:34px;position:relative}
 .brand-big::before{content:'';position:absolute;top:-40px;left:50%;transform:translateX(-50%);width:220px;height:220px;
-  background:radial-gradient(circle,rgba(132,204,22,.28) 0%,rgba(132,204,22,0) 70%);pointer-events:none;z-index:0}
+  background:radial-gradient(circle,var(--wave-orb1,rgba(14,165,183,.28)) 0%,rgba(14,165,183,0) 70%);pointer-events:none;z-index:0}
 .brand-big .mark{position:relative;z-index:1}
 .brand-big .glyph-big{width:104px;height:104px;border-radius:28px;box-shadow:0 16px 38px rgba(11,30,61,.5),0 0 0 1px rgba(255,255,255,.1) inset}
 .brand-big .h1-big{font-size:42px;margin-top:18px;text-shadow:0 4px 20px rgba(0,0,0,.25);letter-spacing:.01em;position:relative;z-index:1}
@@ -178,9 +178,9 @@ a{color:var(--green2)}
 /* ---------- LOGIN — role choice (futuristic redesign) ---------- */
 .loginOrbs{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
 .loginOrbs .orb{position:absolute;border-radius:50%;filter:blur(50px);opacity:.45;animation:orbDrift 14s ease-in-out infinite alternate}
-.loginOrbs .orb1{width:280px;height:280px;left:-60px;top:6%;background:radial-gradient(circle,rgba(132,204,22,.55),transparent 70%);animation-duration:16s}
-.loginOrbs .orb2{width:340px;height:340px;right:-90px;top:32%;background:radial-gradient(circle,rgba(59,130,246,.5),transparent 70%);animation-duration:19s;animation-delay:-4s}
-.loginOrbs .orb3{width:220px;height:220px;left:18%;bottom:-40px;background:radial-gradient(circle,rgba(234,179,8,.4),transparent 70%);animation-duration:13s;animation-delay:-7s}
+.loginOrbs .orb1{width:280px;height:280px;left:-60px;top:6%;background:radial-gradient(circle,var(--wave-orb1,rgba(14,165,183,.55)),transparent 70%);animation-duration:16s}
+.loginOrbs .orb2{width:340px;height:340px;right:-90px;top:32%;background:radial-gradient(circle,var(--wave-orb2,rgba(34,211,238,.5)),transparent 70%);animation-duration:19s;animation-delay:-4s}
+.loginOrbs .orb3{width:220px;height:220px;left:18%;bottom:-40px;background:radial-gradient(circle,var(--wave-orb3,rgba(201,162,39,.35)),transparent 70%);animation-duration:13s;animation-delay:-7s}
 @keyframes orbDrift{0%{transform:translate(0,0) scale(1)}100%{transform:translate(26px,-22px) scale(1.16)}}
 
 .appPill{position:relative;display:flex;align-items:center;gap:9px;margin:18px auto 0;padding:8px 16px 8px 8px;
@@ -673,7 +673,7 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
   padding:4px 10px;border-radius:100px;letter-spacing:.04em;text-transform:uppercase}
 .demoflag .d{width:6px;height:6px;border-radius:50%;background:#8A6E12;animation:ringPulse 1.6s infinite}
 .bootscreen{position:fixed;inset:0;z-index:200;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
-  background:radial-gradient(130% 100% at 50% 30%, #163B7A 0%, var(--ink) 60%, #050E1F 100%);
+  background:var(--wave-bg,radial-gradient(130% 100% at 50% 30%, #163B7A 0%, var(--ink) 60%, #050E1F 100%));
   opacity:1;transition:opacity .45s ease;}
 .bootscreen.fade{opacity:0;pointer-events:none}
 .bootLockup{display:flex;align-items:center;gap:14px}
@@ -694,7 +694,10 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 .bootscreen .boot-word span:nth-child(9){animation-delay:.60s}
 .bootscreen .boot-sub{font-size:11.5px;color:#8FAE9C;letter-spacing:.05em;opacity:0;animation:fadeIn .6s .85s ease forwards}
 .greetScreen{position:fixed;inset:0;z-index:250;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
-  background:radial-gradient(130% 100% at 50% 30%, #163B7A 0%, var(--ink) 60%, #050E1F 100%);opacity:1;transition:opacity .5s ease;cursor:pointer;padding:24px;text-align:center}
+  background:var(--wave-bg,radial-gradient(130% 100% at 50% 30%, #163B7A 0%, var(--ink) 60%, #050E1F 100%));opacity:1;transition:opacity .5s ease;cursor:pointer;padding:24px;text-align:center}
+.greetScreen .chip-insight{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);border-radius:100px;padding:8px 16px;font-size:12px;font-weight:600;color:#EAF7FA;
+  display:flex;align-items:center;gap:7px;opacity:0;animation:fadeUp .6s .7s ease forwards;max-width:320px;backdrop-filter:blur(6px)}
+.greetScreen .chip-insight svg{width:14px;height:14px;flex:0 0 auto;color:var(--gold2,#67E8F9)}
 .greetScreen.fade{opacity:0;pointer-events:none}
 .greetScreen .glyphwrap{position:relative;width:70px;height:70px;display:grid;place-items:center}
 .greetScreen .ring{position:absolute;inset:0;border-radius:100px;border:2px solid rgba(132,204,22,.5);animation:ringPulse 1.7s ease-out infinite}
@@ -836,6 +839,29 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
 <div id="toast"><span class="dot"></span><span id="toastMsg"></span></div>
 
 <script>
+/* ====================== WAVE BACKGROUND VARIANTS ======================
+   Six gradient treatments, all within the same navy -> teal -> white premium
+   family (matching the wave-gradient reference), so every sign-in feels a
+   little different without ever leaving the palette. Picked once per full
+   page load and applied via CSS custom properties, set here (before the
+   boot screen's first paint) rather than after, to avoid a flash of the
+   fallback colors. */
+const WAVE_VARIANTS=[
+  {bg:'linear-gradient(165deg,#050B14 0%,#0A2A3A 30%,#0C7A93 55%,#22D3EE 74%,#BAE6E8 90%,#F2F6F7 100%)',orb1:'rgba(14,165,183,.55)',orb2:'rgba(34,211,238,.5)',orb3:'rgba(201,162,39,.3)'},
+  {bg:'radial-gradient(150% 115% at 25% -15%,#123F52 0%,#0B1E3D 45%,#050B14 100%)',orb1:'rgba(34,211,238,.5)',orb2:'rgba(14,165,183,.45)',orb3:'rgba(103,232,249,.3)'},
+  {bg:'linear-gradient(135deg,#0B1E3D 0%,#0A2A3A 35%,#0C7A93 70%,#67E8F9 100%)',orb1:'rgba(103,232,249,.5)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(201,162,39,.28)'},
+  {bg:'linear-gradient(180deg,#050B14 0%,#0B1E3D 55%,#0A3E4E 78%,#14C7D6 100%)',orb1:'rgba(20,199,214,.5)',orb2:'rgba(11,30,61,.6)',orb3:'rgba(34,211,238,.35)'},
+  {bg:'linear-gradient(160deg,#050B14 0%,#0B1E3D 30%,#0C7A93 60%,#C9A227 85%,#67E8F9 100%)',orb1:'rgba(201,162,39,.4)',orb2:'rgba(14,165,183,.5)',orb3:'rgba(103,232,249,.3)'},
+  {bg:'radial-gradient(130% 95% at 50% 105%,#67E8F9 0%,#0C7A93 35%,#0B1E3D 72%,#050B14 100%)',orb1:'rgba(103,232,249,.45)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(34,211,238,.35)'}
+];
+(function applyWaveVariant(){
+  const v=WAVE_VARIANTS[Math.floor(Math.random()*WAVE_VARIANTS.length)];
+  const root=document.documentElement.style;
+  root.setProperty('--wave-bg',v.bg);
+  root.setProperty('--wave-orb1',v.orb1);
+  root.setProperty('--wave-orb2',v.orb2);
+  root.setProperty('--wave-orb3',v.orb3);
+})();
 /* ====================== EMBEDDED LOGO ====================== */
 const LOGO_SRC = "./logo.png";
 const TRULANDER_LOGO_SRC = "./trulander-logo.png";
@@ -3712,17 +3738,39 @@ async function doLogin(){
 // line twice in a row -- paired with an independently-rotating motivational line
 // underneath, also time-of-day aware, so the two never feel copy-pasted together.
 const GREETINGS={
-  morning:['Good morning, {n} ☀️','Rise and shine, {n}','Morning, {n} — fresh start','Hello {n}, let\'s make today count','Up early, {n}? Let\'s go'],
-  afternoon:['Good afternoon, {n}','Hey {n}, hope it\'s going well','Afternoon, {n}','Welcome back, {n}','Good to see you, {n}'],
-  evening:['Good evening, {n}','Evening, {n}','Hey {n}, welcome back','Welcome back, {n}','Winding down, {n}?'],
-  night:['Working late, {n}?','Good evening, {n}','Hey {n}, still at it','Welcome back, {n}','Burning the midnight oil, {n}?']
+  morning:['Good morning, {n} ☀️','Rise and shine, {n}','Morning, {n} — fresh start','Hello {n}, let\'s make today count','Up early, {n}? Let\'s go','Top of the morning, {n}','A new pipeline day, {n}','Morning, {n} — let\'s build today'],
+  afternoon:['Good afternoon, {n}','Hey {n}, hope it\'s going well','Afternoon, {n}','Welcome back, {n}','Good to see you, {n}','Midday check-in, {n}','Afternoon momentum, {n}'],
+  evening:['Good evening, {n}','Evening, {n}','Hey {n}, welcome back','Welcome back, {n}','Winding down, {n}?','Evening, {n} — nearly there'],
+  night:['Working late, {n}?','Good evening, {n}','Hey {n}, still at it','Welcome back, {n}','Burning the midnight oil, {n}?','Late one, {n} — good on you']
 };
 const MOTIVATIONS={
-  morning:['Every plot sold starts with one good conversation today.','New day, new leads — let\'s find them.','Somewhere out there, someone\'s ready to buy. Go find them.','A clear pipeline beats a full inbox — sort it early.','First call of the day sets the tone for all of them.'],
-  afternoon:['Halfway through — keep the follow-ups moving.','A quick check-in call can close a stalled deal.','Momentum compounds. Don\'t let it stall this afternoon.','Someone on your list is waiting for a nudge. Call them.','Small consistent actions beat one big push.'],
-  evening:['Wrap up loose ends before you log off.','Tomorrow\'s easier when today\'s follow-ups are done.','One more call could be the one that closes.','Review what moved today — and what needs a push tomorrow.','Finish strong — it\'s how deals stay warm overnight.'],
+  morning:['Every plot sold starts with one good conversation today.','New day, new leads — let\'s find them.','Somewhere out there, someone\'s ready to buy. Go find them.','A clear pipeline beats a full inbox — sort it early.','First call of the day sets the tone for all of them.','The best time to follow up was yesterday. The next best is now.','Small wins early set up a strong close later.'],
+  afternoon:['Halfway through — keep the follow-ups moving.','A quick check-in call can close a stalled deal.','Momentum compounds. Don\'t let it stall this afternoon.','Someone on your list is waiting for a nudge. Call them.','Small consistent actions beat one big push.','The afternoon slump is exactly when a rival agent gives up. Don\'t.','One more call before lunch beats three after.'],
+  evening:['Wrap up loose ends before you log off.','Tomorrow\'s easier when today\'s follow-ups are done.','One more call could be the one that closes.','Review what moved today — and what needs a push tomorrow.','Finish strong — it\'s how deals stay warm overnight.','A five-minute recap now saves a scramble tomorrow.'],
   night:['Rest well — the pipeline will be here tomorrow.','Late nights build the business, but sleep builds you.','Whatever\'s pending can wait until morning.','Steady progress beats burnout. Get some rest.','Tomorrow\'s leads need a rested mind today.']
 };
+/* Intelligence chip: a genuinely dynamic line on the greeting screen, not more
+   canned copy. Two sources, both non-blocking so sign-in speed is unaffected --
+   a reliable instant read of the calendar (always available), and for managers,
+   a best-effort lightweight query for pending approvals that only shows up if
+   it resolves before the greeting closes (never delays sign-in waiting on it). */
+function temporalInsight(){
+  const d=new Date(); const day=d.getDay(); const date=d.getDate();
+  const lastDay=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
+  if(day===1) return 'New week — worth planning your top 3 priorities before the first call.';
+  if(day===5) return "It's Friday — a good day to tie up loose ends before the weekend.";
+  if(lastDay-date<=2) return 'Month-end is close — a good moment to check progress against target.';
+  if(date<=2) return 'Fresh month, fresh pipeline — a good time to reconnect with warm leads.';
+  return null;
+}
+async function fetchApprovalsInsight(){
+  if(DEMO_MODE||!sb) return null;
+  try{
+    const {count,error}=await sb.from('payments').select('id',{count:'exact',head:true}).eq('status','pending');
+    if(error||!count) return null;
+    return count+' payment'+(count===1?'':'s')+' waiting on your approval.';
+  }catch(e){ return null; }
+}
 function pickGreeting(name){
   const h=new Date().getHours();
   const bucket = h>=5&&h<12?'morning' : h>=12&&h<17?'afternoon' : h>=17&&h<21?'evening' : 'night';
@@ -3731,7 +3779,7 @@ function pickGreeting(name){
   const motivation=mlist[Math.floor(Math.random()*mlist.length)];
   return {text:tpl.replace('{n}',name), motivation, bucket};
 }
-function showGreetScreen(name){
+function showGreetScreen(name,isManager){
   return new Promise(resolve=>{
     const {text,motivation,bucket}=pickGreeting(name);
     const icon=(bucket==='morning'||bucket==='afternoon')?ic.sun:ic.moon;
@@ -3739,12 +3787,18 @@ function showGreetScreen(name){
     el.innerHTML=`<span class="glyphwrap"><span class="ring"></span><span class="gIcon">${icon}</span></span>
       <div class="gText">${esc(text)}</div>
       <div class="gSub">${esc(motivation)}</div>
+      <div id="gInsight"></div>
       <div class="gTap">Tap to continue</div>`;
     document.body.appendChild(el);
     let done=false;
     const finish=()=>{ if(done) return; done=true; el.classList.add('fade'); setTimeout(()=>{ el.remove(); resolve(); },400); };
     el.addEventListener('click',finish);
-    setTimeout(finish,2800);
+    setTimeout(finish,3400);
+    (async()=>{
+      const insight=isManager?(await fetchApprovalsInsight())||temporalInsight():temporalInsight();
+      const slot=document.getElementById('gInsight');
+      if(insight&&slot) slot.innerHTML=`<div class="chip-insight">${ic.spark}${esc(insight)}</div>`;
+    })();
   });
 }
 async function enterApp(){
@@ -3760,7 +3814,7 @@ async function enterApp(){
   // 5s on top of however long the network took. Running both at once means the wait is
   // whichever is longer, not both added together -- same animation, faster sign-in.
   const loadPromise=(async()=>{ try{ await apiLoadConfig(); await apiLoadAll(); }catch(e){ toast('Could not load data'); } })();
-  const greetPromise=showGreetScreen(PROFILE.role==='manager'?'Management':PROFILE.name);
+  const greetPromise=showGreetScreen(PROFILE.role==='manager'?'Management':PROFILE.name,PROFILE.role==='manager');
   await Promise.all([loadPromise,greetPromise]);
   refreshAnnounceBubble();
   refreshChatNavBadge();
