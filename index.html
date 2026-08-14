@@ -3310,7 +3310,7 @@ function bindCompanyLeadsRows(container){
 // Ties a Company Lead to exactly how they heard about us -- when it's a banner,
 // down to the specific banner location -- so Banner Tracking can show real
 // enquiry/lead counts per location instead of just placement status.
-async function openLeadSourceModal(lead){
+async function openLeadSourceModal(lead,onSaved){
   if(!BANNERS_LOADED){ try{ DB.banners=await apiLoadBanners(); BANNERS_LOADED=true; }catch(e){} }
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
@@ -3355,7 +3355,8 @@ async function openLeadSourceModal(lead){
       await apiUpdateLead(lead.id,{leadSource:source,bannerId});
       Object.assign(lead,{leadSource:source,bannerId});
       toast('Source saved'); ov.remove();
-      const body=document.getElementById('companyLeadsBody'); if(body){ body.innerHTML=companyLeadsBodyHtml(); bindCompanyLeadsRows(body); }
+      if(onSaved) onSaved();
+      else{ const body=document.getElementById('companyLeadsBody'); if(body){ body.innerHTML=companyLeadsBodyHtml(); bindCompanyLeadsRows(body); } }
     }catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save'; }
   };
 }
@@ -7907,6 +7908,7 @@ function formUpdate(id){ const l=findLeadById(id); if(!l){ route('home'); return
   <div class="formwrap">
   <div class="sectitle" style="margin-top:0"><h3>Client</h3></div>
   <div class="grid2">${fld('Full name','<input id="u_name" value="'+esc(l.name)+'"/>')}${fld('Contact','<input id="u_contact" value="'+esc(l.contact||'')+'"/>')}</div>
+  <div class="mini" style="margin:-6px 0 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">📍 ${l.leadSource?`Heard about us via <b>${esc(l.leadSource)}</b>${(()=>{ const b=l.bannerId?(DB.banners||[]).find(x=>x.id===l.bannerId):null; return b?' — '+esc(b.name):''; })()}`:'How did this client hear about us?'}<button class="chip" id="u_sourceBtn" type="button" style="margin-left:auto">${l.leadSource?'Change':'Add source'}</button></div>
   <div class="sectitle"><h3>Plot &amp; pricing</h3><span class="cnt">editable — recalculates live</span></div>
   <div class="grid2">${fld('Plot type',sel('u_plottype',['Full Plot','Half Plot'],l.plotType))}${fld('No. of plots','<input id="u_noplots" type="number" step="0.5" min="0.5" value="'+num(l.noPlots)+'"/>')}</div>
   <div class="grid2">${fld('Unit price (GHS)','<input id="u_unitprice" type="number" value="'+num(l.unitPrice)+'"/>','current standard price: '+ghs(expectedUnit))}${fld('Discount given (GHS)','<input id="u_discount" type="number" value="'+num(l.discount)+'"/>')}</div>
@@ -7983,6 +7985,7 @@ function formUpdate(id){ const l=findLeadById(id); if(!l){ route('home'); return
   bindDiscModeToggle('upd',()=>UPD_DISC_MODE,m=>UPD_DISC_MODE=m,paintUCalc);
   paintUCalc();
   document.getElementById('saveUpd').onclick=()=>handleSaveUpdateClick(id,myDep);
+  document.getElementById('u_sourceBtn').onclick=()=>openLeadSourceModal(l,()=>formUpdate(id));
   document.getElementById('delLead').onclick=()=>deleteLeadConfirm(id,l.name);
   document.getElementById('dlUpdPdf').onclick=()=>downloadClientRecordPDF(l.name,l.contact,l,myPayments,g,num(l.amtPaid),bal);
   document.getElementById('dlUpdQuote').onclick=()=>buildClientQuotationPDF(l);
@@ -13837,8 +13840,13 @@ function openBannerModal(existing){
   ov=document.createElement('div'); ov.id='announceOverlay';
   const areas=[...new Set(DB.banners.map(b=>b.area).filter(Boolean))].sort();
   const curLabel=existing?(BANNER_STATUS[existing.status]||BANNER_STATUS.placed).label:'Perfect condition';
+  const leadCount=existing?(BANNER_LEAD_COUNTS[existing.id]||0):0;
   ov.innerHTML=`<div id="announceModal">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${existing?'Edit entry':'Add banner / location'}</div><button id="closeBannerModal" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${existing?`<div class="rowcard" style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div><div style="font-size:20px;font-weight:800;font-family:'IBM Plex Mono',monospace">${leadCount}</div><div class="mini">lead${leadCount===1?'':'s'} attributed to this banner</div></div>
+      ${existing.lat!=null&&existing.lng!=null?`<a class="chip" href="https://www.google.com/maps/dir/?api=1&destination=${existing.lat},${existing.lng}" target="_blank" rel="noopener">📍 Directions</a>`:''}
+    </div>`:''}
     ${fld('Name *','<input id="bn_name" placeholder="e.g. Spintex Road – near GOIL" value="'+esc(existing?existing.name:'')+'"/>')}
     ${fld('Area *','<input id="bn_area" list="bnAreaList" placeholder="e.g. Spintex" value="'+esc(existing?existing.area:'')+'"/>')}
     <datalist id="bnAreaList">${areas.map(a=>`<option value="${esc(a)}"></option>`).join('')}</datalist>
