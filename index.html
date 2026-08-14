@@ -881,7 +881,7 @@ urlToDataUri(TRULANDER_LOGO_SRC).then(u=>TRULANDER_LOGO_DATA_URI=u).catch(()=>{}
 
 /* ================= client / mode state ================= */
 let sb=null, LIVE_MODE=false, DEMO_MODE=true, USER=null, PROFILE=null, pickStaff=null, ddOpen=false;
-let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],pendingPayments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[],leaveRequests:[],memos:[],banners:[]};
+let DB={leads:[],enquiries:[],complaints:[],sitevisits:[],activity:[],profiles:[],plots:[],myPlots:[],payments:[],pendingPayments:[],announcements:[],allocations:[],messages:[],targetSelections:[],agentMonthStats:[],tasks:[],feedback:[],downloads:[],leaveRequests:[],memos:[],banners:[],contracts:[],contractRequests:[]};
 /* ---- display preferences (font size / family), applied via CSS custom
    properties so they take effect instantly with no per-page rework ---- */
 const DISPLAY_FONT_FAMILIES={
@@ -1977,11 +1977,12 @@ async function apiLoadAll(){
       }
     }catch(e){ DB.plots=[]; DB.myPlots=[]; } // plot inventory table not set up yet — feature just shows empty, nothing else breaks
   };
+  const loadContracts=async()=>{ try{ DB.contracts=await apiLoadContracts(); }catch(e){ DB.contracts=[]; } };
   // Every read below is independent of the others, so they run as one concurrent wave
   // instead of one-after-another — this is most of what makes sign-in-to-dashboard slow.
   const results=await Promise.all([
     q('leads'),q('enquiries'),q('complaints'),q('site_visits'),q('activity_log'),
-    loadProfiles(),loadPayments(),loadPlots(),
+    loadProfiles(),loadPayments(),loadPlots(),loadContracts(),
     apiLoadAnnouncements(),apiLoadAllocations(),apiLoadMessages(),apiLoadTargetSelections(today().slice(0,7),PROFILE.role==='manager'),
     apiLoadAgentMonthStats(),apiLoadTasks(),apiLoadFeedback(),apiLoadDownloads()
   ]);
@@ -1989,11 +1990,11 @@ async function apiLoadAll(){
   DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key||PROFILE.role==='manager').map(mapLead);
   if(PROFILE.role!=='manager') DB.leads=le.filter(r=>r.agent_key===PROFILE.agent_key).map(mapLead);
   DB.enquiries=en.map(mapEnq);DB.complaints=cm.map(mapCmp);DB.sitevisits=sv.map(mapSV);DB.activity=ac.map(mapAct);
-  DB.announcements=results[8]; DB.allocations=results[9]; DB.messages=results[10]; DB.targetSelections=results[11];
-  DB.tasks=results[13];
-  DB.agentMonthStats=results[12];
-  DB.feedback=results[14];
-  DB.downloads=results[15];
+  DB.announcements=results[9]; DB.allocations=results[10]; DB.messages=results[11]; DB.targetSelections=results[12];
+  DB.tasks=results[14];
+  DB.agentMonthStats=results[13];
+  DB.feedback=results[15];
+  DB.downloads=results[16];
 }
 async function apiInsertLead(l,c,agentKeyOverride){
   if(DEMO_MODE){ const key=agentKeyOverride||PROFILE.key; const d=await demoLoad(); const row={id:uid(),agent:key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal,
@@ -2072,8 +2073,10 @@ async function apiClientLoadAll(){
   if(le||pe||ve||ee||ce) throw (le||pe||ve||ee||ce);
   let news=[];
   try{ news=(await apiLoadAnnouncements()).filter(a=>a.active&&(a.audience==='clients'||a.audience==='both')); }catch(e){}
+  let contracts=[]; try{ const r=await sb.from('contracts').select('*').order('created_at',{ascending:false}); contracts=r.data||[]; }catch(e){}
   CLIENT_DB={leads:(leads||[]).map(mapLead),payments:(payments||[]).map(mapClientPay),
-    sitevisits:(visits||[]).map(mapSV),enquiries:(enqs||[]).map(mapEnq),complaints:(cmps||[]).map(mapCmp),announcements:news};
+    sitevisits:(visits||[]).map(mapSV),enquiries:(enqs||[]).map(mapEnq),complaints:(cmps||[]).map(mapCmp),announcements:news,
+    contracts:contracts.map(r=>({id:r.id,leadId:r.lead_id,clientName:r.client_name,createdAt:r.created_at}))};
   return CLIENT_DB;
 }
 async function apiClientAgentContact(){
@@ -7091,6 +7094,79 @@ function pickForUpdate(){
   document.getElementById('uq').oninput=paint; paint();
 }
 let UPD_DISC_MODE='total';
+// Contract of Sale is never generated directly from the pipeline -- Elizabeth/
+// Management build it from the dedicated Contract of Sale app (search-based) so
+// every contract goes through the same place. From here, a client's own agent
+// can only download an ALREADY-created contract, or -- if none exists yet --
+// request one, which lands in that app's Requests queue plus the requestee's chat.
+function contractSectionHtml(l){
+  const hasContract=(DB.contracts||[]).some(c=>c.leadId===l.id);
+  if(hasContract) return `<div style="margin-bottom:18px"><button class="btn ghost" id="dlUpdContract" style="width:100%">⬇ Download Contract of Sale</button></div>`;
+  if(canManageContracts()) return '';
+  const pendingReq=(DB.contractRequests||[]).find(r=>r.leadId===l.id&&r.status==='pending'&&r.requestedBy===PROFILE.key);
+  if(pendingReq) return `<div class="rowcard" style="margin-bottom:18px;padding:12px 14px"><div class="mini">📄 Contract requested ${esc((pendingReq.createdAt||'').slice(0,10))} — waiting on Elizabeth/Management.</div></div>`;
+  return `<div style="margin-bottom:18px"><button class="btn ghost" id="reqContractBtn" style="width:100%">📄 Request Contract for Your Client</button></div>`;
+}
+function bindContractSectionCtrls(l){
+  const dlBtn=document.getElementById('dlUpdContract');
+  if(dlBtn) dlBtn.onclick=async(e)=>{
+    const btn=e.currentTarget; const orig=btn.textContent; btn.disabled=true; btn.textContent='Generating…';
+    try{ await buildContractOfSalePDF(l); } finally { btn.disabled=false; btn.textContent=orig; }
+  };
+  const reqBtn=document.getElementById('reqContractBtn');
+  if(reqBtn) reqBtn.onclick=()=>openContractRequestModal(l);
+}
+function openContractRequestModal(lead){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  const recipients=STAFF_LIST.filter(s=>s.key==='elizabeth'||s.role==='manager');
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Request Contract for Your Client</div><button id="closeContractReq" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="rowcard" style="margin-bottom:14px;padding:12px 14px">
+      <div class="nm">${esc(lead.name)}</div>
+      <div class="mini">${esc(lead.contact||'')} · ${esc(lead.plotType||'')}${lead.noPlots?' ×'+esc(lead.noPlots):''} · ${esc(lead.paymentPlan||'')}</div>
+    </div>
+    <p class="mini" style="margin:-4px 0 12px">The client's details fill in automatically — just add a note if there's anything they need to know.</p>
+    ${fld('Note (optional)','<textarea id="cr_note" rows="3" placeholder="Anything relevant to this request…"></textarea>')}
+    <div class="sectitle" style="margin-top:6px"><h3 style="font-size:13px">Send to</h3></div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+      ${recipients.map(r=>`<label class="lvEidRow"><input type="checkbox" class="cr_person" value="${esc(r.key)}" checked/> ${esc(r.name)}</label>`).join('')||'<div class="mini">No one set up to receive contract requests yet.</div>'}
+    </div>
+    <p class="mini" style="margin:-2px 0 10px">This always lands in their chat and in the Contract app's Requests. You can also send a copy to their email or WhatsApp if it's on file.</p>
+    <div style="display:flex;gap:16px;margin-bottom:14px">
+      <label class="lvEidRow"><input type="checkbox" id="cr_email"/> Also email</label>
+      <label class="lvEidRow"><input type="checkbox" id="cr_wa"/> Also WhatsApp</label>
+    </div>
+    <div class="formactions"><button class="btn primary" id="cr_send" style="width:100%">Send request</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeContractReq').onclick=()=>ov.remove();
+  document.getElementById('cr_send').onclick=async()=>{
+    const note=val('cr_note').trim();
+    const selectedKeys=[...document.querySelectorAll('.cr_person:checked')].map(c=>c.value);
+    if(!selectedKeys.length){ toast('Select at least one person to send this to'); return; }
+    const btn=document.getElementById('cr_send'); btn.disabled=true; btn.textContent='Sending…';
+    try{
+      const rec=await apiInsertContractRequest(lead.id,lead.name,note);
+      DB.contractRequests=DB.contractRequests||[]; DB.contractRequests.unshift(rec);
+      for(const key of selectedKeys){
+        try{ await apiSendMessage(key,'Contract requested for '+lead.name+' by '+PROFILE.name+(note?(': "'+note+'"'):'')+'. Open Office Desk › Contract of Sale › Requests to review.'); }catch(e){}
+      }
+      const wantsEmail=document.getElementById('cr_email').checked, wantsWa=document.getElementById('cr_wa').checked;
+      if(wantsEmail||wantsWa){
+        const msg='Contract requested for '+lead.name+' ('+(lead.contact||'')+') by '+PROFILE.name+(note?('. Note: '+note):'')+'.';
+        recipients.filter(r=>selectedKeys.includes(r.key)).forEach(r=>{
+          const profile=(DB.profiles||[]).find(p=>p.agent_key===r.key)||{};
+          if(wantsEmail&&profile.email) window.open('mailto:'+profile.email+'?subject='+encodeURIComponent('Contract request — '+lead.name)+'&body='+encodeURIComponent(msg),'_blank');
+          if(wantsWa&&(profile.phone||profile.whatsapp)) window.open('https://wa.me/'+waNumberFromPhone(profile.whatsapp||profile.phone)+'?text='+encodeURIComponent(msg),'_blank');
+        });
+      }
+      toast('Request sent'); ov.remove();
+      formUpdate(lead.id);
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Send request'; }
+  };
+}
 function formUpdate(id){ const l=findLeadById(id); if(!l){ route('home'); return; }
   UPD_DISC_MODE='total';
   const canEnterPayments=canManagePayments();
@@ -7159,7 +7235,7 @@ function formUpdate(id){ const l=findLeadById(id); if(!l){ route('home'); return
   <div style="margin-bottom:18px"><button class="chip" id="viewLedgerBtn" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.calendar}</span>Log payment for a specific month →</button></div>
   <div style="margin-bottom:18px"><button class="btn primary" id="dlUpdPdf" style="width:100%">⬇ Download this client's pipeline (PDF)</button></div>
   <div style="margin-bottom:18px"><button class="btn ghost" id="dlUpdQuote" style="width:100%">⬇ Download quotation</button></div>
-  <div style="margin-bottom:18px"><button class="btn ghost" id="dlUpdContract" style="width:100%">⬇ Download Contract of Sale</button></div>
+  ${contractSectionHtml(l)}
 
   <div class="dangerzone"><div class="dz-text"><b>Delete this client</b><br>Permanently removes ${esc(l.name)} and their record from the pipeline. This can't be undone.</div>
   <button class="btn danger" id="delLead">Delete client</button></div>`;
@@ -7188,10 +7264,7 @@ function formUpdate(id){ const l=findLeadById(id); if(!l){ route('home'); return
   document.getElementById('delLead').onclick=()=>deleteLeadConfirm(id,l.name);
   document.getElementById('dlUpdPdf').onclick=()=>downloadClientRecordPDF(l.name,l.contact,l,myPayments,g,num(l.amtPaid),bal);
   document.getElementById('dlUpdQuote').onclick=()=>buildClientQuotationPDF(l);
-  document.getElementById('dlUpdContract').onclick=async(e)=>{
-    const btn=e.currentTarget; const orig=btn.textContent; btn.disabled=true; btn.textContent='Generating…';
-    try{ await buildContractOfSalePDF(l); } finally { btn.disabled=false; btn.textContent=orig; }
-  };
+  bindContractSectionCtrls(l);
   const viewSchedBtn=document.getElementById('viewSchedBtn'); if(viewSchedBtn) viewSchedBtn.onclick=()=>route('paymentSchedule',id);
   document.getElementById('viewLedgerBtn').onclick=()=>route('paymentSchedule',id);
   const saveDocStageBtn=document.getElementById('saveDocStage');
@@ -9419,6 +9492,68 @@ async function buildContractOfSalePDF(lead){
    (pdfContractBody) already keeps every border/line/footer intact no matter how
    long the edited text runs, so nothing here needs to know about layout. */
 function canManageContracts(){ return PROFILE.role==='manager' || PROFILE.key==='elizabeth'; }
+/* ---- contracts + contract requests -------------------------------------------
+   A generated Contract of Sale is recorded here as metadata only -- no PDF blob
+   stored. buildContractOfSalePDF() regenerates the exact same document fresh
+   from the lead's own data plus whatever the current contract text/images are,
+   so a stored copy would just go stale; recording that one exists is enough for
+   the client and the lead's own agent to know it's there and pull a fresh copy.
+   Any agent whose client doesn't have one yet can request it from Elizabeth/
+   Management instead of trying to build it themselves. */
+const mapContract=r=>({id:r.id,leadId:r.lead_id,clientName:r.client_name,agentKey:r.agent_key,createdBy:r.created_by,createdByName:r.created_by_name,createdAt:r.created_at});
+async function apiLoadContracts(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.contracts||[]).slice(); }
+  try{ const {data,error}=await sb.from('contracts').select('*').order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapContract); }
+  catch(e){ return []; }
+}
+async function apiInsertContract(leadId,clientName,agentKey){
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),leadId,clientName,agentKey,createdBy:PROFILE.key,createdByName:PROFILE.name,createdAt:new Date().toISOString()};
+    d.contracts=d.contracts||[]; d.contracts.unshift(rec); await demoSave(); return rec; }
+  const {data,error}=await sb.from('contracts').insert({lead_id:leadId,client_name:clientName,agent_key:agentKey||'company',created_by:PROFILE.key,created_by_name:PROFILE.name}).select().single();
+  if(error) throw error; return mapContract(data);
+}
+const mapContractRequest=r=>({id:r.id,leadId:r.lead_id,clientName:r.client_name,requestedBy:r.requested_by,requestedByName:r.requested_by_name,note:r.note,status:r.status,createdAt:r.created_at,fulfilledAt:r.fulfilled_at,read:r.read});
+async function apiLoadContractRequests(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.contractRequests||[]).slice(); }
+  try{ const {data,error}=await sb.from('contract_requests').select('*').order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapContractRequest); }
+  catch(e){ return []; }
+}
+async function apiInsertContractRequest(leadId,clientName,note){
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),leadId,clientName,requestedBy:PROFILE.key,requestedByName:PROFILE.name,note,status:'pending',createdAt:new Date().toISOString(),fulfilledAt:null,read:false};
+    d.contractRequests=d.contractRequests||[]; d.contractRequests.unshift(rec); await demoSave(); return rec; }
+  const {data,error}=await sb.from('contract_requests').insert({lead_id:leadId,client_name:clientName,requested_by:PROFILE.key,requested_by_name:PROFILE.name,note:note||null}).select().single();
+  if(error) throw error; return mapContractRequest(data);
+}
+async function apiFulfillContractRequest(id){
+  if(DEMO_MODE){ const d=await demoLoad(); const r=(d.contractRequests||[]).find(x=>x.id===id); if(r){ r.status='fulfilled'; r.fulfilledAt=new Date().toISOString(); } await demoSave(); return; }
+  await sb.from('contract_requests').update({status:'fulfilled',fulfilled_at:new Date().toISOString()}).eq('id',id);
+}
+async function apiMarkContractRequestsRead(ids){
+  if(!ids||!ids.length) return;
+  if(DEMO_MODE){ const d=await demoLoad(); (d.contractRequests||[]).forEach(r=>{ if(ids.includes(r.id)) r.read=true; }); await demoSave(); return; }
+  try{ await sb.from('contract_requests').update({read:true}).in('id',ids); }catch(e){}
+}
+// Wraps buildContractOfSalePDF with the bookkeeping side of "save and download":
+// records that the contract now exists (so the client and agent can see it) and
+// auto-fulfils any pending request for this lead.
+async function generateAndRecordContract(lead){
+  await buildContractOfSalePDF(lead);
+  try{
+    const already=(DB.contracts||[]).find(c=>c.leadId===lead.id);
+    if(!already){
+      const rec=await apiInsertContract(lead.id,lead.name,lead.agent||lead.agentKey||'company');
+      DB.contracts=DB.contracts||[]; DB.contracts.unshift(rec);
+    }
+    const pendingReq=(DB.contractRequests||[]).find(r=>r.leadId===lead.id&&r.status==='pending');
+    if(pendingReq){
+      await apiFulfillContractRequest(pendingReq.id);
+      pendingReq.status='fulfilled'; pendingReq.fulfilledAt=new Date().toISOString();
+      try{ await apiSendMessage(pendingReq.requestedBy,'The contract for '+lead.name+' is ready — you can download it from their pipeline page.'); }catch(e){}
+    }
+  }catch(e){} // the PDF already downloaded successfully -- don't block on bookkeeping failing
+}
 function readImageFileAsDataUri(file,maxW){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
@@ -9438,14 +9573,40 @@ function readImageFileAsDataUri(file,maxW){
     reader.readAsDataURL(file);
   });
 }
-let CONTRACTAPP_QUERY='';
+let CONTRACTAPP_QUERY='', contractAppTab='generate', CONTRACT_REQUESTS_LOADED=false;
 async function viewContractApp(){
   if(!canManageContracts()){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Restricted','Contract of Sale is limited to Elizabeth and Management.'); return; }
   CONTRACTAPP_QUERY='';
+  if(!CONTRACT_REQUESTS_LOADED){ try{ DB.contractRequests=await apiLoadContractRequests(); CONTRACT_REQUESTS_LOADED=true; }catch(e){} }
+  const pendingCount=(DB.contractRequests||[]).filter(r=>r.status==='pending').length;
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><div class="eyebrow">Contracts</div><h2>Contract of Sale</h2><p>Generate a client's contract, or edit the text and images it's built from.</p></div></div>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <button class="chip ${contractAppTab==='generate'?'on':''}" data-catab="generate">Generate</button>
+    <button class="chip ${contractAppTab==='requests'?'on':''}" data-catab="requests">Requests${pendingCount?' ('+pendingCount+')':''}</button>
+  </div>
   <div id="contractAppBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  document.querySelectorAll('[data-catab]').forEach(b=>b.onclick=()=>{ contractAppTab=b.dataset.catab; viewContractApp(); });
   if(!CLIENTDB_LOADED){ try{ await apiLoadClientDatabase(); }catch(e){ toast('Could not load clients: '+(e.message||e)); } }
   paintContractAppBody();
+}
+function contractRequestsHtml(){
+  const pending=(DB.contractRequests||[]).filter(r=>r.status==='pending').sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
+  const fulfilled=(DB.contractRequests||[]).filter(r=>r.status==='fulfilled').sort((a,b)=>(b.fulfilledAt||'').localeCompare(a.fulfilledAt||'')).slice(0,15);
+  return `<div class="sectitle" style="margin-top:0"><h3>Pending</h3><span class="cnt">${pending.length}</span></div>
+  <div class="list" style="margin-bottom:18px">${pending.length?pending.map(r=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.clientName)}</div><div class="meta">Requested by ${esc(r.requestedByName)} · ${esc((r.createdAt||'').slice(0,16).replace('T',' '))}${r.note?' · "'+esc(r.note)+'"':''}</div></div></div>
+  <div class="foot" style="margin-top:10px"><button class="chip" data-cropen="${esc(r.leadId)}">Open client &amp; generate →</button></div></div>`).join(''):emptyState(ic.doc,'Nothing pending','New contract requests will show up here.')}</div>
+  <div class="sectitle"><h3>Recently fulfilled</h3><span class="cnt">${fulfilled.length}</span></div>
+  <div class="list">${fulfilled.length?fulfilled.map(r=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.clientName)}</div><div class="meta">Requested by ${esc(r.requestedByName)} · fulfilled ${esc((r.fulfilledAt||'').slice(0,16).replace('T',' '))}</div></div></div></div>`).join(''):emptyState(ic.doc,'Nothing yet','')}</div>`;
+}
+function bindContractRequestsCtrls(){
+  document.querySelectorAll('[data-cropen]').forEach(b=>b.onclick=async()=>{
+    const lead=findLeadById(b.dataset.cropen);
+    if(!lead){ toast('Could not find that client'); return; }
+    b.disabled=true;
+    try{ await generateAndRecordContract(lead); paintContractAppBody(); } catch(e){ toast('Could not generate: '+(e.message||e)); } finally { b.disabled=false; }
+  });
+  const unreadIds=(DB.contractRequests||[]).filter(r=>r.status==='pending'&&!r.read).map(r=>r.id);
+  if(unreadIds.length){ apiMarkContractRequestsRead(unreadIds).then(()=>{ unreadIds.forEach(id=>{ const r=DB.contractRequests.find(x=>x.id===id); if(r) r.read=true; }); }); }
 }
 function contractAppSettingsHtml(){
   return `
@@ -9497,6 +9658,7 @@ function contractAppSettingsHtml(){
 }
 function paintContractAppBody(){
   const body=document.getElementById('contractAppBody'); if(!body) return;
+  if(contractAppTab==='requests'){ body.innerHTML=contractRequestsHtml(); bindContractRequestsCtrls(); return; }
   body.innerHTML=contractAppSettingsHtml()+`
   <div class="sectitle"><h3>Generate a contract</h3><span class="cnt">${CLIENTDB_LIST.length} client${CLIENTDB_LIST.length===1?'':'s'}</span></div>
   <p class="mini" style="margin:-2px 0 12px">Search an existing client below, or add a brand-new one first — either way you'll fill in their plot, price and payment plan before the contract downloads.</p>
@@ -9530,7 +9692,7 @@ function bindContractResultRows(){
   document.querySelectorAll('[data-lpsel]').forEach(b=>b.onclick=async()=>{
     const lead=CLIENTDB_LIST.find(x=>x.id===b.dataset.lpsel); if(!lead) return;
     b.disabled=true;
-    try{ await buildContractOfSalePDF(lead); } catch(e){ toast('Could not generate: '+(e.message||e)); } finally { b.disabled=false; }
+    try{ await generateAndRecordContract(lead); } catch(e){ toast('Could not generate: '+(e.message||e)); } finally { b.disabled=false; }
   });
 }
 // A brand-new client (not yet anywhere in the pipeline) still needs a real lead
@@ -9566,7 +9728,7 @@ function openContractNewClientModal(){
       const row=await apiInsertLead(l,c,agentKey);
       CLIENTDB_LIST.unshift(row); if(agentKey===PROFILE.agent_key) DB.leads.push(row);
       toast('Client added — generating contract…'); ov.remove();
-      await buildContractOfSalePDF(row);
+      await generateAndRecordContract(row);
       paintContractAppBody();
     }catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save & download contract'; }
   };
