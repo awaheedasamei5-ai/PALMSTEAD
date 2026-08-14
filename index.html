@@ -7426,13 +7426,14 @@ let FEEDBACK_COMMENTS_CACHE={};
 function viewFeedback(){
   const homeRoute='officedesk';
   const all=DB.feedback||[];
-  const rowOf=f=>`<div class="rowcard">
-    <div class="top"><div><div class="nm">${esc(f.authorName)}</div><div class="meta">${esc((f.createdAt||'').slice(0,16).replace('T',' '))}</div></div>
+  const rowOf=f=>{ const initials=(f.authorName||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    return `<div class="rowcard">
+    <div class="top"><div class="pipeAvatar" style="width:34px;height:34px;font-size:12px">${esc(initials)}</div><div style="flex:1;min-width:0"><div class="nm">${esc(f.authorName)}</div><div class="meta">${esc((f.createdAt||'').slice(0,16).replace('T',' '))}</div></div>
     <span class="tag ${f.category==='Bug'?'dgr':f.category==='Suggestion'?'ok':'ghost'}">${esc(f.category)}</span></div>
     <div class="mini" style="margin-top:6px;line-height:1.5">${esc(f.body)}</div>
     <div class="foot"><button class="chip" data-fbtogglecomments="${f.id}">💬 Comments</button>${f.authorKey===PROFILE.key||PROFILE.role==='manager'?`<button class="trashbtn" data-fbdel="${f.id}">${ic.trash}</button>`:''}</div>
     <div id="fbCommentsSection_${f.id}" class="hidden"></div>
-  </div>`;
+  </div>`; };
   V.innerHTML=`${back(homeRoute)}<div class="pagehead"><div><h2>Feedback</h2><p>Suggestions &amp; bug reports · ${all.length} posted · visible to the whole team</p></div></div>
   <div class="formwrap" style="margin-bottom:16px">
   <div class="sectitle" style="margin-top:0"><h3>New post</h3></div>
