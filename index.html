@@ -13852,7 +13852,7 @@ function paintExpensesApp(){
   const pc=expPendingCount();
   tabs.innerHTML=[
     ['log','Log Expense'],['funds','Fund Requests'],['balance','Daily Balance'],
-    ...(isMgr?[['approvals','Approvals'+(pc?' ('+pc+')':'')],['categories','Categories'],['recurring','Recurring']]:[])
+    ...(isMgr?[['approvals','Approvals'+(pc?' ('+pc+')':'')],['categories','Categories'],['recurring','Recurring'],['dashboard','Dashboard']]:[])
   ].map(([k,l])=>`<button class="chip ${EXP_TAB===k?'on':''}" data-exptab="${k}">${l}</button>`).join('');
   tabs.querySelectorAll('[data-exptab]').forEach(b=>b.onclick=()=>{ EXP_TAB=b.dataset.exptab; paintExpensesApp(); });
   const body=document.getElementById('expBody');
@@ -13862,6 +13862,7 @@ function paintExpensesApp(){
   else if(EXP_TAB==='approvals') body.innerHTML=expApprovalsTabHtml();
   else if(EXP_TAB==='categories') body.innerHTML=expCategoriesTabHtml();
   else if(EXP_TAB==='recurring') body.innerHTML=expRecurringTabHtml();
+  else if(EXP_TAB==='dashboard') body.innerHTML=expDashboardTabHtml();
   bindExpensesCtrls();
 }
 // Category budgets are optional (monthly_budget can be null -- "just a
@@ -13945,6 +13946,50 @@ function openLogRecurringModal(r){
       toast('Expense logged — awaiting approval'); ov.remove(); paintExpensesApp();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Log expense'; }
   };
+}
+// Cash-basis only, explicitly labeled as such -- payments received minus
+// approved expenses in range. Deliberately doesn't call this "profit" or
+// invent an accrual figure the data model can't actually support, same
+// discipline as computeManagementReportData's own well-defined-metrics-only
+// comment. Commission payouts aren't logged as a cash outflow anywhere yet,
+// so the gap is called out rather than silently omitted.
+function computeCashBasisNetPosition(from,to){
+  const revenue=(DB.payments||[]).filter(p=>p.date>=from&&p.date<=to).reduce((s,p)=>s+num(p.amount),0);
+  const expensesOut=EXPENSES_LIST.filter(e=>e.status==='approved'&&(e.date||'')>=from&&(e.date||'')<=to).reduce((s,e)=>s+num(e.amount),0);
+  return {revenue,expensesOut,net:revenue-expensesOut};
+}
+function expDashboardTabHtml(){
+  const thisMonth=today().slice(0,7);
+  const monthFrom=thisMonth+'-01', monthTo=today();
+  const monthSpent=EXPENSES_LIST.filter(e=>e.status==='approved'&&(e.date||'').slice(0,7)===thisMonth).reduce((s,e)=>s+num(e.amount),0);
+  const outstandingCount=FUND_REQUESTS_LIST.filter(f=>f.status==='approved'&&!fundReqHasLoggedSpend(f.id)).length;
+  const net=computeCashBasisNetPosition(monthFrom,monthTo);
+
+  const now=new Date(today()+'T00:00:00'); const trend=[];
+  for(let i=5;i>=0;i--){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1); const key=d.toISOString().slice(0,7);
+    trend.push({label:d.toLocaleDateString('en-GB',{month:'short'}),
+      total:EXPENSES_LIST.filter(e=>e.status==='approved'&&(e.date||'').slice(0,7)===key).reduce((s,e)=>s+num(e.amount),0)});
+  }
+
+  const catTotals={};
+  EXPENSES_LIST.filter(e=>e.status==='approved'&&(e.date||'').slice(0,7)===thisMonth).forEach(e=>{ catTotals[e.category]=(catTotals[e.category]||0)+num(e.amount); });
+  const catSegments=Object.keys(catTotals).map((cat,i)=>({label:cat,value:catTotals[cat],color:DAYGRID_COLORS[i%DAYGRID_COLORS.length]}));
+
+  return `
+  <div class="kpis">${kpi('Spent this month',ghs(monthSpent))}${kpi('Pending approvals',expPendingCount())}${kpi('Outstanding advances',outstandingCount)}${kpi('Net position',ghs(net.net))}</div>
+  <div class="sectitle" style="margin-top:0"><h3>Spend trend</h3><span class="cnt">last 6 months, approved only</span></div>
+  <div class="rowcard" style="margin-bottom:18px">${svgLineChart(trend.map(t=>t.total),trend.map(t=>t.label))}</div>
+  <div class="sectitle"><h3>By category</h3><span class="cnt">this month</span></div>
+  <div class="rowcard" style="margin-bottom:18px;display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+    ${catSegments.length?svgDonut(catSegments,{size:110}):`<div style="width:100%">${emptyState(ic.spark,'No approved spend yet this month','')}</div>`}
+    ${catSegments.length?`<div style="flex:1;min-width:160px">${chartLegend(catSegments)}</div>`:''}
+  </div>
+  <div class="rowcard" style="margin-bottom:8px">
+    <div class="sectitle" style="margin-top:0"><h3>Net position</h3></div>
+    <div style="font-size:26px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:${net.net>=0?'var(--green)':'var(--danger)'}">${ghs(net.net)}</div>
+    <div class="mini" style="margin-top:6px">Cash-basis this month: ${ghs(net.revenue)} in payments minus ${ghs(net.expensesOut)} in approved expenses. Does not include commission payouts, which aren't logged as a cash outflow yet.</div>
+  </div>`;
 }
 function expStatusTag(s){
   if(s==='approved') return '<span class="tag ok">Approved</span>';
