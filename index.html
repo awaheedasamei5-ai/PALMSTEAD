@@ -2515,15 +2515,25 @@ async function apiClientInsertReferral({referredName,referredContact,referredLoc
   // everything it needs to render a confirmation without a round-trip.
   const {error}=await sb.from('referrals').insert(row); if(error) throw error;
 }
-// Only Management/office staff can decide this (referrals_upd_staff RLS) -- clearing
-// awards the configured points and stamps cleared_at; the congratulatory SMS is sent
-// by the caller so this stays a pure data operation.
-async function apiClearReferral(id,{referredLeadId,pointsAwarded}){
-  const patch={status:'Cleared',cleared_at:new Date().toISOString(),points_awarded:pointsAwarded,referred_lead_id:referredLeadId||null};
+// Only Management/office staff can decide this (referrals_upd_staff RLS, re-checked
+// inside the RPC below since SECURITY DEFINER bypasses it) -- clearing awards the
+// configured points and stamps cleared_at; the congratulatory SMS is sent by the
+// caller so this stays a pure data operation.
+// Real integrity gate lives server-side in the clear_referral() RPC (not just here):
+// it must already be linked to a real lead, and that lead must have paid at least
+// 30% of the plot price, before a clear is allowed -- a client-side-only check isn't
+// enough for money-adjacent logic like this (see the prior commission-ledger
+// incident this app already treats with the same extra care).
+async function apiClearReferral(id,{pointsAwarded}){
   if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.referrals||[]).find(x=>x.id===id);
-    if(rec) Object.assign(rec,{status:'Cleared',clearedAt:patch.cleared_at,pointsAwarded,referredLeadId:referredLeadId||null});
+    if(!rec) throw new Error('Referral not found');
+    if(!rec.referredLeadId) throw new Error('Link this referral to a lead before clearing it');
+    const lead=(d.leads||[]).find(l=>l.id===rec.referredLeadId);
+    const pct=lead&&num(lead.grandTotal)>0?num(lead.amtPaid)/num(lead.grandTotal):0;
+    if(pct<0.30) throw new Error('Linked lead has only paid '+Math.round(pct*100)+'% of the plot price -- needs at least 30% before this referral can be cleared');
+    Object.assign(rec,{status:'Cleared',clearedAt:new Date().toISOString(),pointsAwarded});
     await demoSave(); return rec; }
-  const {data,error}=await sb.from('referrals').update(patch).eq('id',id).select().single();
+  const {data,error}=await sb.rpc('clear_referral',{p_referral_id:id,p_points:pointsAwarded});
   if(error) throw error; return mapReferral(data);
 }
 async function apiDismissReferral(id){
@@ -14907,22 +14917,51 @@ function bindReferralsCtrls(){
       referrerLeadId:r.referrerLeadId,referrerName:r.referrerName,referrerContact:r.referrerContact});
   });
 }
+// A referral can only be cleared once it's linked to the referred person's real
+// lead AND that lead has paid >=30% of the plot price -- clear_referral() enforces
+// this server-side (see apiClearReferral). This modal surfaces WHY clearing is
+// blocked (not linked vs. under-30%) rather than silently letting Save through and
+// only failing after the fact, and pre-fills the link if one already exists (e.g.
+// an agent already converted this referral into a pipeline lead earlier).
 function openReferralClearModal(r){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal" style="max-width:480px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Clear ${esc(r.referrerName)}'s referral</div><button id="closeRefClear" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     <p class="mini" style="margin:-4px 0 12px">Confirms ${esc(r.referredName)} actually bought, and credits ${esc(r.referrerName)} with points. A confirmation SMS goes to them right after.</p>
+    <p class="mini" style="margin:-4px 0 12px;color:#B4472F">Can only be cleared once linked to the referred person's actual lead, and that lead has paid at least 30% of the plot price.</p>
     ${fld("Link to the client's lead",'<input id="refc_search" placeholder="Search '+esc(r.referredName)+' in Client Database…" autocomplete="off"/>')}
     <div id="refc_results"></div>
     <div id="refc_picked" class="hidden rowcard" style="margin:8px 0;padding:10px 14px"></div>
+    <div id="refc_eligibility" class="hidden mini" style="margin:-4px 0 12px;font-weight:700"></div>
     ${fld('Points to award','<input id="refc_points" type="number" min="0" value="'+(num(CONFIG.referralPointsPerReferral)||50)+'"/>')}
-    <div class="formactions"><button class="btn primary" id="refc_save" style="width:100%">Clear &amp; award points</button></div>
+    <div class="formactions"><button class="btn primary" id="refc_save" style="width:100%" disabled>Clear &amp; award points</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeRefClear').onclick=()=>ov.remove();
-  let pickedLeadId=null;
+  let pickedLeadId=r.referredLeadId||null, pickedLead=null;
+  const saveBtn=document.getElementById('refc_save');
+  const eligEl=document.getElementById('refc_eligibility');
+  const updateEligibility=()=>{
+    if(!pickedLeadId){ eligEl.classList.add('hidden'); saveBtn.disabled=true; return; }
+    const lead=pickedLead||(CLIENTDB_LIST||[]).find(l=>l.id===pickedLeadId);
+    eligEl.classList.remove('hidden');
+    if(!lead){ eligEl.style.color='var(--muted)'; eligEl.textContent='Checking payment status…'; saveBtn.disabled=true; return; }
+    const grand=lead.grandTotal!=null?num(lead.grandTotal):computeLead(lead).grand;
+    const pct=grand>0?Math.round(num(lead.amtPaid)/grand*100):0;
+    if(pct>=30){ eligEl.style.color='var(--leaf)'; eligEl.textContent='✓ '+pct+'% paid — eligible to clear.'; saveBtn.disabled=false; }
+    else{ eligEl.style.color='#B4472F'; eligEl.textContent='⚠ Only '+pct+'% paid — needs at least 30% before this can be cleared.'; saveBtn.disabled=true; }
+  };
+  const showPicked=name=>{ const p=document.getElementById('refc_picked'); p.classList.remove('hidden');
+    p.innerHTML=`Linked to <b>${esc(name)}</b> <button type="button" class="chip" id="refc_clearpick" style="margin-left:8px">Change</button>`;
+    document.getElementById('refc_clearpick').onclick=()=>{ pickedLeadId=null; pickedLead=null; p.classList.add('hidden'); p.innerHTML=''; updateEligibility(); }; };
+  if(pickedLeadId){
+    const known=(CLIENTDB_LIST||[]).find(l=>l.id===pickedLeadId);
+    if(known){ pickedLead=known; showPicked(known.name); }
+    else if(!CLIENTDB_LOADED){ apiLoadClientDatabase().then(()=>{ pickedLead=(CLIENTDB_LIST||[]).find(l=>l.id===pickedLeadId); if(pickedLead) showPicked(pickedLead.name); updateEligibility(); }).catch(()=>{}); }
+  }
+  updateEligibility();
   const search=document.getElementById('refc_search');
   search.oninput=debounce(async()=>{
     const q=search.value.trim().toLowerCase();
@@ -14930,21 +14969,21 @@ function openReferralClearModal(r){
     if(q.length<2){ results.innerHTML=''; return; }
     if(!CLIENTDB_LOADED){ try{ await withLoadTimeout(apiLoadClientDatabase(),15000,'Client list'); }catch(e){} }
     const matches=(CLIENTDB_LIST||[]).filter(l=>(l.name||'').toLowerCase().includes(q)).slice(0,6);
-    results.innerHTML=matches.length?matches.map(l=>`<button type="button" class="chip" data-refpicklead="${esc(l.id)}" style="display:block;width:100%;text-align:left;margin:6px 0">${esc(l.name)} · ${esc(l.contact||'')}</button>`).join(''):'<div class="mini" style="margin-top:6px">No matches — you can still clear this without linking a lead.</div>';
+    results.innerHTML=matches.length?matches.map(l=>`<button type="button" class="chip" data-refpicklead="${esc(l.id)}" style="display:block;width:100%;text-align:left;margin:6px 0">${esc(l.name)} · ${esc(l.contact||'')}</button>`).join(''):'<div class="mini" style="margin-top:6px">No matches — this referral can\'t be cleared until the referred person is a real lead in the system.</div>';
     results.querySelectorAll('[data-refpicklead]').forEach(btn=>btn.onclick=()=>{
       const picked=matches.find(l=>l.id===btn.dataset.refpicklead); if(!picked) return;
-      pickedLeadId=picked.id;
-      const p=document.getElementById('refc_picked');
-      p.classList.remove('hidden'); p.innerHTML=`Linked to <b>${esc(picked.name)}</b> <button type="button" class="chip" id="refc_clearpick" style="margin-left:8px">Change</button>`;
-      document.getElementById('refc_clearpick').onclick=()=>{ pickedLeadId=null; p.classList.add('hidden'); p.innerHTML=''; };
+      pickedLeadId=picked.id; pickedLead=picked;
+      showPicked(picked.name);
       results.innerHTML=''; search.value='';
+      updateEligibility();
     });
   },200);
   document.getElementById('refc_save').onclick=async()=>{
     const points=num(val('refc_points'))||0;
     const btn=document.getElementById('refc_save'); btn.disabled=true; btn.textContent='Saving…';
     try{
-      const updated=await apiClearReferral(r.id,{referredLeadId:pickedLeadId,pointsAwarded:points});
+      if(pickedLeadId&&pickedLeadId!==r.referredLeadId){ await apiLinkReferralToLead(r.id,pickedLeadId,r.referredName); r.referredLeadId=pickedLeadId; }
+      const updated=await apiClearReferral(r.id,{pointsAwarded:points});
       Object.assign(r,updated);
       toast('Referral cleared — '+points+' points awarded'); ov.remove();
       try{ await apiSendSms(r.referrerContact,'Great news! Your referral of '+r.referredName+' has gone through and you have earned '+points+' points with Palmstead. Keep referring to earn more — check your Referrals dashboard for your rewards.','referral_cleared'); }catch(e){}
