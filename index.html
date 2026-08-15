@@ -3061,7 +3061,7 @@ async function apiDeleteTask(id){
 }
 async function apiEscalateTask(id,toKey,toName,note){
   const escalatedAt=new Date().toISOString();
-  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id);
+  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id)||(d.todos||[]).find(x=>x.id===id);
     if(t){ const fromKey=t.assignedTo,fromName=t.assignedToName;
       t.assignedTo=toKey; t.assignedToName=toName; t.escalatedTo=toKey; t.escalatedToName=toName; t.escalatedBy=PROFILE.key; t.escalatedByName=PROFILE.name; t.escalatedAt=escalatedAt; t.escalationNote=note||null;
       t.openedAt=null; t.startedAt=null;
@@ -7350,10 +7350,15 @@ let TODO_ALARM_TIMERS=[], TODO_ALARM_ARMED_IDS=new Set();
 // translates to the UI's 'closed' so the existing To-Do UI needs no vocabulary change.
 function mapTodo(r){ return {id:r.id,ownerKey:r.owner_key,ownerName:r.owner_name,title:r.title,notes:r.notes,contact:r.contact,
   date:r.item_date,startTime:(r.start_time||'').slice(0,5),endTime:(r.end_time||'').slice(0,5),status:r.status==='done'?'closed':r.status,
+  assignedTo:r.assigned_to,assignedToName:r.assigned_to_name,escalatedTo:r.escalated_to,escalatedToName:r.escalated_to_name,
+  escalatedBy:r.escalated_by,escalatedByName:r.escalated_by_name,escalatedAt:r.escalated_at,escalationNote:r.escalation_note,
   rescheduledToId:r.rescheduled_to_id,createdAt:r.created_at,closedAt:r.status==='done'?r.completed_at:null}; }
 async function apiLoadTodos(fromDate,toDate){
-  if(DEMO_MODE){ const d=await demoLoad(); return (d.todos||[]).filter(t=>t.ownerKey===PROFILE.key&&t.date>=fromDate&&t.date<=toDate).slice().sort((a,b)=>a.date===b.date?a.startTime.localeCompare(b.startTime):a.date.localeCompare(b.date)); }
-  const {data,error}=await sb.from('schedule_items').select('*').eq('kind','todo').eq('owner_key',PROFILE.key).gte('item_date',fromDate).lte('item_date',toDate).order('item_date').order('start_time');
+  // Filtered by assignee, not creator/owner -- a to-do escalated to someone else
+  // needs to show up on THEIR list and disappear from the escalator's, same as
+  // an assigned task already works.
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.todos||[]).filter(t=>(t.assignedTo||t.ownerKey)===PROFILE.key&&t.date>=fromDate&&t.date<=toDate).slice().sort((a,b)=>a.date===b.date?a.startTime.localeCompare(b.startTime):a.date.localeCompare(b.date)); }
+  const {data,error}=await sb.from('schedule_items').select('*').eq('kind','todo').eq('assigned_to',PROFILE.key).gte('item_date',fromDate).lte('item_date',toDate).order('item_date').order('start_time');
   if(error) throw error; return (data||[]).map(mapTodo);
 }
 async function apiInsertTodo(t){
@@ -7422,9 +7427,10 @@ function todoTabHtml(){
   <div class="formactions" style="margin-top:20px"><button class="chip" id="todoReportBtn" style="width:100%">Download period report (PDF)</button></div>`;
 }
 function todoRowHtml(t){
-  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(t.startTime)}–${esc(t.endTime)} · ${esc(t.title)}</div>${t.notes?`<div class="meta">${esc(t.notes)}</div>`:''}</div>${todoStatusTag(t.status)}</div>
+  const notMine=t.ownerKey&&t.ownerKey!==t.assignedTo;
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(t.startTime)}–${esc(t.endTime)} · ${esc(t.title)}</div>${notMine?`<div class="meta">Escalated from ${esc(t.ownerName||t.ownerKey)}${t.escalationNote?': "'+esc(t.escalationNote)+'"':''}</div>`:''}${t.notes?`<div class="meta">${esc(t.notes)}</div>`:''}</div>${todoStatusTag(t.status)}</div>
   ${t.contact?`<div style="margin-top:8px">${contactLinks(t.contact)}</div>`:''}
-  ${t.status==='open'?`<div class="foot" style="gap:7px;flex-wrap:wrap;margin-top:10px"><button class="chip" data-todoreschedule="${esc(t.id)}">Reschedule</button><button class="btn primary" data-todoclose="${esc(t.id)}" style="padding:8px 18px;font-size:12.5px">Mark closed</button></div>`:''}
+  ${t.status==='open'?`<div class="foot" style="gap:7px;flex-wrap:wrap;margin-top:10px"><button class="chip" data-todoreschedule="${esc(t.id)}">Reschedule</button><button class="chip" data-todoescalate="${esc(t.id)}">Escalate</button><button class="btn primary" data-todoclose="${esc(t.id)}" style="padding:8px 18px;font-size:12.5px">Mark closed</button></div>`:''}
   ${t.status==='rescheduled'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Moved to a new time</div>`:''}</div>`;
 }
 function bindTodoCtrls(){
@@ -7438,6 +7444,9 @@ function bindTodoCtrls(){
   });
   document.querySelectorAll('[data-todoreschedule]').forEach(b=>b.onclick=()=>{
     const t=TODO_LIST.find(x=>x.id===b.dataset.todoreschedule); if(t) openTodoRescheduleModal(t);
+  });
+  document.querySelectorAll('[data-todoescalate]').forEach(b=>b.onclick=()=>{
+    const t=TODO_LIST.find(x=>x.id===b.dataset.todoescalate); if(t) openEscalateTodoModal(t);
   });
   const reportBtn=document.getElementById('todoReportBtn'); if(reportBtn) reportBtn.onclick=openTodoReportModal;
 }
@@ -7648,31 +7657,65 @@ function bindDutiesCtrls(){
 function bindDutiesRowCtrls(){
   document.querySelectorAll('[data-taskopen]').forEach(b=>b.onclick=()=>route('taskDetail',b.dataset.taskopen));
 }
-function openEscalateTaskModal(id){
-  const t=(DB.tasks||[]).find(x=>x.id===id); if(!t) return;
-  const options=STAFF_LIST.filter(s=>s.key!==t.assignedTo);
+// Shared by task escalation (management-assigned work) and to-do escalation
+// (personal items handed to a colleague) -- both are schedule_items rows under
+// the hood, and apiEscalateTask already operates generically on that table by
+// id regardless of kind. If the item carries a time block (to-dos always do;
+// tasks never do today), the new assignee's calendar is conflict-checked
+// before the escalate button is allowed to fire -- an escalation shouldn't
+// silently create a double-booking for whoever it lands on.
+function openEscalateItemModal(item,currentAssignee,onEscalated){
+  const options=STAFF_LIST.filter(s=>s.key!==currentAssignee);
+  const hasTimeBlock=!!(item.date&&item.startTime&&item.endTime);
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   ov.innerHTML=`<div id="announceModal">
-    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Escalate — ${esc(t.title)}</div>
-    <div class="mini" style="margin-bottom:14px">Reassigns this task and notifies them in chat with your reason.</div>
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Escalate — ${esc(item.title)}</div>
+    <div class="mini" style="margin-bottom:14px">Reassigns this and notifies them in chat with your reason.</div>
     ${fld('Escalate to',`<select id="esc_to">${options.map(s=>`<option value="${s.key}">${esc(s.name)}</option>`).join('')}</select>`)}
     ${fld('Reason','<textarea id="esc_note" placeholder="Why this needs their attention…"></textarea>')}
+    ${hasTimeBlock?`<div id="esc_conflictWarn" class="mini" style="color:var(--danger);margin:-8px 0 12px"></div>`:''}
     <div class="formactions"><button class="btn primary" id="doEscalate" style="width:100%">Escalate</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  const checkEscConflict=async()=>{
+    const toKey=val('esc_to'); const toStaff=STAFF_LIST.find(s=>s.key===toKey);
+    const hits=await apiCheckScheduleConflicts(toKey,item.date,item.startTime,item.endTime,item.id);
+    const warnEl=document.getElementById('esc_conflictWarn'); if(warnEl) warnEl.textContent=scheduleConflictReasonText(hits,toStaff?toStaff.name:toKey)||'';
+  };
+  if(hasTimeBlock){ document.getElementById('esc_to').addEventListener('change',checkEscConflict); checkEscConflict(); }
   document.getElementById('doEscalate').onclick=async()=>{
     const toKey=val('esc_to'); const toStaff=STAFF_LIST.find(s=>s.key===toKey); const note=val('esc_note').trim();
     const btn=document.getElementById('doEscalate'); btn.disabled=true; btn.textContent='Escalating…';
+    if(hasTimeBlock){
+      const hits=await apiCheckScheduleConflicts(toKey,item.date,item.startTime,item.endTime,item.id);
+      if(hits.length){ toast(scheduleConflictReasonText(hits,toStaff?toStaff.name:toKey)); btn.disabled=false; btn.textContent='Escalate'; return; }
+    }
     try{
-      await apiEscalateTask(id,toKey,toStaff?toStaff.name:toKey,note);
-      Object.assign(t,{assignedTo:toKey,assignedToName:toStaff?toStaff.name:toKey,escalatedTo:toKey,escalatedToName:toStaff?toStaff.name:toKey,
-        escalatedBy:PROFILE.key,escalatedByName:PROFILE.name,escalatedAt:new Date().toISOString(),escalationNote:note||null,openedAt:null,startedAt:null});
-      try{ const rec=await apiSendMessage(toKey,`${PROFILE.name} escalated "${t.title}" to you${note?(': '+note):''}`); DB.messages.push(rec); }catch(e){}
-      toast('Escalated to '+(toStaff?toStaff.name:toKey)); ov.remove(); route('taskDetail',id);
+      await apiEscalateTask(item.id,toKey,toStaff?toStaff.name:toKey,note);
+      try{ const rec=await apiSendMessage(toKey,`${PROFILE.name} escalated "${item.title}" to you${note?(': '+note):''}`); DB.messages.push(rec); }catch(e){}
+      toast('Escalated to '+(toStaff?toStaff.name:toKey)); ov.remove();
+      onEscalated(toKey,toStaff?toStaff.name:toKey,note);
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Escalate'; }
   };
+}
+function openEscalateTaskModal(id){
+  const t=(DB.tasks||[]).find(x=>x.id===id); if(!t) return;
+  openEscalateItemModal({id:t.id,title:t.title},t.assignedTo,(toKey,toName,note)=>{
+    Object.assign(t,{assignedTo:toKey,assignedToName:toName,escalatedTo:toKey,escalatedToName:toName,
+      escalatedBy:PROFILE.key,escalatedByName:PROFILE.name,escalatedAt:new Date().toISOString(),escalationNote:note||null,openedAt:null,startedAt:null});
+    route('taskDetail',id);
+  });
+}
+// To-dos were always self-only before this rebuild -- this is the new part.
+// Once escalated, it's no longer assigned to the escalator, so it's dropped
+// from their local TODO_LIST immediately rather than waiting on a reload.
+function openEscalateTodoModal(t){
+  openEscalateItemModal({id:t.id,title:t.title,date:t.date,startTime:t.startTime,endTime:t.endTime},PROFILE.key,(toKey,toName,note)=>{
+    TODO_LIST=TODO_LIST.filter(x=>x.id!==t.id);
+    paintTodoTab();
+  });
 }
 function taskEventMeta(type){
   const M={
