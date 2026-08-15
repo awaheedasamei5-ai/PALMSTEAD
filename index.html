@@ -13127,6 +13127,10 @@ async function managerView(){
   else if(mgrTab==='System'){ body.innerHTML=mgrSystemHtml(); bindSystemCtrls(); }
   else if(mgrTab==='Referrals'){ if(!REFERRALS_LOADED){ try{ REFERRALS_LIST=await withLoadTimeout(apiLoadReferrals(),15000,'Referrals'); REFERRALS_LOADED=true; }catch(e){} } body.innerHTML=mgrReferralsHtml(); bindReferralsCtrls(); }
   else if(mgrTab==='Referral Settings'){ body.innerHTML=mgrReferralSettingsHtml(); bindReferralSettingsCtrls(); }
+  else if(mgrTab==='Achievement Settings'){
+    try{ ACHIEVEMENT_DEFS=await withLoadTimeout(apiListAchievementDefs(),15000,'Achievements'); }catch(e){ toast('Could not load achievements: '+(e.message||e)); }
+    body.innerHTML=mgrAchievementSettingsHtml(); bindAchievementSettingsCtrls();
+  }
 }
 function allAgentLists(){
   const agents=DEMO_MODE? STAFF_LIST.filter(s=>s.role==='agent').map(s=>({name:s.name,key:s.key})) : DB.profiles.filter(p=>p.role==='agent').map(p=>({name:p.name,key:p.agent_key}));
@@ -13417,6 +13421,48 @@ async function apiLoadLeaderboardRows(fromDate,toDate){
   if(DEMO_MODE){ return []; }
   const {data,error}=await sb.rpc('leaderboard_rows',{p_from:fromDate,p_to:toDate});
   if(error) throw error; return (data||[]).map(mapLeaderboardRow);
+}
+/* ---- Achievements (Portfolio) -- criteria_type is always one of the exact
+   camelCase fields leaderboard_rows/mapLeaderboardRow already returns
+   (siteVisits, tasksCompleted, dealsClosedYear, todosCompleted, daysAttended,
+   onTimeDays, totalCollected) so the evaluation engine can check a row against
+   a definition with a plain property lookup, no translation layer needed.
+   The catalog is Management's to define via the config screen below -- shipped
+   empty on purpose, not a guessed/hardcoded list. */
+const ACHIEVEMENT_METRICS=['siteVisits','tasksCompleted','dealsClosedYear','todosCompleted','daysAttended','onTimeDays','totalCollected'];
+const mapAchievementDef=r=>({id:r.id,key:r.key,label:r.label,description:r.description,icon:r.icon,
+  criteriaType:r.criteria_type,criteriaConfig:r.criteria_config||{},points:num(r.points),active:r.active,createdAt:r.created_at});
+const mapStaffAchievement=r=>({id:r.id,staffKey:r.staff_key,staffName:r.staff_name,achievementId:r.achievement_id,earnedAt:r.earned_at,progress:r.progress});
+async function apiListAchievementDefs(){
+  if(DEMO_MODE) return [];
+  const {data,error}=await sb.from('achievement_definitions').select('*').order('created_at');
+  if(error) throw error; return (data||[]).map(mapAchievementDef);
+}
+async function apiUpsertAchievementDef(def){
+  const row={key:def.key,label:def.label,description:def.description||null,icon:def.icon||null,
+    criteria_type:def.criteriaType,criteria_config:def.criteriaConfig||{},points:num(def.points),
+    active:def.active!==false,updated_at:new Date().toISOString()};
+  if(def.id){
+    const {data,error}=await sb.from('achievement_definitions').update(row).eq('id',def.id).select().single();
+    if(error) throw error; return mapAchievementDef(data);
+  }
+  const {data,error}=await sb.from('achievement_definitions').insert(row).select().single();
+  if(error) throw error; return mapAchievementDef(data);
+}
+async function apiLoadStaffAchievements(staffKeys){
+  if(DEMO_MODE) return [];
+  try{ const {data,error}=await sb.from('staff_achievements').select('*').in('staff_key',staffKeys); if(error) throw error;
+    return (data||[]).map(mapStaffAchievement); }
+  catch(e){ return []; }
+}
+// staff_achievements_ins requires staff_key=my_key() (or manager) -- so this can
+// only ever be called to award the CALLER their own achievement, matching the
+// evaluation engine always running as the staff member it's evaluating.
+async function apiAwardAchievement(achievementId,progress){
+  if(DEMO_MODE) return null;
+  const row={staff_key:PROFILE.key,staff_name:PROFILE.name,achievement_id:achievementId,progress:progress||null};
+  const {data,error}=await sb.from('staff_achievements').upsert(row,{onConflict:'staff_key,achievement_id',ignoreDuplicates:true}).select().maybeSingle();
+  if(error) throw error; return data?mapStaffAchievement(data):null;
 }
 function openLeaderboardWeightsModal(){
   const w=CONFIG.leaderboardWeights||defaultConfig().leaderboardWeights;
@@ -14131,6 +14177,7 @@ const SETTINGS_APPS=[
   {key:'Staff Settings',fic:'staffteam',label:'Staff Settings',section:'settingshub'},
   {key:'Company Settings',fic:'building',label:'Company Settings',section:'settingshub'},
   {key:'Referral Settings',fic:'gift',label:'Referral Settings',section:'settingshub'},
+  {key:'Achievement Settings',fic:'leaderboard',label:'Achievement Settings',section:'settingshub'},
   {key:'Backup & Restore',fic:'backup',label:'Backup & Restore',section:'settingshub'},
   {key:'System Health',fic:'pulse',label:'System Health',section:'settingshub'},
   {key:'System',fic:'serverconfig',label:'System',section:'settingshub'}
@@ -14139,7 +14186,7 @@ function mgrSettingsHubHtml(){
   const byKey=k=>SETTINGS_APPS.find(a=>a.key===k);
   const groups=[
     {title:'Pricing & money',items:['Quotation Settings','Commission Settings','Pricing & Targets'].map(byKey)},
-    {title:'Team & company',items:['Staff Settings','Company Settings'].map(byKey)},
+    {title:'Team & company',items:['Staff Settings','Company Settings','Achievement Settings'].map(byKey)},
     {title:'Referrals',items:['Referral Settings'].map(byKey)},
     {title:'System',items:['Backup & Restore','System Health','System'].map(byKey)}
   ];
@@ -14534,6 +14581,85 @@ function bindReferralSettingsCtrls(){
       managerView();
     }catch(e){ toast('Could not save: '+(e.message||e)); btn.disabled=false; btn.textContent='Save referral settings'; }
   };
+}
+/* ---- Achievement Settings (Management config for the Portfolio badge system) ----
+   Row-per-definition CRUD, not the single-row apiSaveConfig() upsert every other
+   settings screen here uses -- each achievement is its own database row via
+   apiUpsertAchievementDef/apiDeleteAchievementDef. Ships with whatever Management
+   has actually defined; there is no seeded/guessed catalog. */
+let ACHIEVEMENT_DEFS=[];
+function achievementMetricLabel(m){
+  return {siteVisits:'Site visits',tasksCompleted:'Tasks completed',dealsClosedYear:'Deals closed (this year)',
+    todosCompleted:'To-dos completed',daysAttended:'Days attended',onTimeDays:'On-time days',totalCollected:'Total collected (GHS)'}[m]||m;
+}
+function mgrAchievementSettingsHtml(){
+  return `${settingsSectionHead('leaderboard','Achievements','what earns a badge in Portfolio, and how many points')}
+  <div class="formwrap">
+    <p class="mini" style="margin:-2px 0 14px">Each achievement unlocks automatically once a staff member's total for the chosen metric reaches the threshold — checked at sign-in, task completion, and whenever the Leaderboard refreshes.</p>
+    <div class="formactions"><button type="button" class="chip" id="ach_addBtn" style="width:100%">+ New achievement</button></div>
+  </div>
+  <div class="list" style="margin-top:14px">${ACHIEVEMENT_DEFS.length?ACHIEVEMENT_DEFS.map(d=>`
+    <div class="rowcard"><div class="top"><div>
+      <div class="nm">${d.icon?esc(d.icon)+' ':''}${esc(d.label)}${!d.active?' <span class="tag ghost">Inactive</span>':''}</div>
+      <div class="meta">${esc(achievementMetricLabel(d.criteriaType))} ≥ ${esc(String(d.criteriaConfig.threshold||0))} · ${d.points} point${d.points===1?'':'s'}</div>
+      ${d.description?`<div class="meta">${esc(d.description)}</div>`:''}
+    </div>
+    <div class="foot" style="gap:7px"><button class="chip" data-achedit="${esc(d.id)}">Edit</button><button class="chip" data-achdelete="${esc(d.id)}" style="color:#B91C1C">Delete</button></div></div></div>`).join('')
+    :emptyState(ic.grid,'No achievements yet','Add your first one — e.g. "10 site visits this month" or "5-day attendance streak".')}
+  </div>`;
+}
+function openAchievementDefModal(def){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${def?'Edit achievement':'New achievement'}</div><button id="ach_close" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Name *','<input id="ach_label" value="'+esc(def?def.label:'')+'" placeholder="e.g. Site Visit Pro"/>')}
+    ${fld('Icon','<input id="ach_icon" value="'+esc(def?def.icon||'':'')+'" placeholder="🏆 (any emoji)"/>','optional — shown next to the name')}
+    ${fld('Description','<input id="ach_desc" value="'+esc(def?def.description||'':'')+'" placeholder="What this recognizes"/>','optional')}
+    <div class="grid2">${fld('Metric',sel('ach_metric',ACHIEVEMENT_METRICS.map(achievementMetricLabel),def?achievementMetricLabel(def.criteriaType):undefined))}${fld('Threshold','<input id="ach_threshold" type="number" min="1" value="'+(def?(def.criteriaConfig.threshold||1):10)+'"/>')}</div>
+    ${fld('Points','<input id="ach_points" type="number" min="0" value="'+(def?def.points:10)+'"/>','added to the same points total the Leaderboard uses')}
+    ${fld('Active','<label class="agentrow" style="cursor:pointer"><input type="checkbox" id="ach_active" '+(def&&!def.active?'':'checked')+' style="width:18px;height:18px;margin-right:10px"/><span>Counts toward badges</span></label>')}
+    <div class="formactions"><button class="btn primary" id="ach_save" style="width:100%">${def?'Save changes':'Create achievement'}</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('ach_close').onclick=()=>ov.remove();
+  document.getElementById('ach_save').onclick=async()=>{
+    const label=val('ach_label').trim(); if(!label){ toast('Give it a name'); return; }
+    const metricLabel=val('ach_metric');
+    const metric=ACHIEVEMENT_METRICS.find(m=>achievementMetricLabel(m)===metricLabel);
+    const threshold=num(val('ach_threshold'))||1;
+    const btn=document.getElementById('ach_save'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const saved=await apiUpsertAchievementDef({
+        id:def?def.id:undefined,
+        key:def?def.key:label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')+'_'+Date.now().toString(36),
+        label,icon:val('ach_icon').trim(),description:val('ach_desc').trim(),
+        criteriaType:metric,criteriaConfig:{threshold},points:num(val('ach_points'))||0,
+        active:document.getElementById('ach_active').checked
+      });
+      const i=ACHIEVEMENT_DEFS.findIndex(d=>d.id===saved.id);
+      if(i>=0) ACHIEVEMENT_DEFS[i]=saved; else ACHIEVEMENT_DEFS.push(saved);
+      toast(def?'Achievement updated':'Achievement created'); ov.remove(); managerView();
+    }catch(e){ toast('Could not save: '+(e.message||e)); btn.disabled=false; btn.textContent=def?'Save changes':'Create achievement'; }
+  };
+}
+function bindAchievementSettingsCtrls(){
+  document.getElementById('ach_addBtn').onclick=()=>openAchievementDefModal(null);
+  document.querySelectorAll('[data-achedit]').forEach(b=>b.onclick=()=>{
+    const d=ACHIEVEMENT_DEFS.find(x=>x.id===b.dataset.achedit); if(d) openAchievementDefModal(d);
+  });
+  document.querySelectorAll('[data-achdelete]').forEach(b=>b.onclick=async()=>{
+    const d=ACHIEVEMENT_DEFS.find(x=>x.id===b.dataset.achdelete); if(!d) return;
+    // A soft delete (deactivate), not a real DELETE -- staff_achievements.achievement_id
+    // is a not-null FK with no cascade, so hard-deleting a definition anyone has already
+    // earned would fail outright. Deactivating keeps earned badges intact and just stops
+    // it appearing as something new to work toward.
+    if(!confirm('Remove "'+d.label+'"? Staff who already earned it keep the badge, but it stops appearing in the catalog.')) return;
+    b.disabled=true;
+    try{ const saved=await apiUpsertAchievementDef({...d,active:false}); const i=ACHIEVEMENT_DEFS.findIndex(x=>x.id===d.id); if(i>=0) ACHIEVEMENT_DEFS[i]=saved; toast('Removed'); managerView(); }
+    catch(e){ toast('Could not remove: '+(e.message||e)); b.disabled=false; }
+  });
 }
 /* Server-side backup/restore of core business records (leads, plots, payments, contracts,
    pricing history, site visits, tasks, feedback, etc.) -- runs automatically 3x/day via
