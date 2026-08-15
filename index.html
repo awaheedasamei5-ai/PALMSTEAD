@@ -694,6 +694,10 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .dayGridBlockTime{font-size:9px;font-weight:700;color:var(--muted);line-height:1.2}
 .dayGridBlockTitle{font-size:11px;font-weight:700;color:var(--text);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dayGridBlock.conflict{outline:2px solid var(--danger);outline-offset:-2px}
+.dayGridBlock.dayGridBlockDone{opacity:.55}
+.dayGridBlock.dayGridBlockDone .dayGridBlockTitle{text-decoration:line-through}
+.dayGridBlock.dayGridBlockCancelled{opacity:.4}
+.dayGridBlock.dayGridBlockCancelled .dayGridBlockTitle{text-decoration:line-through}
 @media (max-width:640px){.dayGridStaffHead{font-size:10.5px;padding:6px 4px}}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip2{border:1.5px solid var(--line);background:var(--card);border-radius:100px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--text);transition:.15s}
@@ -7877,9 +7881,14 @@ function dayGridLinesHtml(){
 }
 function scheduleBlockHtml(item,color,hasConflict){
   const top=dayGridTopPx(item.startTime), h=dayGridHeightPx(item.startTime,item.endTime);
-  return `<div class="dayGridBlock${hasConflict?' conflict':''}" data-daygridopen="${esc(item.id)}" style="top:${top}px;height:${h}px;background:${color}22;border-left:3px solid ${color}" title="${esc(item.title)} ${esc(item.startTime)}–${esc(item.endTime)}">
+  // Closed/cancelled items stay in place as a completed record instead of disappearing --
+  // a muted, struck-through block reads as "done" without losing the paper trail.
+  const isDone=item.status==='closed', isCancelled=item.status==='cancelled';
+  const stateCls=isDone?' dayGridBlockDone':isCancelled?' dayGridBlockCancelled':'';
+  const prefix=isDone?'✓ ':isCancelled?'✕ ':'';
+  return `<div class="dayGridBlock${hasConflict?' conflict':''}${stateCls}" data-daygridopen="${esc(item.id)}" style="top:${top}px;height:${h}px;background:${color}22;border-left:3px solid ${color}" title="${esc(item.title)} ${esc(item.startTime)}–${esc(item.endTime)}">
     <div class="dayGridBlockTime">${esc(item.startTime)}–${esc(item.endTime)}</div>
-    <div class="dayGridBlockTitle">${esc(item.title)}</div>
+    <div class="dayGridBlockTitle">${prefix}${esc(item.title)}</div>
   </div>`;
 }
 // staffList: [{key,name}]. itemsByStaffKey: {key:[todo,...]}. showHeader=false
@@ -7895,7 +7904,9 @@ function renderDayGrid(staffList,itemsByStaffKey,showHeader){
       return `<div style="position:relative;height:${totalH}px;border-left:1px solid var(--line)">
         ${dayGridLinesHtml()}
         ${items.map((it,j)=>{
-          const conflict=items.some((o,k)=>k!==j&&it.startTime<o.endTime&&o.startTime<it.endTime);
+          // A finished or cancelled block shouldn't trip a conflict warning against
+          // whatever's still live in that slot -- only compare against other open items.
+          const conflict=it.status!=='closed'&&it.status!=='cancelled'&&items.some((o,k)=>k!==j&&o.status!=='closed'&&o.status!=='cancelled'&&it.startTime<o.endTime&&o.startTime<it.endTime);
           return scheduleBlockHtml(it,DAYGRID_COLORS[i%DAYGRID_COLORS.length],conflict);
         }).join('')}
       </div>`;
@@ -7908,16 +7919,19 @@ function renderDayGrid(staffList,itemsByStaffKey,showHeader){
 // rather than off whatever's already loaded locally, since TODO_LIST/DB.tasks
 // only ever cover the signed-in user's own scope.
 async function apiLoadDayAgenda(date,staffKeys){
+  // Closed/cancelled items stay in the day's agenda instead of vanishing -- only a
+  // rescheduled item is truly gone from this date (it now lives on its new date/time,
+  // and showing the stale original alongside the new one would just be confusing).
   if(DEMO_MODE){
     const d=await demoLoad();
-    const blocks=(d.todos||[]).filter(t=>t.date===date&&staffKeys.includes(t.assignedTo)&&t.status!=='closed'&&t.status!=='rescheduled');
-    const dueTasks=(d.tasks||[]).filter(t=>t.dueDate===date&&staffKeys.includes(t.assignedTo)&&t.status!=='Done'&&t.status!=='Cancelled');
+    const blocks=(d.todos||[]).filter(t=>t.date===date&&staffKeys.includes(t.assignedTo)&&t.status!=='rescheduled');
+    const dueTasks=(d.tasks||[]).filter(t=>t.dueDate===date&&staffKeys.includes(t.assignedTo));
     return {blocks,dueTasks};
   }
   try{
     const [blockRes,taskRes]=await Promise.all([
-      sb.from('schedule_items').select('*').eq('kind','todo').eq('item_date',date).in('assigned_to',staffKeys).not('status','in','(done,cancelled,rescheduled)'),
-      sb.from('schedule_items').select('*').eq('kind','task').eq('due_date',date).in('assigned_to',staffKeys).not('status','in','(done,cancelled)')
+      sb.from('schedule_items').select('*').eq('kind','todo').eq('item_date',date).in('assigned_to',staffKeys).neq('status','rescheduled'),
+      sb.from('schedule_items').select('*').eq('kind','task').eq('due_date',date).in('assigned_to',staffKeys)
     ]);
     return {blocks:(blockRes.data||[]).map(mapTodo), dueTasks:(taskRes.data||[]).map(mapTask)};
   }catch(e){ return {blocks:[],dueTasks:[]}; }
@@ -7931,24 +7945,27 @@ function groupItemsByStaff(items,staffList){
 function dueTaskChipsHtml(dueTasks){
   if(!dueTasks.length) return '';
   return `<div class="sectitle" style="margin-top:0"><h3>Due today (no fixed time)</h3></div>
-  <div class="list" style="margin-bottom:16px">${dueTasks.map(t=>`<div class="rowcard" data-taskopen="${esc(t.id)}" style="cursor:pointer"><div class="top"><div><div class="nm">${esc(t.title)}</div><div class="meta">${esc(t.assignedToName||t.assignedTo)}</div></div><span class="tag ${t.status==='In Progress'?'warnt':'ghost'}">${esc(t.status)}</span></div></div>`).join('')}</div>`;
+  <div class="list" style="margin-bottom:16px">${dueTasks.map(t=>`<div class="rowcard" data-taskopen="${esc(t.id)}" style="cursor:pointer${t.status==='Done'||t.status==='Cancelled'?';opacity:.6':''}"><div class="top"><div><div class="nm"${t.status==='Done'||t.status==='Cancelled'?' style="text-decoration:line-through"':''}>${esc(t.title)}</div><div class="meta">${esc(t.assignedToName||t.assignedTo)}</div></div><span class="tag ${t.status==='In Progress'?'warnt':t.status==='Done'?'ok':t.status==='Cancelled'?'dgr':'ghost'}">${esc(t.status)}</span></div></div>`).join('')}</div>`;
 }
 function weekListHtml(startDate,itemsByDate){
   const days=[]; for(let i=0;i<7;i++) days.push(isoPlusDays(startDate,i));
   return days.map(d=>{
     const items=(itemsByDate[d]||[]).slice().sort((a,b)=>a.startTime.localeCompare(b.startTime));
     return `<div class="rowcard" style="margin-bottom:8px"><div class="mini" style="font-weight:800;margin-bottom:6px">${esc(fmtLongDate(d))}</div>
-      ${items.length?items.map(it=>`<div class="mini" style="padding:3px 0">${esc(it.startTime)}–${esc(it.endTime)} · ${esc(it.title)}</div>`).join(''):'<div class="mini" style="color:var(--muted)">Nothing scheduled</div>'}</div>`;
+      ${items.length?items.map(it=>{
+        const done=it.status==='closed', cancelled=it.status==='cancelled';
+        return `<div class="mini" style="padding:3px 0${done||cancelled?';opacity:.6;text-decoration:line-through':''}">${done?'✓ ':cancelled?'✕ ':''}${esc(it.startTime)}–${esc(it.endTime)} · ${esc(it.title)}</div>`;
+      }).join(''):'<div class="mini" style="color:var(--muted)">Nothing scheduled</div>'}</div>`;
   }).join('');
 }
 async function apiLoadWeekAgenda(startDate,staffKeys){
   const endDate=isoPlusDays(startDate,6);
   if(DEMO_MODE){
     const d=await demoLoad();
-    return (d.todos||[]).filter(t=>t.date>=startDate&&t.date<=endDate&&staffKeys.includes(t.assignedTo)&&t.status!=='closed'&&t.status!=='rescheduled');
+    return (d.todos||[]).filter(t=>t.date>=startDate&&t.date<=endDate&&staffKeys.includes(t.assignedTo)&&t.status!=='rescheduled');
   }
   try{
-    const {data}=await sb.from('schedule_items').select('*').eq('kind','todo').gte('item_date',startDate).lte('item_date',endDate).in('assigned_to',staffKeys).not('status','in','(done,cancelled,rescheduled)');
+    const {data}=await sb.from('schedule_items').select('*').eq('kind','todo').gte('item_date',startDate).lte('item_date',endDate).in('assigned_to',staffKeys).neq('status','rescheduled');
     return (data||[]).map(mapTodo);
   }catch(e){ return []; }
 }
