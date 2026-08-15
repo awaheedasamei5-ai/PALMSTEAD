@@ -4882,6 +4882,9 @@ async function enterApp(){
   ensureScheduleLiveSubscribed();
   ensureLeaveLiveSubscribed();
   ensureAttendanceLiveSubscribed();
+  ensureReferralsLiveSubscribed();
+  ensureContractRequestsLiveSubscribed();
+  ensureSiteVisitFeedbackLiveSubscribed();
   if(PROFILE.role!=='manager') evaluateMyAchievements();
   startInactivityTimer();
   startMonthRolloverWatchdog();
@@ -4984,6 +4987,71 @@ function ensureAttendanceLiveSubscribed(){
       .subscribe();
   }catch(e){}
 }
+/* ---- cross-app realtime, round 2: referrals + contract_requests + site_visit_feedback --
+   same shape as the channels above. Fixes the "have to sign out and back in to see a
+   client's submission" complaint -- those three tables were never getting realtime
+   events at all (client-side subscribe existed for schedule/leave/attendance already,
+   but none of the six tables above were actually in the supabase_realtime publication
+   until this phase's migration). Subscribed from BOTH the staff sign-in path and
+   enterClientPortal() below since either role can be the one waiting on a live update;
+   a given tab is only ever one or the other so the extra subscribe attempt is a no-op. */
+let REFERRALS_LIVE_CHANNEL=null;
+function ensureReferralsLiveSubscribed(){
+  if(DEMO_MODE || !sb || REFERRALS_LIVE_CHANNEL) return;
+  try{
+    const upsertLocal=row=>{
+      const r=mapReferral(row);
+      if(!IS_CLIENT){
+        const i=REFERRALS_LIST.findIndex(x=>x.id===r.id);
+        if(i>=0) REFERRALS_LIST[i]=r; else REFERRALS_LIST.unshift(r);
+        if(document.getElementById('mbody')&&mgrTab==='Referrals'){ document.getElementById('mbody').innerHTML=mgrReferralsHtml(); bindReferralsCtrls(); }
+      } else {
+        const i=CLIENT_REFERRALS_LIST.findIndex(x=>x.id===r.id);
+        if(i>=0) CLIENT_REFERRALS_LIST[i]=r; else CLIENT_REFERRALS_LIST.unshift(r);
+        if(CURRENT_ROUTE_NAME==='clientreferrals') viewClientReferrals();
+      }
+    };
+    REFERRALS_LIVE_CHANNEL=sb.channel('referrals-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'referrals'},payload=>upsertLocal(payload.new))
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'referrals'},payload=>upsertLocal(payload.new))
+      .subscribe();
+  }catch(e){}
+}
+let CONTRACT_REQUESTS_LIVE_CHANNEL=null;
+function ensureContractRequestsLiveSubscribed(){
+  if(DEMO_MODE || !sb || CONTRACT_REQUESTS_LIVE_CHANNEL) return;
+  try{
+    const upsertLocal=row=>{
+      const r=mapContractRequest(row);
+      if(!IS_CLIENT){
+        DB.contractRequests=DB.contractRequests||[];
+        const i=DB.contractRequests.findIndex(x=>x.id===r.id);
+        if(i>=0) DB.contractRequests[i]=r; else DB.contractRequests.unshift(r);
+        if(document.getElementById('contractAppBody')) paintContractAppBody();
+      } else {
+        if(CURRENT_ROUTE_NAME==='clientcontractsale') viewClientContractSale();
+      }
+    };
+    CONTRACT_REQUESTS_LIVE_CHANNEL=sb.channel('contract-requests-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'contract_requests'},payload=>upsertLocal(payload.new))
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'contract_requests'},payload=>upsertLocal(payload.new))
+      .subscribe();
+  }catch(e){}
+}
+// No staff-facing screen reads site_visit_feedback yet (only the client's own
+// submit/view flow exists) -- this channel keeps the client's own rating screen
+// live for now; a Management review screen is a real gap worth its own follow-up.
+let SITE_VISIT_FEEDBACK_LIVE_CHANNEL=null;
+function ensureSiteVisitFeedbackLiveSubscribed(){
+  if(DEMO_MODE || !sb || SITE_VISIT_FEEDBACK_LIVE_CHANNEL) return;
+  try{
+    SITE_VISIT_FEEDBACK_LIVE_CHANNEL=sb.channel('site-visit-feedback-live')
+      .on('postgres_changes',{event:'*',schema:'public',table:'site_visit_feedback'},()=>{
+        if(IS_CLIENT&&CURRENT_ROUTE_NAME==='clientvisitexperience') viewClientSiteVisitExperience();
+      })
+      .subscribe();
+  }catch(e){}
+}
 async function enterClientPortal(){
   document.getElementById('view').innerHTML='<div style="padding:70px 0;text-align:center"><div class="skel" style="height:120px;border-radius:16px;margin-bottom:14px"></div><div class="skel" style="height:80px;border-radius:16px"></div></div>';
   document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden');
@@ -5004,6 +5072,9 @@ async function enterClientPortal(){
   })();
   const greetPromise=showGreetScreen(CLIENT_PROFILE.name);
   ensureClientLiveSubscribed();
+  ensureReferralsLiveSubscribed();
+  ensureContractRequestsLiveSubscribed();
+  ensureSiteVisitFeedbackLiveSubscribed();
   startInactivityTimer();
   if(CLIENT_PROFILE.isDefaultPin){ setTimeout(()=>toast("You're using the default PIN — set your own in Settings for extra security."),1200); }
   setupPushNotifications();
@@ -5071,6 +5142,9 @@ document.getElementById('logoutBtn').onclick=async()=>{
   if(SCHEDULE_LIVE_CHANNEL){ try{ sb.removeChannel(SCHEDULE_LIVE_CHANNEL); }catch(e){} SCHEDULE_LIVE_CHANNEL=null; }
   if(LEAVE_LIVE_CHANNEL){ try{ sb.removeChannel(LEAVE_LIVE_CHANNEL); }catch(e){} LEAVE_LIVE_CHANNEL=null; }
   if(ATTENDANCE_LIVE_CHANNEL){ try{ sb.removeChannel(ATTENDANCE_LIVE_CHANNEL); }catch(e){} ATTENDANCE_LIVE_CHANNEL=null; }
+  if(REFERRALS_LIVE_CHANNEL){ try{ sb.removeChannel(REFERRALS_LIVE_CHANNEL); }catch(e){} REFERRALS_LIVE_CHANNEL=null; }
+  if(CONTRACT_REQUESTS_LIVE_CHANNEL){ try{ sb.removeChannel(CONTRACT_REQUESTS_LIVE_CHANNEL); }catch(e){} CONTRACT_REQUESTS_LIVE_CHANNEL=null; }
+  if(SITE_VISIT_FEEDBACK_LIVE_CHANNEL){ try{ sb.removeChannel(SITE_VISIT_FEEDBACK_LIVE_CHANNEL); }catch(e){} SITE_VISIT_FEEDBACK_LIVE_CHANNEL=null; }
   CLIENTDB_LOADED=false; CLIENTDB_LIST=[];
   CLIENT_NOTIFICATIONS=[];
   const bellBtn=document.getElementById('clientBellBtn'); if(bellBtn) bellBtn.classList.add('hidden');
