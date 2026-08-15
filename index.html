@@ -13748,7 +13748,7 @@ function canManageExpenses(){ return PROFILE.role==='manager' || PROFILE.key==='
 let EXP_TAB='log', EXP_LOADED=false, EXPENSES_LIST=[], FUND_REQUESTS_LIST=[], DAILY_BALANCES_LIST=[], EXP_CATEGORIES_LIST=[];
 function mapExpense(r){ return {id:r.id,category:r.category,amount:num(r.amount),method:r.payment_method,date:r.expense_date,description:r.description,
   receiptData:r.receipt_data,receiptName:r.receipt_name,loggedBy:r.logged_by,loggedByName:r.logged_by_name,status:r.status,
-  decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedAt:r.decided_at,decisionNote:r.decision_note,createdAt:r.created_at}; }
+  decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedAt:r.decided_at,decisionNote:r.decision_note,fundRequestId:r.fund_request_id,createdAt:r.created_at}; }
 function mapFundReq(r){ return {id:r.id,type:r.req_type,amount:num(r.amount),purpose:r.purpose,requestedBy:r.requested_by,requestedByName:r.requested_by_name,
   status:r.status,decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedAt:r.decided_at,decisionNote:r.decision_note,approvalSignature:r.approval_signature,createdAt:r.created_at}; }
 function mapDailyBalance(r){ return {id:r.id,date:r.balance_date,cash:num(r.cash),momo:num(r.momo),bank:num(r.bank),loggedByName:r.logged_by_name,updatedAt:r.updated_at}; }
@@ -13757,7 +13757,7 @@ async function apiAddExpenseCategory(name){ const {data,error}=await sb.from('ex
 async function apiLoadExpenses(){ const {data,error}=await sb.from('expenses').select('*').order('created_at',{ascending:false}); if(error) throw error; return (data||[]).map(mapExpense); }
 async function apiInsertExpense(e){
   const {data,error}=await sb.from('expenses').insert({category:e.category,amount:e.amount,payment_method:e.method,expense_date:e.date,description:e.description,
-    receipt_data:e.receiptData||null,receipt_name:e.receiptName||null,logged_by:PROFILE.key,logged_by_name:PROFILE.name}).select().single();
+    receipt_data:e.receiptData||null,receipt_name:e.receiptName||null,logged_by:PROFILE.key,logged_by_name:PROFILE.name,fund_request_id:e.fundRequestId||null}).select().single();
   if(error) throw error; return mapExpense(data);
 }
 async function apiDecideExpense(id,approve,note){
@@ -13844,8 +13844,15 @@ function expRowHtml(e){
   ${e.description?`<div class="note">${esc(e.description)}</div>`:''}
   ${e.receiptData?`<div class="foot" style="gap:8px"><button class="chip" data-expreceipt="${esc(e.id)}">View receipt</button></div>`:''}</div>`;
 }
+function fundReqHasLoggedSpend(id){ return EXPENSES_LIST.some(e=>e.fundRequestId===id); }
 function expFundsTabHtml(){
   const mine=FUND_REQUESTS_LIST.filter(f=>PROFILE.role==='manager'||f.requestedBy===PROFILE.key).slice(0,30);
+  // Approving a fund request is not the same as spending it -- someone still
+  // has to come back and log what actually happened, same discipline as
+  // every other money-adjacent flow in this app never auto-applying a value
+  // change. This surfaces the gap instead of letting it silently disappear
+  // once approved.
+  const outstanding=mine.filter(f=>f.status==='approved'&&!fundReqHasLoggedSpend(f.id));
   return `<div class="formwrap">
   <div class="sectitle" style="margin-top:0"><h3>Request funds</h3></div>
   ${fld('Type',sel('fr_type',['General budget','Specific / untagged spending'],'General budget'))}
@@ -13853,13 +13860,59 @@ function expFundsTabHtml(){
   ${fld('Purpose','<textarea id="fr_purpose" placeholder="What is this for?"></textarea>')}
   <div class="formactions"><button class="btn primary" id="frSaveBtn" style="width:100%">Send request</button></div>
   </div>
+  ${outstanding.length?`<div class="sectitle"><h3>Outstanding advances</h3><span class="cnt">${outstanding.length}</span></div>
+  <div class="list" style="margin-bottom:20px">${outstanding.map(f=>`<div class="rowcard"><div class="top"><div><div class="nm">${f.type==='budget'?'General budget':'Specific spend'} · ${ghs(f.amount)}</div><div class="meta">Approved ${esc((f.decidedAt||'').slice(0,10))}${f.requestedByName?' · '+esc(f.requestedByName):''}</div></div><span class="tag warnt">Not yet logged</span></div>
+    <div class="note">${esc(f.purpose)}</div>
+    <div class="foot" style="margin-top:10px"><button class="btn primary" data-logspend="${esc(f.id)}" style="width:100%">Log actual spend</button></div></div>`).join('')}</div>`:''}
   <div class="sectitle"><h3>Recent requests</h3><span class="cnt">${mine.length}</span></div>
   <div class="list">${mine.length?mine.map(f=>fundReqRowHtml(f)).join(''):emptyState(ic.doc,'No fund requests yet','Use the form above to request a budget or a specific spend.')}</div>`;
 }
 function fundReqRowHtml(f){
+  const logged=fundReqHasLoggedSpend(f.id);
   return `<div class="rowcard"><div class="top"><div><div class="nm">${f.type==='budget'?'General budget':'Specific spend'} · ${ghs(f.amount)}</div><div class="meta">${esc((f.createdAt||'').slice(0,10))}${f.requestedByName?' · by '+esc(f.requestedByName):''}</div></div>${expStatusTag(f.status)}</div>
   <div class="note">${esc(f.purpose)}</div>
-  ${f.status==='approved'?`<div class="foot" style="gap:8px"><button class="chip" data-frslip="${esc(f.id)}">Download approval slip</button></div>`:''}</div>`;
+  ${f.status==='approved'?`<div class="foot" style="gap:8px;flex-wrap:wrap">${logged?'<span class="tag ok">✓ Spend logged</span>':'<span class="tag warnt">Not yet logged</span>'}<button class="chip" data-frslip="${esc(f.id)}">Download approval slip</button></div>`:''}</div>`;
+}
+// Approving funds and logging what was actually spent are deliberately two
+// separate human steps (see expFundsTabHtml comment above) -- this modal is
+// the second one, pre-seeded from the approved request but the amount stays
+// editable since actual spend can differ from what was requested.
+function openLogSpendModal(f){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Log actual spend</div>
+    <div class="mini" style="margin-bottom:14px">Against the approved ${f.type==='budget'?'budget':'spend'} request: "${esc(f.purpose)}" (requested ${ghs(f.amount)}).</div>
+    ${fld('Category',sel('ls_category',EXP_CATEGORIES_LIST.map(c=>c.name),EXP_CATEGORIES_LIST[0]?EXP_CATEGORIES_LIST[0].name:''))}
+    <div class="grid2">${fld('Amount actually spent (GHS)','<input id="ls_amount" type="number" min="0" step="0.01" value="'+f.amount+'"/>')}${fld('Payment method',sel('ls_method',['Cash','MoMo','Bank'],'Cash'))}</div>
+    ${fld('Date','<input id="ls_date" type="date" value="'+today()+'"/>')}
+    ${fld('Description','<textarea id="ls_desc">'+esc(f.purpose)+'</textarea>')}
+    ${fld('Receipt','<input id="ls_receipt" type="file" accept="image/*,.pdf"/>','optional — image or PDF')}
+    <div id="ls_receiptPreview"></div>
+    <div class="formactions"><button class="btn primary" id="ls_save" style="width:100%">Log spend</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  let receiptPending=null;
+  document.getElementById('ls_receipt').onchange=async()=>{
+    const file=document.getElementById('ls_receipt').files[0]; if(!file) return;
+    try{
+      const isImage=file.type.startsWith('image/');
+      const data=isImage?await resizeImageToB64(file,1200,1600,0.8):await readFileAsB64(file,4*1024*1024);
+      receiptPending={data,name:file.name};
+      document.getElementById('ls_receiptPreview').innerHTML=isImage?`<img src="${data}" style="max-width:140px;border-radius:10px;margin-top:6px"/>`:`<div class="mini" style="margin-top:6px">📎 ${esc(file.name)}</div>`;
+    }catch(e){ toast('Could not attach that file: '+(e.message||e)); }
+  };
+  document.getElementById('ls_save').onclick=async()=>{
+    const amount=num(val('ls_amount')); if(!amount||amount<=0){ toast('Enter an amount'); return; }
+    const btn=document.getElementById('ls_save'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const rec=await apiInsertExpense({category:val('ls_category'),amount,method:val('ls_method').toLowerCase(),date:val('ls_date')||today(),
+        description:val('ls_desc').trim(),receiptData:receiptPending?receiptPending.data:null,receiptName:receiptPending?receiptPending.name:null,fundRequestId:f.id});
+      EXPENSES_LIST.unshift(rec);
+      toast('Spend logged — awaiting approval'); ov.remove(); paintExpensesApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Log spend'; }
+  };
 }
 function expBalanceTabHtml(){
   const todayRow=DAILY_BALANCES_LIST.find(b=>b.date===today());
@@ -13950,6 +14003,9 @@ function bindExpensesCtrls(){
   });
   document.querySelectorAll('[data-frslip]').forEach(b=>b.onclick=()=>{
     const f=FUND_REQUESTS_LIST.find(x=>x.id===b.dataset.frslip); if(f) buildFundRequestSlipPDF(f);
+  });
+  document.querySelectorAll('[data-logspend]').forEach(b=>b.onclick=()=>{
+    const f=FUND_REQUESTS_LIST.find(x=>x.id===b.dataset.logspend); if(f) openLogSpendModal(f);
   });
   const dbBtn=document.getElementById('dbSaveBtn');
   if(dbBtn) dbBtn.onclick=async()=>{
