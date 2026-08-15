@@ -15693,6 +15693,12 @@ function bindLeaveSettingsCtrls(){
 let MEMOS_LOADED=false;
 let memoAppTab='compose';
 let memoComposeSeed=null;
+let MEMO_CC_STATE=[];
+function renderMemoCcChips(){
+  const wrap=document.getElementById('memo_cc_chips'); if(!wrap) return;
+  wrap.innerHTML=MEMO_CC_STATE.map(c=>`<span class="chip on" style="display:inline-flex;align-items:center;gap:6px">${esc(c.name)}<button type="button" data-ccremove="${esc(c.key)}" style="background:none;border:none;color:inherit;cursor:pointer;font-size:15px;line-height:1;padding:0">×</button></span>`).join('');
+  wrap.querySelectorAll('[data-ccremove]').forEach(b=>b.onclick=()=>{ MEMO_CC_STATE=MEMO_CC_STATE.filter(c=>c.key!==b.dataset.ccremove); renderMemoCcChips(); });
+}
 function memoHtmlToRuns(html){
   const div=document.createElement('div'); div.innerHTML=html||'';
   const blockTags=new Set(['P','DIV','LI','H1','H2','H3','BLOCKQUOTE']);
@@ -15836,7 +15842,7 @@ function memoComposeHtml(){
   const others=STAFF_LIST.filter(s=>s.key!==PROFILE.key);
   return `<div class="formwrap">
   <div class="grid2">${fld('To',sel('memo_to',others.map(s=>s.name)))}${fld('Subject','<input id="memo_subject" placeholder="Subject" value="'+esc((memoComposeSeed&&memoComposeSeed.subject)||'')+'"/>')}</div>
-  ${fld('Cc <span class="mini">(optional — hold Ctrl/Cmd to pick more than one)</span>','<select id="memo_cc" multiple size="'+Math.min(4,Math.max(2,others.length))+'">'+others.map(s=>`<option value="${esc(s.key)}">${esc(s.name)}</option>`).join('')+'</select>')}
+  ${fld('Cc','<div id="memo_cc_chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div><input id="memo_cc_input" placeholder="Type a name to add…" autocomplete="off"/><div id="memo_cc_results"></div>','optional — pick as many as you need')}
   <p class="mini" style="margin:-4px 0 10px">Letterhead, date, and the recipient's name are added automatically when this is downloaded or printed.</p>
   <div class="memoToolbar" id="memoToolbar">
     <select id="memo_font" title="Font"><option value="Helvetica, Arial, sans-serif">Helvetica</option><option value="Georgia, serif">Georgia</option><option value="'Times New Roman', serif">Times New Roman</option><option value="'Courier New', monospace">Courier New</option><option value="Arial, sans-serif">Arial</option></select>
@@ -15861,9 +15867,22 @@ function bindMemoComposeCtrls(){
     const toStaff=STAFF_LIST.find(s=>s.key===memoComposeSeed.toKey);
     if(toStaff) document.getElementById('memo_to').value=toStaff.name;
   }
-  if(memoComposeSeed&&memoComposeSeed.ccKeys){
-    [...document.getElementById('memo_cc').options].forEach(o=>{ o.selected=memoComposeSeed.ccKeys.includes(o.value); });
-  }
+  const ccOthers=STAFF_LIST.filter(s=>s.key!==PROFILE.key);
+  MEMO_CC_STATE=(memoComposeSeed&&memoComposeSeed.ccKeys?memoComposeSeed.ccKeys:[]).map(k=>ccOthers.find(s=>s.key===k)).filter(Boolean).map(s=>({key:s.key,name:s.name}));
+  renderMemoCcChips();
+  const ccInput=document.getElementById('memo_cc_input');
+  const ccResults=document.getElementById('memo_cc_results');
+  ccInput.oninput=debounce(()=>{
+    const q=ccInput.value.trim().toLowerCase();
+    if(!q){ ccResults.innerHTML=''; return; }
+    const matches=ccOthers.filter(s=>!MEMO_CC_STATE.some(c=>c.key===s.key)&&s.name.toLowerCase().includes(q)).slice(0,6);
+    ccResults.innerHTML=matches.length?matches.map(s=>`<button type="button" class="chip" data-ccpick="${esc(s.key)}" style="display:block;width:100%;text-align:left;margin:4px 0">${esc(s.name)}</button>`).join(''):'<div class="mini" style="margin-top:6px">No matches</div>';
+    ccResults.querySelectorAll('[data-ccpick]').forEach(btn=>btn.onclick=()=>{
+      const picked=ccOthers.find(s=>s.key===btn.dataset.ccpick); if(!picked) return;
+      MEMO_CC_STATE.push({key:picked.key,name:picked.name});
+      renderMemoCcChips(); ccInput.value=''; ccResults.innerHTML=''; ccInput.focus();
+    });
+  },150);
   const seed=memoComposeSeed; memoComposeSeed=null;
   document.querySelectorAll('[data-memocmd]').forEach(b=>b.onclick=()=>{ editor.focus(); document.execCommand(b.dataset.memocmd,false,null); });
   document.getElementById('memo_font').onchange=e=>{ editor.focus(); document.execCommand('fontName',false,e.target.value); };
@@ -15873,8 +15892,7 @@ function bindMemoComposeCtrls(){
     const toName=val('memo_to'); const recipient=others.find(s=>s.name===toName);
     const subject=val('memo_subject').trim();
     const bodyHtml=editor.innerHTML.trim();
-    const ccKeys=[...document.getElementById('memo_cc').selectedOptions].map(o=>o.value).filter(k=>!recipient||k!==recipient.key);
-    const ccList=ccKeys.map(k=>others.find(s=>s.key===k)).filter(Boolean).map(s=>({key:s.key,name:s.name}));
+    const ccList=MEMO_CC_STATE.filter(c=>!recipient||c.key!==recipient.key);
     return {recipient,subject,bodyHtml,ccList};
   };
   document.getElementById('memoSendBtn').onclick=async()=>{
