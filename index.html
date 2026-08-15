@@ -376,6 +376,8 @@ a{color:var(--green2)}
 .bubble .who{font-size:11px;font-weight:800;color:#1D4ED8;margin-bottom:2px}
 .bubblerow.me .bubble .who{display:none}
 .bubble .time{font-size:10px;color:var(--muted);text-align:right;margin-top:3px;opacity:.8;display:flex;align-items:center;justify-content:flex-end;gap:6px}
+.msgReceipt{font-size:11px;color:rgba(27,43,5,.55);letter-spacing:-1px}
+.msgReceipt.read{color:#1D9BF0}
 .msgActions{display:inline-flex;gap:5px;opacity:0;transition:.15s}
 .bubble:hover .msgActions{opacity:1}
 .msgActBtn{background:rgba(0,0,0,.08);border:none;border-radius:100px;width:18px;height:18px;font-size:9.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:inherit}
@@ -4667,13 +4669,23 @@ async function apiMarkKindRead(kind){
   try{ await sb.from('messages').update({read:true}).eq('kind',kind).eq('recipient_key',PROFILE.key).eq('read',false); }catch(e){}
 }
 function unreadByKind(kind){ return DB.messages.filter(m=>m.recipientKey===PROFILE.key&&!m.read&&m.kind===kind).length; }
-function subscribeToChat(onMessage){
+function subscribeToChat(onMessage,onMessageUpdate){
   if(DEMO_MODE || !sb || CHAT_CHANNEL) return;
   try{
-    CHAT_CHANNEL=sb.channel('messages-live').on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},payload=>{
-      const m=mapMsg(payload.new);
-      if(m.senderKey===PROFILE.key || m.recipientKey===PROFILE.key) onMessage(m);
-    }).subscribe();
+    CHAT_CHANNEL=sb.channel('messages-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},payload=>{
+        const m=mapMsg(payload.new);
+        if(m.senderKey===PROFILE.key || m.recipientKey===PROFILE.key) onMessage(m);
+      })
+      // UPDATE is specifically for the read-receipt flag flipping (marking a
+      // thread read writes `read:true` on the recipient's side) -- this is what
+      // lets the sender's checkmark go from single to double live, instead of
+      // only updating next time they reopen the thread.
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages'},payload=>{
+        const m=mapMsg(payload.new);
+        if((m.senderKey===PROFILE.key || m.recipientKey===PROFILE.key) && onMessageUpdate) onMessageUpdate(m);
+      })
+      .subscribe();
   }catch(e){}
 }
 /* ---- monthly target selections (expected revenue tracking) ---- */
@@ -5286,7 +5298,12 @@ function ensurePresenceSubscribed(){
     const chan=sb.channel('presence-live',{config:{presence:{key:PROFILE.key}}})
       .on('presence',{event:'sync'},rebuild)
       .on('presence',{event:'join'},rebuild)
-      .on('presence',{event:'leave'},rebuild);
+      .on('presence',{event:'leave'},rebuild)
+      // Typing indicator broadcast (Phase 11 chat UI) -- transient, not persisted,
+      // only acted on if it's addressed to us and we have that thread open.
+      .on('broadcast',{event:'typing'},({payload})=>{
+        if(payload&&payload.to===PROFILE.key&&payload.from===CHAT_THREAD_OTHER_KEY&&typeof showTypingIndicator==='function') showTypingIndicator();
+      });
     // Reference chan directly (not PRESENCE_LIVE_CHANNEL) inside the callback --
     // subscribe()'s callback firing before the outer assignment below completes
     // would otherwise call .track() on a still-null variable.
@@ -7760,6 +7777,44 @@ function chatDayLabel(iso){
   return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:d.getFullYear()!==today0.getFullYear()?'numeric':undefined});
 }
 function chatTimeLabel(iso){ const d=new Date(iso); return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
+function chatLastSeenLabel(iso){
+  const mins=Math.round((Date.now()-new Date(iso).getTime())/60000);
+  if(mins<1) return 'just now';
+  if(mins<60) return mins+'m ago';
+  if(mins<24*60) return Math.round(mins/60)+'h ago';
+  return chatDayLabel(iso)+' at '+chatTimeLabel(iso);
+}
+// Real presence (Phase 10's PRESENCE_ONLINE_KEYS), replacing the old hardcoded
+// "online on PEP Landbank" string, with a "last seen" fallback off profiles.last_seen_at.
+let CHAT_THREAD_OTHER_KEY=null;
+function chatPresenceStatusHtml(otherKey){
+  if(DEMO_MODE) return `<span class="waOnlineDot"></span>demo mode`;
+  if(PRESENCE_ONLINE_KEYS.has(otherKey)) return `<span class="waOnlineDot"></span>online`;
+  const profile=(DB.profiles||[]).find(p=>p.agent_key===otherKey);
+  return profile&&profile.last_seen_at?esc('last seen '+chatLastSeenLabel(profile.last_seen_at)):'offline';
+}
+// Called by ensurePresenceSubscribed()'s rebuild() whenever the presence set
+// changes -- only touches the DOM if a chat thread is actually open right now.
+function refreshChatThreadPresence(){
+  const el=document.getElementById('waStatusLine');
+  if(el&&CHAT_THREAD_OTHER_KEY) el.innerHTML=chatPresenceStatusHtml(CHAT_THREAD_OTHER_KEY);
+}
+// Typing indicator: a transient broadcast on the same presence-live channel
+// (not persisted to the DB, not a postgres_changes event) scoped to whoever the
+// sender is currently chatting with. Auto-clears after 3s of silence.
+let CHAT_TYPING_TIMER=null, CHAT_TYPING_SEND_AT=0;
+function sendTypingBroadcast(otherKey){
+  if(!PRESENCE_LIVE_CHANNEL||DEMO_MODE) return;
+  const now=Date.now(); if(now-CHAT_TYPING_SEND_AT<2500) return; // throttle
+  CHAT_TYPING_SEND_AT=now;
+  try{ PRESENCE_LIVE_CHANNEL.send({type:'broadcast',event:'typing',payload:{from:PROFILE.key,to:otherKey}}); }catch(e){}
+}
+function showTypingIndicator(){
+  const el=document.getElementById('waStatusLine'); if(!el) return;
+  el.innerHTML='<span class="waOnlineDot"></span>typing…';
+  clearTimeout(CHAT_TYPING_TIMER);
+  CHAT_TYPING_TIMER=setTimeout(()=>{ if(CHAT_THREAD_OTHER_KEY) refreshChatThreadPresence(); },3000);
+}
 function otherStaffList(){ return STAFF_LIST.filter(s=>s.key!==PROFILE.key); }
 function avatarOf(key){ const p=(DB.profiles||[]).find(x=>x.agent_key===key); return p&&p.avatar?p.avatar:null; }
 function phoneForStaffKey(key){ const p=(DB.profiles||[]).find(x=>x.agent_key===key); return p&&(p.phone||p.whatsapp)?(p.phone||p.whatsapp):null; }
@@ -7956,7 +8011,10 @@ function renderChatLog(otherKey){
     if(day!==lastDay){ dayHtml=`<div class="chatday">${esc(day)}</div>`; lastDay=day; }
     const mine=m.senderKey===PROFILE.key;
     const att=m.attachType?attachmentBubble(m):'';
-    return dayHtml+`<div class="bubblerow ${mine?'me':''}"><div class="bubble" data-msgid="${m.id}">${att}${m.body?linkifyText(m.body):''}<div class="time">${chatTimeLabel(m.createdAt)}
+    // Read receipt (mine only): single grey check = sent, double blue check = read
+    // by the recipient -- the `read` column already existed, just wasn't surfaced.
+    const receipt=mine?`<span class="msgReceipt ${m.read?'read':''}" title="${m.read?'Read':'Sent'}">${m.read?'✓✓':'✓'}</span>`:'';
+    return dayHtml+`<div class="bubblerow ${mine?'me':''}"><div class="bubble" data-msgid="${m.id}">${att}${m.body?linkifyText(m.body):''}<div class="time">${chatTimeLabel(m.createdAt)}${receipt}
       <span class="msgActions"><button class="msgActBtn" data-fwdmsg="${m.id}" title="Forward">↗</button>${m.body?`<button class="msgActBtn" data-copymsg="${m.id}" title="Copy">⧉</button>`:''}${mine?`<button class="msgActBtn" data-delmsg="${m.id}" title="Delete">${ic.trash}</button>`:''}</span>
       </div></div></div>`;
   }).join('');
@@ -7971,11 +8029,12 @@ function viewChat(){
 function viewChatThread(otherKey){
   const staff=STAFF_LIST.find(s=>s.key===otherKey); if(!staff) return;
   const profile=(DB.profiles||[]).find(p=>p.agent_key===otherKey);
+  CHAT_THREAD_OTHER_KEY=otherKey;
   V.innerHTML=`
   <div class="waHeader">
     <button class="waBackBtn" id="waBackBtn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <div class="waAvatar">${profile&&profile.avatar?`<img src="${profile.avatar}"/>`:esc(staff.name[0])}</div>
-    <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:15.5px">${esc(staff.name)}</div><div style="font-size:11.5px;opacity:.85;display:flex;align-items:center;gap:5px"><span class="waOnlineDot"></span>${DEMO_MODE?'demo mode':'online on PEP Landbank'}</div></div>
+    <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:15.5px">${esc(staff.name)}</div><div id="waStatusLine" style="font-size:11.5px;opacity:.85;display:flex;align-items:center;gap:5px">${chatPresenceStatusHtml(otherKey)}</div></div>
     ${profile&&profile.phone?`<a class="waHeaderIcoBtn" href="${esc(telHrefFromPhone(profile.phone))}" title="Call ${esc(staff.name)}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1.9.3 1.8.6 2.7a2 2 0 01-.5 2.1L8 9.7a16 16 0 006 6l1.2-1.2a2 2 0 012.1-.5c.9.3 1.8.5 2.7.6a2 2 0 011.7 2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></a>`:`<button class="waHeaderIcoBtn" style="opacity:.4;cursor:default" title="${esc(staff.name)} hasn't added a phone number yet"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1.9.3 1.8.6 2.7a2 2 0 01-.5 2.1L8 9.7a16 16 0 006 6l1.2-1.2a2 2 0 012.1-.5c.9.3 1.8.5 2.7.6a2 2 0 011.7 2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>`}
     <button class="waHeaderIcoBtn" id="waMenuBtn" title="More"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg></button>
   </div>
@@ -8144,6 +8203,7 @@ function bindChatBodyThread(otherKey){
   };
   document.getElementById('chatSendBtn').onclick=send;
   input.addEventListener('keydown',e=>{ if(e.key==='Enter') send(); });
+  input.addEventListener('input',()=>{ if(input.value.trim()) sendTypingBroadcast(otherKey); });
   document.getElementById('chatAttachBtn').onclick=()=>openAttachMenu(otherKey);
   document.getElementById('chatFileInput').onchange=e=>{ const f=e.target.files[0]; if(f) sendChatAttachment(otherKey,f); e.target.value=''; };
   bindVoiceRecorder(otherKey);
@@ -8217,6 +8277,14 @@ function ensureChatSubscribed(){
       l.innerHTML=renderChatLog(otherKey); if(atBottom) l.scrollTop=l.scrollHeight;
       bindChatMediaCtrls(otherKey);
       if(newMsg.senderKey===otherKey) apiMarkThreadRead(otherKey);
+    }
+  },updatedMsg=>{
+    const i=DB.messages.findIndex(m=>m.id===updatedMsg.id);
+    if(i>=0) DB.messages[i]=updatedMsg; else return;
+    const l=document.getElementById('chatLog');
+    if(l && document.getElementById('chatInput')){
+      const otherKey=updatedMsg.senderKey===PROFILE.key?updatedMsg.recipientKey:updatedMsg.senderKey;
+      if(otherKey===CHAT_THREAD_OTHER_KEY){ const atBottom=l.scrollHeight-l.scrollTop-l.clientHeight<80; l.innerHTML=renderChatLog(otherKey); if(atBottom) l.scrollTop=l.scrollHeight; bindChatMediaCtrls(otherKey); }
     }
   });
 }
