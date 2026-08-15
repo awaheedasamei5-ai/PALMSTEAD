@@ -12185,7 +12185,15 @@ function computeClientPortfolioTotal(contact,leadsList,name){
   return own.reduce((s,l)=>{ const c=computeLead(l); return s+(l.grandTotal!=null?num(l.grandTotal):c.grand); },0);
 }
 /* ================= PAYMENT RECEIPT (lime/charcoal land-sale style) ================= */
-const RECEIPT_CREAM=[240,241,233], RECEIPT_LIME=[220,241,14], RECEIPT_DARK=[51,51,51], RECEIPT_GRAY=[110,118,128], RECEIPT_LINE=[214,214,206];
+// Redesigned onto the same navy/gold brand palette used app-wide (--ink/--premium
+// in the CSS :root), instead of the previous generic lime-green/cream scheme --
+// makes the receipt read as an extension of the Palmstead brand rather than a
+// stock template. Icon-bubble rows replaced with clean label/value typography
+// (bold muted-gray caps label, bold dark value) -- premium financial documents
+// (the Stripe/invoice-app style this was modeled after) lean on typographic
+// hierarchy and restrained color, not decorative icons.
+const RECEIPT_INK=[11,30,61], RECEIPT_GOLD=[201,162,39], RECEIPT_GOLD2=[232,199,102],
+  RECEIPT_DARK=[16,24,32], RECEIPT_GRAY=[92,114,128], RECEIPT_LINE=[222,230,234], RECEIPT_PAPER=[250,251,252];
 function pdfFitText(doc,text,maxW){
   text=String(text==null?'':text); if(!text) return '';
   if(doc.getTextWidth(text)<=maxW) return text;
@@ -12193,31 +12201,39 @@ function pdfFitText(doc,text,maxW){
   while(t.length>1 && doc.getTextWidth(t+'…')>maxW) t=t.slice(0,-1);
   return t+'…';
 }
-function pdfReceiptArcAccent(doc,pageW){
-  const cx=pageW+16, cy=16;
-  [[96,RECEIPT_LIME],[83,RECEIPT_CREAM],[69,RECEIPT_LIME],[56,RECEIPT_CREAM],[42,RECEIPT_LIME],[29,RECEIPT_CREAM]].forEach(([r,col])=>{
-    doc.setFillColor(col[0],col[1],col[2]); doc.circle(cx,cy,r,'F');
-  });
+// Full-width navy header band with a thin gold rule underneath -- the logo (if
+// configured) sits on its own small white badge so arbitrary logo art stays
+// legible regardless of the logo's own colors. Returns the y-position where the
+// white body content should start.
+function pdfReceiptHeaderBand(doc,pageW,ref,dateStr,companyName){
+  const bandH=40;
+  doc.setFillColor(RECEIPT_INK[0],RECEIPT_INK[1],RECEIPT_INK[2]); doc.rect(0,0,pageW,bandH,'F');
+  doc.setFillColor(RECEIPT_GOLD[0],RECEIPT_GOLD[1],RECEIPT_GOLD[2]); doc.rect(0,bandH,pageW,1.1,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(21); doc.setTextColor(255,255,255);
+  doc.text('PAYMENT RECEIPT',14,19);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(RECEIPT_GOLD2[0],RECEIPT_GOLD2[1],RECEIPT_GOLD2[2]);
+  doc.text(companyName,14,27);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(205,213,222);
+  doc.text('Receipt No. '+ref,14,34);
+  doc.text(dateStr,pageW-14,34,{align:'right'});
+  if(CONFIG.receiptLogoImage){
+    try{
+      const props=doc.getImageProperties(CONFIG.receiptLogoImage);
+      const maxW=28,maxH=14; let lw=maxW,lh=lw*props.height/props.width;
+      if(lh>maxH){ lh=maxH; lw=lh*props.width/props.height; }
+      const padX=4,padY=3;
+      doc.setFillColor(255,255,255);
+      doc.roundedRect(pageW-14-lw-padX*2,(bandH-lh-padY*2)/2,lw+padX*2,lh+padY*2,2,2,'F');
+      doc.addImage(CONFIG.receiptLogoImage,'PNG',pageW-14-lw-padX,(bandH-lh)/2,lw,lh);
+    }catch(e){}
+  }
+  return bandH+1.1;
 }
-function pdfReceiptIcon(doc,cx,cy,r,kind){
-  doc.setFillColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.circle(cx,cy,r,'F');
-  doc.setFillColor(255,255,255); doc.setDrawColor(255,255,255);
-  if(kind==='person'){ doc.circle(cx,cy-r*0.28,r*0.32,'F'); doc.triangle(cx-r*0.45,cy+r*0.55,cx+r*0.45,cy+r*0.55,cx,cy-r*0.02,'F'); }
-  else if(kind==='pin'){ doc.circle(cx,cy-r*0.2,r*0.34,'F'); doc.triangle(cx-r*0.22,cy+r*0.05,cx+r*0.22,cy+r*0.05,cx,cy+r*0.55,'F'); }
-  else if(kind==='phone'){ doc.setLineWidth(r*0.32); doc.line(cx-r*0.28,cy-r*0.42,cx+r*0.42,cy+r*0.5); }
-  else if(kind==='mail'){ doc.rect(cx-r*0.42,cy-r*0.28,r*0.84,r*0.58,'F'); doc.setDrawColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.setLineWidth(r*0.12); doc.line(cx-r*0.42,cy-r*0.28,cx,cy+r*0.08); doc.line(cx+r*0.42,cy-r*0.28,cx,cy+r*0.08); }
-  else if(kind==='wallet'){ doc.rect(cx-r*0.44,cy-r*0.32,r*0.88,r*0.62,'F'); doc.setFillColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.circle(cx+r*0.2,cy-r*0.02,r*0.1,'F'); }
-  else if(kind==='bank'){ doc.triangle(cx-r*0.44,cy-r*0.12,cx+r*0.44,cy-r*0.12,cx,cy-r*0.5,'F'); doc.rect(cx-r*0.44,cy-r*0.1,r*0.88,r*0.5,'F'); }
-  else if(kind==='calendar'){ doc.rect(cx-r*0.42,cy-r*0.36,r*0.84,r*0.72,'F'); doc.setDrawColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.setLineWidth(r*0.14); doc.line(cx-r*0.42,cy-r*0.12,cx+r*0.42,cy-r*0.12); }
-  else if(kind==='check'){ doc.setDrawColor(255,255,255); doc.setLineWidth(r*0.28); doc.line(cx-r*0.32,cy,cx-r*0.06,cy+r*0.28); doc.line(cx-r*0.06,cy+r*0.28,cx+r*0.4,cy-r*0.32); }
-  doc.setDrawColor(0,0,0); doc.setFillColor(0,0,0);
-}
-function pdfReceiptInfoRow(doc,x,y,colW,r,kind,label,value){
-  pdfReceiptIcon(doc,x+r,y-r*0.7,r,kind);
-  doc.setFont('helvetica','bold'); doc.setFontSize(7.2); doc.setTextColor(RECEIPT_GRAY[0],RECEIPT_GRAY[1],RECEIPT_GRAY[2]);
-  doc.text(label,x+r*2+3,y);
-  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
-  doc.text(pdfFitText(doc,value,colW-r*2-3-26),x+r*2+29,y);
+function pdfReceiptRow(doc,x,y,colW,label,value){
+  doc.setFont('helvetica','bold'); doc.setFontSize(6.8); doc.setTextColor(RECEIPT_GRAY[0],RECEIPT_GRAY[1],RECEIPT_GRAY[2]);
+  doc.text(label.toUpperCase(),x,y);
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+  doc.text(pdfFitText(doc,value,colW),x,y+4.8);
 }
 // Resolves a real, permanent receipt number the first time anyone requests one for
 // this payment (staff or client), logging who/when/why to receipt_log -- an insert-
@@ -12241,44 +12257,33 @@ function buildReceiptPDF(clientName,payment,lead,existingDoc,portfolioTotal,rece
   const companyName=CONFIG.quoteCompanyName||'Trulander JSF Limited';
   const L=14, R=196, colW=(R-L-10)/2, colLx=L, colRx=L+colW+10;
 
-  doc.setFillColor(RECEIPT_CREAM[0],RECEIPT_CREAM[1],RECEIPT_CREAM[2]); doc.rect(0,0,pageW,pageH,'F');
-  pdfReceiptArcAccent(doc,pageW);
+  doc.setFillColor(RECEIPT_PAPER[0],RECEIPT_PAPER[1],RECEIPT_PAPER[2]); doc.rect(0,0,pageW,pageH,'F');
+  let y=pdfReceiptHeaderBand(doc,pageW,ref,dateStr,companyName);
   doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+  y+=10;
+  if(CONFIG.companyTin){ doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(RECEIPT_GRAY[0],RECEIPT_GRAY[1],RECEIPT_GRAY[2]); doc.text('Tax ID: '+CONFIG.companyTin,L,y); y+=7; } else y+=2;
 
-  if(CONFIG.receiptLogoImage){
-    try{
-      const props=doc.getImageProperties(CONFIG.receiptLogoImage);
-      const maxW=32,maxH=18; let lw=maxW,lh=lw*props.height/props.width;
-      if(lh>maxH){ lh=maxH; lw=lh*props.width/props.height; }
-      doc.addImage(CONFIG.receiptLogoImage,'PNG',R-lw,14,lw,lh);
-    }catch(e){}
-  }
-
-  doc.setFont('helvetica','bold'); doc.setFontSize(28);
-  doc.text('PAYMENT',L,27); doc.text('RECEIPT',L,43);
-  let infoY=51;
-  if(CONFIG.companyTin){ doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]); doc.text('Tax ID: '+CONFIG.companyTin,L,infoY); infoY+=5; }
-  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(RECEIPT_GRAY[0],RECEIPT_GRAY[1],RECEIPT_GRAY[2]);
-  doc.text('Receipt No: '+ref+'   ·   Date: '+dateStr,L,infoY);
-
-  let y=68;
-  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
-  doc.text('BILL TO:',colLx,y); doc.text('ISSUED BY:',colRx,y);
-  y+=9;
-  const r=2.7, rowH=7.4;
-  const billRows=[['person','Name',clientName],['pin','Plot',lead?((lead.plotType||'Plot')+' × '+(lead.noPlots||1)):'—'],['phone','Phone',(lead&&lead.contact)||(typeof CLIENT_PROFILE!=='undefined'&&CLIENT_PROFILE&&CLIENT_PROFILE.contact)||'—'],['mail','Email',(typeof CLIENT_PROFILE!=='undefined'&&CLIENT_PROFILE&&CLIENT_PROFILE.email)||'—']];
-  const issuedRows=[['person','Name',companyName],['pin','Address',CONFIG.quoteFooterAddress||siteName],['phone','Phone',CONFIG.companyPhone||'—'],['mail','Email',CONFIG.companyEmail||'—']];
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(RECEIPT_INK[0],RECEIPT_INK[1],RECEIPT_INK[2]);
+  doc.text('BILL TO',colLx,y); doc.text('ISSUED BY',colRx,y);
+  doc.setDrawColor(RECEIPT_GOLD[0],RECEIPT_GOLD[1],RECEIPT_GOLD[2]); doc.setLineWidth(0.6);
+  doc.line(colLx,y+1.5,colLx+16,y+1.5); doc.line(colRx,y+1.5,colRx+16,y+1.5);
+  y+=8;
+  const rowH=10.5;
+  const billRows=[['Name',clientName],['Plot',lead?((lead.plotType||'Plot')+' × '+(lead.noPlots||1)):'—'],['Phone',(lead&&lead.contact)||(typeof CLIENT_PROFILE!=='undefined'&&CLIENT_PROFILE&&CLIENT_PROFILE.contact)||'—'],['Email',(typeof CLIENT_PROFILE!=='undefined'&&CLIENT_PROFILE&&CLIENT_PROFILE.email)||'—']];
+  const issuedRows=[['Name',companyName],['Address',CONFIG.quoteFooterAddress||siteName],['Phone',CONFIG.companyPhone||'—'],['Email',CONFIG.companyEmail||'—']];
   for(let i=0;i<4;i++){
-    pdfReceiptInfoRow(doc,colLx,y+i*rowH,colW,r,billRows[i][0],billRows[i][1],billRows[i][2]);
-    pdfReceiptInfoRow(doc,colRx,y+i*rowH,colW,r,issuedRows[i][0],issuedRows[i][1],issuedRows[i][2]);
+    pdfReceiptRow(doc,colLx,y+i*rowH,colW,billRows[i][0],billRows[i][1]);
+    pdfReceiptRow(doc,colRx,y+i*rowH,colW,issuedRows[i][0],issuedRows[i][1]);
   }
-  y+=4*rowH+8;
+  y+=4*rowH+4;
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
-  doc.text('PAYMENT DETAILS',L,y); y+=6;
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(RECEIPT_INK[0],RECEIPT_INK[1],RECEIPT_INK[2]);
+  doc.text('PAYMENT DETAILS',L,y);
+  doc.setDrawColor(RECEIPT_GOLD[0],RECEIPT_GOLD[1],RECEIPT_GOLD[2]); doc.line(L,y+1.5,L+16,y+1.5);
+  y+=6;
   const tblX=[L,98,120,158], tblW=[84,22,38,38];
-  doc.setFillColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.rect(L,y,R-L,8,'F');
-  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+  doc.setFillColor(RECEIPT_INK[0],RECEIPT_INK[1],RECEIPT_INK[2]); doc.rect(L,y,R-L,8,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(255,255,255);
   doc.text('DESCRIPTION',tblX[0]+3,y+5.3); doc.text('QTY',tblX[1]+3,y+5.3); doc.text('UNIT PRICE',tblX[2]+3,y+5.3); doc.text('TOTAL',tblX[3]+3,y+5.3);
   y+=8;
   const c=lead?computeLead(lead):null; const grand=lead?(lead.grandTotal!=null?num(lead.grandTotal):c.grand):0;
@@ -12296,23 +12301,24 @@ function buildReceiptPDF(clientName,payment,lead,existingDoc,portfolioTotal,rece
   if(lead){
     const paid=num(lead.amtPaid); const bal=Math.max(grand-paid,0);
     const boxX=tblX[2], boxW=(R-boxX);
-    const totRows=[['Total contract price',ghs(grand)],['Paid to date',ghs(paid)],[bal<=0?'Status':'Balance remaining',bal<=0?'PAID IN FULL':ghs(bal)]];
+    const totRows=[['Total contract price',ghs(grand),false],['Paid to date',ghs(paid),false],[bal<=0?'Status':'Balance remaining',bal<=0?'PAID IN FULL':ghs(bal),true]];
     totRows.forEach((row,i)=>{
-      const ry=y+i*7.5;
-      if(i>0){ doc.setDrawColor(RECEIPT_LINE[0],RECEIPT_LINE[1],RECEIPT_LINE[2]); doc.line(boxX,ry-5,R,ry-5); }
+      const ry=y+i*7.8;
+      if(i>0){ doc.setDrawColor(RECEIPT_LINE[0],RECEIPT_LINE[1],RECEIPT_LINE[2]); doc.line(boxX,ry-5.2,R,ry-5.2); }
       doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(RECEIPT_GRAY[0],RECEIPT_GRAY[1],RECEIPT_GRAY[2]);
       doc.text(row[0],boxX+3,ry);
-      doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+      doc.setFont('helvetica','bold'); doc.setFontSize(row[2]?11:9.5); doc.setTextColor(row[2]?RECEIPT_GOLD[0]:RECEIPT_DARK[0],row[2]?RECEIPT_GOLD[1]:RECEIPT_DARK[1],row[2]?RECEIPT_GOLD[2]:RECEIPT_DARK[2]);
       doc.text(row[1],R-3,ry,{align:'right'});
     });
-    y+=3*7.5+8;
+    y+=3*7.8+8;
   } else y+=8;
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
-  doc.text('PAYMENT INFORMATION:',colLx,y); doc.text('NOTES:',colRx,y);
-  y+=9;
-  const payRows=[['wallet','Payment Method',payment.method||'—'],['bank','Reference No.',ref],['calendar','Payment Date',dateStr],['check','Status',lead?(Math.max(grand-num(lead.amtPaid),0)<=0?'PAID IN FULL':'PARTIAL PAYMENT'):'RECEIVED']];
-  payRows.forEach((row,i)=>pdfReceiptInfoRow(doc,colLx,y+i*rowH,colW,r,row[0],row[1],row[2]));
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(RECEIPT_INK[0],RECEIPT_INK[1],RECEIPT_INK[2]);
+  doc.text('PAYMENT INFORMATION',colLx,y); doc.text('NOTES',colRx,y);
+  doc.setDrawColor(RECEIPT_GOLD[0],RECEIPT_GOLD[1],RECEIPT_GOLD[2]); doc.line(colLx,y+1.5,colLx+16,y+1.5); doc.line(colRx,y+1.5,colRx+16,y+1.5);
+  y+=8;
+  const payRows=[['Payment Method',payment.method||'—'],['Reference No.',ref],['Payment Date',dateStr],['Status',lead?(Math.max(grand-num(lead.amtPaid),0)<=0?'PAID IN FULL':'PARTIAL PAYMENT'):'RECEIVED']];
+  payRows.forEach((row,i)=>pdfReceiptRow(doc,colLx,y+i*rowH,colW,row[0],row[1]));
 
   const notes=[CONFIG.receiptThanksText||'This receipt confirms the amount above was received by us and applied to your account.','Please keep this document for your records.'];
   if(portfolioTotal!=null) notes.push('Total value across all your purchases with us: '+ghs(portfolioTotal));
@@ -12320,14 +12326,14 @@ function buildReceiptPDF(clientName,payment,lead,existingDoc,portfolioTotal,rece
   let ny=y;
   doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
   notes.forEach(n=>{
-    doc.setFillColor(RECEIPT_LIME[0],RECEIPT_LIME[1],RECEIPT_LIME[2]); doc.circle(colRx+1,ny-1.4,0.8,'F');
+    doc.setFillColor(RECEIPT_GOLD[0],RECEIPT_GOLD[1],RECEIPT_GOLD[2]); doc.circle(colRx+1,ny-1.4,0.8,'F');
     const lines=doc.splitTextToSize(n,colW-6);
     doc.text(lines,colRx+5,ny);
     ny+=lines.length*4.2+2.4;
   });
   y=Math.max(y+4*rowH,ny)+6;
 
-  doc.setDrawColor(RECEIPT_LINE[0],RECEIPT_LINE[1],RECEIPT_LINE[2]); doc.line(L,y,L+65,y); y+=5;
+  doc.setDrawColor(RECEIPT_GOLD[0],RECEIPT_GOLD[1],RECEIPT_GOLD[2]); doc.setLineWidth(0.6); doc.line(L,y,L+65,y); y+=5;
   doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(RECEIPT_GRAY[0],RECEIPT_GRAY[1],RECEIPT_GRAY[2]);
   doc.text('Authorized Signature',L,y);
 
