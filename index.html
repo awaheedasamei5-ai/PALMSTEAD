@@ -1552,6 +1552,8 @@ function defaultConfig(){ return {
   contractCeoName:'FRANK ADU PEPRAH',
   contractCoverImage:'', contractWordmarkImage:'', receiptLogoImage:'',
   attendanceCutoffTime:'09:00',
+  officeLat:null, officeLng:null, officeRadiusMeters:150,
+  workDays:[1,2,3,4,5], workStartTime:'08:00', workEndTime:'17:00',
   contractPreamble:[
     'i. WHEREAS the Vendor is the beneficial owner of ALL THAT piece or parcel of land, containing an approximate area of {ACRES} acre more or less, situate at Royal Palm Enclave Tsopoli, Accra in the Greater Accra Region of the Republic of Ghana.',
     'ii. The Land was leased by the Dorsi Animle Family represented by the its Head and Lawful representative Numo Napoleon Tawiah Animle of the Shai Osudoku District of the Greater Accra with consent and concurrence of principal members of the family (here-in the Head Lessors) to TRULANDER JSF LIMITED represented by its CEO, Mr. FRANK ADU PEPRAH for a total land area measuring approximately 72.30 Acres (29.27 Hect) by a lease an Indenture dated 1st February, 2025 for a term of 80 years with an option to renew for a further term of 45 years with effect from 1st February, 2025.',
@@ -2994,6 +2996,12 @@ async function apiLoadConfig(){
       contractWordmarkImage:data.contract_wordmark_image||'',
       receiptLogoImage:data.receipt_logo_image||'',
       attendanceCutoffTime:data.attendance_cutoff_time||defaultConfig().attendanceCutoffTime,
+      officeLat:data.office_lat!=null?num(data.office_lat):null,
+      officeLng:data.office_lng!=null?num(data.office_lng):null,
+      officeRadiusMeters:data.office_radius_meters!=null?num(data.office_radius_meters):150,
+      workDays:(data.work_days&&data.work_days.length)?data.work_days:defaultConfig().workDays,
+      workStartTime:data.work_start_time||defaultConfig().workStartTime,
+      workEndTime:data.work_end_time||defaultConfig().workEndTime,
       // Merge onto the defaults rather than replacing wholesale -- a leaderboard_weights
       // row saved before regularity/punctuality existed would otherwise leave those keys
       // undefined, and undefined*anything is NaN in agentPoints().
@@ -3022,6 +3030,12 @@ async function apiSaveConfig(patch){
     contract_cover_image:CONFIG.contractCoverImage||null,contract_wordmark_image:CONFIG.contractWordmarkImage||null,
     receipt_logo_image:CONFIG.receiptLogoImage||null,
     attendance_cutoff_time:CONFIG.attendanceCutoffTime||'09:00',
+    office_lat:CONFIG.officeLat!=null?CONFIG.officeLat:null,
+    office_lng:CONFIG.officeLng!=null?CONFIG.officeLng:null,
+    office_radius_meters:num(CONFIG.officeRadiusMeters)||150,
+    work_days:(CONFIG.workDays&&CONFIG.workDays.length)?CONFIG.workDays:defaultConfig().workDays,
+    work_start_time:CONFIG.workStartTime||'08:00',
+    work_end_time:CONFIG.workEndTime||'17:00',
     leaderboard_weights:CONFIG.leaderboardWeights||defaultConfig().leaderboardWeights,
     referral_points_per_referral:num(CONFIG.referralPointsPerReferral)||50,
     referral_rewards:CONFIG.referralRewards||defaultConfig().referralRewards};
@@ -14575,10 +14589,24 @@ function mgrCompanySettingsHtml(){
   ${fld('Company address','<textarea id="cfg_companyAddress" rows="2">'+esc(CONFIG.companyAddress||'')+'</textarea>','used on memo letterheads and other formal correspondence')}
   <div class="formactions"><button class="btn primary" id="saveCompanyContact">Save company contact info</button></div>
   </div>
-  ${settingsSectionHead('clock','Attendance','when a sign-in counts as late')}
+  ${settingsSectionHead('clock','Attendance','office location, work hours &amp; when a sign-in counts as late')}
   <div class="formwrap">
   ${fld('Cutoff time','<input id="cfg_attendanceCutoff" type="time" value="'+esc(CONFIG.attendanceCutoffTime||'09:00')+'"/>','signing in after this time flags as late on the Team Today view')}
   <div class="formactions"><button class="btn primary" id="saveAttendanceCutoff">Save cutoff time</button></div>
+  </div>
+  <div class="formwrap">
+  <p class="mini" style="margin:-2px 0 14px">Set where the office is so sign-ins/outs away from it need a reason. Changing this only affects sign-ins from now on.</p>
+  ${fld('Paste a Google Maps link','<input id="att_mapsLink" placeholder="https://maps.google.com/…"/>','pulls the coordinates out automatically')}
+  <div class="grid2">${fld('Latitude','<input id="att_officeLat" type="number" step="any" value="'+(CONFIG.officeLat!=null?CONFIG.officeLat:'')+'"/>')}${fld('Longitude','<input id="att_officeLng" type="number" step="any" value="'+(CONFIG.officeLng!=null?CONFIG.officeLng:'')+'"/>')}</div>
+  <div class="formactions" style="margin:-6px 0 12px"><button class="btn ghost" id="att_useLoc" style="width:100%" type="button">📍 Use my current location</button></div>
+  ${fld('Radius (metres)','<input id="att_officeRadius" type="number" min="10" step="1" value="'+(num(CONFIG.officeRadiusMeters)||150)+'"/>','how far from the pin still counts as "at the office"')}
+  <div class="formactions"><button class="btn primary" id="saveOfficeLocation">Save office location</button></div>
+  </div>
+  <div class="formwrap">
+  <p class="mini" style="margin:-2px 0 14px">Work days and hours drive attendance/absence counts and the punctuality KPI.</p>
+  ${fld('Work days',`<div class="chips" id="att_workDays">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d,i)=>`<button type="button" class="chip2 ${(CONFIG.workDays||[1,2,3,4,5]).includes(i)?'on':''}" data-wd="${i}">${d}</button>`).join('')}</div>`)}
+  <div class="grid2">${fld('Day starts','<input id="att_workStart" type="time" value="'+esc(CONFIG.workStartTime||'08:00')+'"/>')}${fld('Day ends','<input id="att_workEnd" type="time" value="'+esc(CONFIG.workEndTime||'17:00')+'"/>')}</div>
+  <div class="formactions"><button class="btn primary" id="saveWorkHours">Save work days &amp; hours</button></div>
   </div>`;
 }
 function bindCompanySettingsCtrls(){
@@ -14595,6 +14623,45 @@ function bindCompanySettingsCtrls(){
     try{ await apiSaveConfig({attendanceCutoffTime:val('cfg_attendanceCutoff')||'09:00'}); toast('Cutoff time saved'); }
     catch(e){ toast('Failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save cutoff time';
+  };
+  document.getElementById('att_mapsLink').addEventListener('change',attParseMapsLink);
+  document.getElementById('att_mapsLink').addEventListener('paste',()=>setTimeout(attParseMapsLink,0));
+  function attParseMapsLink(){
+    const link=val('att_mapsLink').trim(); if(!link) return;
+    const coords=parseGoogleMapsLatLng(link);
+    if(!coords){ toast(/goo\.gl|maps\.app/i.test(link)?"That's a shortened link — open it and paste the full address bar URL instead":"Couldn't find coordinates in that link"); return; }
+    document.getElementById('att_officeLat').value=coords.lat.toFixed(6);
+    document.getElementById('att_officeLng').value=coords.lng.toFixed(6);
+    toast('Coordinates filled in');
+  }
+  document.getElementById('att_useLoc').onclick=()=>{
+    if(!navigator.geolocation){ toast('Geolocation not available on this device'); return; }
+    const btn=document.getElementById('att_useLoc'); btn.disabled=true; btn.textContent='Locating…';
+    navigator.geolocation.getCurrentPosition(pos=>{
+      document.getElementById('att_officeLat').value=pos.coords.latitude.toFixed(6);
+      document.getElementById('att_officeLng').value=pos.coords.longitude.toFixed(6);
+      btn.disabled=false; btn.textContent='📍 Use my current location'; toast('Location captured');
+    },err=>{ btn.disabled=false; btn.textContent='📍 Use my current location'; toast('Could not get your location: '+err.message); },{enableHighAccuracy:true,timeout:10000});
+  };
+  document.getElementById('saveOfficeLocation').onclick=async()=>{
+    const btn=document.getElementById('saveOfficeLocation'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const lat=val('att_officeLat')?num(val('att_officeLat')):null, lng=val('att_officeLng')?num(val('att_officeLng')):null;
+      await apiSaveConfig({officeLat:lat,officeLng:lng,officeRadiusMeters:num(val('att_officeRadius'))||150});
+      toast('Office location saved');
+    }catch(e){ toast('Failed: '+(e.message||e)); }
+    btn.disabled=false; btn.textContent='Save office location';
+  };
+  document.querySelectorAll('#att_workDays [data-wd]').forEach(b=>b.onclick=()=>b.classList.toggle('on'));
+  document.getElementById('saveWorkHours').onclick=async()=>{
+    const btn=document.getElementById('saveWorkHours'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const workDays=[...document.querySelectorAll('#att_workDays [data-wd].on')].map(b=>+b.dataset.wd);
+      if(!workDays.length){ toast('Pick at least one work day'); btn.disabled=false; btn.textContent='Save work days & hours'; return; }
+      await apiSaveConfig({workDays,workStartTime:val('att_workStart')||'08:00',workEndTime:val('att_workEnd')||'17:00'});
+      toast('Work days & hours saved');
+    }catch(e){ toast('Failed: '+(e.message||e)); }
+    btn.disabled=false; btn.textContent='Save work days & hours';
   };
 }
 function mgrSystemHtml(){
@@ -16182,10 +16249,15 @@ function hijriEidWindowsForGregorianYear(gYear){
 function isWeekendIso(iso){ const dow=new Date(iso+'T00:00:00').getDay(); return dow===0||dow===6; }
 // Despite the name, this used to only check weekends -- it never consulted the
 // holiday map below, so e.g. Christmas Day would count as a "working day" for
-// any absence/attendance math built on top of it. Fixed to also exclude public
-// holidays; CONFIG.workDays support (for non-Mon-Fri rosters) is layered on by
-// whichever caller needs it, not baked in here.
-function isWorkingDayIso(iso){ return !isWeekendIso(iso) && !leaveHolidayMapForYear(new Date(iso+'T00:00:00').getFullYear()).has(iso); }
+// any absence/attendance math built on top of it. Now also excludes public
+// holidays AND respects CONFIG.workDays (management-configurable roster, default
+// Mon-Fri) instead of a hardcoded weekend assumption.
+function isWorkingDayIso(iso){
+  const dow=new Date(iso+'T00:00:00').getDay();
+  const workDays=(CONFIG&&CONFIG.workDays&&CONFIG.workDays.length)?CONFIG.workDays:[1,2,3,4,5];
+  if(!workDays.includes(dow)) return false;
+  return !leaveHolidayMapForYear(new Date(iso+'T00:00:00').getFullYear()).has(iso);
+}
 function nextWorkingDayIso(iso){ let d=isoPlusDays(iso,1); while(isWeekendIso(d)) d=isoPlusDays(d,1); return d; }
 function prevWorkingDayIso(iso){ let d=isoPlusDays(iso,-1); while(isWeekendIso(d)) d=isoPlusDays(d,-1); return d; }
 // Fixed-date + Easter-derived + algorithmic-Eid Ghana public holidays. Management
