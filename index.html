@@ -5091,6 +5091,7 @@ async function enterApp(){
   ensureReferralsLiveSubscribed();
   ensureContractRequestsLiveSubscribed();
   ensureSiteVisitFeedbackLiveSubscribed();
+  ensurePresenceSubscribed();
   if(PROFILE.role!=='manager') evaluateMyAchievements();
   startInactivityTimer();
   startMonthRolloverWatchdog();
@@ -5259,6 +5260,47 @@ function ensureSiteVisitFeedbackLiveSubscribed(){
       .subscribe();
   }catch(e){}
 }
+/* ---- chat presence: who's actually online right now, not the old hardcoded
+   "online" string. Staff-only (chat itself is staff-to-staff, no client leg) --
+   uses Supabase Realtime's own Presence feature (not postgres_changes) so state
+   lives in-memory on the realtime server for connected clients, no polling.
+   PRESENCE_ONLINE_KEYS is rebuilt from presenceState() on every sync/join/leave,
+   and last_seen_at is written to profiles (self-scoped, matches the existing
+   USER.id update pattern) at sign-in, on a periodic heartbeat, and at logout, so
+   "last seen" has a real timestamp even right after someone goes offline. */
+let PRESENCE_LIVE_CHANNEL=null, PRESENCE_ONLINE_KEYS=new Set(), PRESENCE_HEARTBEAT_TIMER=null;
+async function apiTouchLastSeen(){
+  if(DEMO_MODE || !sb || !USER) return;
+  try{ await sb.from('profiles').update({last_seen_at:new Date().toISOString()}).eq('id',USER.id); }catch(e){}
+}
+function ensurePresenceSubscribed(){
+  if(DEMO_MODE || !sb || PRESENCE_LIVE_CHANNEL || IS_CLIENT) return;
+  try{
+    const rebuild=()=>{
+      const state=PRESENCE_LIVE_CHANNEL.presenceState();
+      PRESENCE_ONLINE_KEYS=new Set(Object.values(state).flat().map(p=>p.key));
+      // refreshChatThreadPresence is defined by the chat UI rebuild -- guarded so
+      // this infra can ship and run standalone before that lands.
+      if(typeof refreshChatThreadPresence==='function') refreshChatThreadPresence();
+    };
+    const chan=sb.channel('presence-live',{config:{presence:{key:PROFILE.key}}})
+      .on('presence',{event:'sync'},rebuild)
+      .on('presence',{event:'join'},rebuild)
+      .on('presence',{event:'leave'},rebuild);
+    // Reference chan directly (not PRESENCE_LIVE_CHANNEL) inside the callback --
+    // subscribe()'s callback firing before the outer assignment below completes
+    // would otherwise call .track() on a still-null variable.
+    chan.subscribe(status=>{
+      if(status==='SUBSCRIBED'){
+        chan.track({key:PROFILE.key,online_at:new Date().toISOString()});
+        apiTouchLastSeen();
+      }
+    });
+    PRESENCE_LIVE_CHANNEL=chan;
+    clearInterval(PRESENCE_HEARTBEAT_TIMER);
+    PRESENCE_HEARTBEAT_TIMER=setInterval(apiTouchLastSeen,120000);
+  }catch(e){}
+}
 async function enterClientPortal(){
   document.getElementById('view').innerHTML='<div style="padding:70px 0;text-align:center"><div class="skel" style="height:120px;border-radius:16px;margin-bottom:14px"></div><div class="skel" style="height:80px;border-radius:16px"></div></div>';
   document.getElementById('login').classList.add('hidden'); document.getElementById('app').classList.remove('hidden');
@@ -5352,6 +5394,7 @@ document.getElementById('logoutBtn').onclick=async()=>{
   if(REFERRALS_LIVE_CHANNEL){ try{ sb.removeChannel(REFERRALS_LIVE_CHANNEL); }catch(e){} REFERRALS_LIVE_CHANNEL=null; }
   if(CONTRACT_REQUESTS_LIVE_CHANNEL){ try{ sb.removeChannel(CONTRACT_REQUESTS_LIVE_CHANNEL); }catch(e){} CONTRACT_REQUESTS_LIVE_CHANNEL=null; }
   if(SITE_VISIT_FEEDBACK_LIVE_CHANNEL){ try{ sb.removeChannel(SITE_VISIT_FEEDBACK_LIVE_CHANNEL); }catch(e){} SITE_VISIT_FEEDBACK_LIVE_CHANNEL=null; }
+  if(PRESENCE_LIVE_CHANNEL){ try{ await apiTouchLastSeen(); sb.removeChannel(PRESENCE_LIVE_CHANNEL); }catch(e){} PRESENCE_LIVE_CHANNEL=null; PRESENCE_ONLINE_KEYS=new Set(); clearInterval(PRESENCE_HEARTBEAT_TIMER); }
   CLIENTDB_LOADED=false; CLIENTDB_LIST=[];
   CLIENT_NOTIFICATIONS=[];
   const bellBtn=document.getElementById('clientBellBtn'); if(bellBtn) bellBtn.classList.add('hidden');
