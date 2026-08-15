@@ -15054,6 +15054,7 @@ function bindNewsCtrls(){
    the requester in-app; the staff member can then re-download the signed
    letter. */
 let LEAVE_REQUESTS_LOADED=false;
+let LEAVE_REQUESTS_LOAD_PROMISE=null;
 let leaveAppTab='mine';
 let leaveCalYear=new Date(today()).getFullYear();
 let leaveCalMonth=new Date(today()).getMonth();
@@ -15251,7 +15252,15 @@ function buildLeaveLetterPDF(req){
 async function viewLeaveApp(){
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Leave Schedules</h2><p>Plan, apply for, and track staff leave</p></div></div>
   <div id="leaveBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
-  if(!LEAVE_REQUESTS_LOADED){ try{ DB.leaveRequests=await withLoadTimeout(apiLoadLeaveRequests(),15000,'Leave requests'); LEAVE_REQUESTS_LOADED=true; }catch(e){ toast(e.message||'Could not load leave requests'); } }
+  if(!LEAVE_REQUESTS_LOADED){
+    if(!LEAVE_REQUESTS_LOAD_PROMISE){
+      LEAVE_REQUESTS_LOAD_PROMISE=withLoadTimeout(apiLoadLeaveRequests(),15000,'Leave requests')
+        .then(rows=>{ DB.leaveRequests=rows; LEAVE_REQUESTS_LOADED=true; })
+        .catch(e=>{ toast(e.message||'Could not load leave requests'); })
+        .finally(()=>{ LEAVE_REQUESTS_LOAD_PROMISE=null; });
+    }
+    await LEAVE_REQUESTS_LOAD_PROMISE;
+  }
   paintLeaveApp();
 }
 function paintLeaveApp(){
@@ -15691,6 +15700,7 @@ function bindLeaveSettingsCtrls(){
    run in pdfRenderMemoBlocks (font-family/size/colour are not, to keep the
    PDF renderer tractable). */
 let MEMOS_LOADED=false;
+let MEMOS_LOAD_PROMISE=null;
 let memoAppTab='compose';
 let memoComposeSeed=null;
 let MEMO_CC_STATE=[];
@@ -15813,7 +15823,15 @@ function buildMemoPDF(m){
 async function viewMemoApp(){
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Memorandum</h2><p>Write and receive company memos</p></div></div>
   <div id="memoBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
-  if(!MEMOS_LOADED){ try{ DB.memos=await withLoadTimeout(apiLoadMemos(),15000,'Memos'); MEMOS_LOADED=true; }catch(e){ toast(e.message||'Could not load memos'); } }
+  if(!MEMOS_LOADED){
+    if(!MEMOS_LOAD_PROMISE){
+      MEMOS_LOAD_PROMISE=withLoadTimeout(apiLoadMemos(),15000,'Memos')
+        .then(rows=>{ DB.memos=rows; MEMOS_LOADED=true; })
+        .catch(e=>{ toast(e.message||'Could not load memos'); })
+        .finally(()=>{ MEMOS_LOAD_PROMISE=null; });
+    }
+    await MEMOS_LOAD_PROMISE;
+  }
   if(memoComposeSeed) memoAppTab='compose';
   paintMemoApp();
 }
@@ -16031,6 +16049,9 @@ function openMemoEscalatePicker(m){
    deep-link (also no API key) -- single-banner or a whole area's stops
    chained as waypoints. */
 let BANNERS_LOADED=false;
+let BANNERS_LOAD_PROMISE=null;
+let BANNER_LEAD_COUNTS_LOADED=false;
+let BANNER_LEAD_COUNTS_LOAD_PROMISE=null;
 let bannerAppTab='dashboard';
 let bannerAreaFilter='';
 let bannerStatusFilter='';
@@ -16058,8 +16079,24 @@ let BANNER_LEAD_COUNTS={};
 async function viewBannerApp(){
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Banner Tracking</h2><p>Add, track, and route to every banner placement</p></div></div>
   <div id="bannerBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
-  if(!BANNERS_LOADED){ try{ DB.banners=await withLoadTimeout(apiLoadBanners(),15000,'Banners'); BANNERS_LOADED=true; }catch(e){ toast(e.message||'Could not load banners'); } }
-  try{ BANNER_LEAD_COUNTS=await withLoadTimeout(apiLoadLeadBannerCounts(),15000,'Banner lead counts'); }catch(e){}
+  if(!BANNERS_LOADED){
+    if(!BANNERS_LOAD_PROMISE){
+      BANNERS_LOAD_PROMISE=withLoadTimeout(apiLoadBanners(),15000,'Banners')
+        .then(rows=>{ DB.banners=rows; BANNERS_LOADED=true; })
+        .catch(e=>{ toast(e.message||'Could not load banners'); })
+        .finally(()=>{ BANNERS_LOAD_PROMISE=null; });
+    }
+    await BANNERS_LOAD_PROMISE;
+  }
+  if(!BANNER_LEAD_COUNTS_LOADED){
+    if(!BANNER_LEAD_COUNTS_LOAD_PROMISE){
+      BANNER_LEAD_COUNTS_LOAD_PROMISE=withLoadTimeout(apiLoadLeadBannerCounts(),15000,'Banner lead counts')
+        .then(counts=>{ BANNER_LEAD_COUNTS=counts; BANNER_LEAD_COUNTS_LOADED=true; })
+        .catch(()=>{})
+        .finally(()=>{ BANNER_LEAD_COUNTS_LOAD_PROMISE=null; });
+    }
+    await BANNER_LEAD_COUNTS_LOAD_PROMISE;
+  }
   paintBannerApp();
 }
 function paintBannerApp(){
