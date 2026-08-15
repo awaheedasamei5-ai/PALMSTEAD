@@ -3147,7 +3147,7 @@ async function apiLoadAgentMonthStats(){
    sent, so signing out never clobbers the sign-in timestamp already recorded. */
 const mapAttendance=r=>({id:r.id,staffKey:r.staff_key,staffName:r.staff_name,workDate:r.work_date,
   signInAt:r.sign_in_at,signInLat:r.sign_in_lat,signInLng:r.sign_in_lng,
-  signOutAt:r.sign_out_at,signOutLat:r.sign_out_lat,signOutLng:r.sign_out_lng,notes:r.notes});
+  signOutAt:r.sign_out_at,signOutLat:r.sign_out_lat,signOutLng:r.sign_out_lng,notes:r.notes,lateReason:r.late_reason});
 async function apiLoadMyAttendance(fromDate,toDate){
   if(DEMO_MODE){ return []; }
   const {data,error}=await sb.from('attendance_log').select('*').eq('staff_key',PROFILE.key)
@@ -3159,9 +3159,10 @@ async function apiLoadTeamAttendanceToday(){
   const {data,error}=await sb.from('attendance_log').select('*').eq('work_date',today());
   if(error) throw error; return (data||[]).map(mapAttendance);
 }
-async function apiSignIn(lat,lng){
-  if(DEMO_MODE){ return {id:uid(),staffKey:PROFILE.key,staffName:PROFILE.name,workDate:today(),signInAt:new Date().toISOString(),signInLat:lat,signInLng:lng,signOutAt:null}; }
+async function apiSignIn(lat,lng,lateReason){
+  if(DEMO_MODE){ return {id:uid(),staffKey:PROFILE.key,staffName:PROFILE.name,workDate:today(),signInAt:new Date().toISOString(),signInLat:lat,signInLng:lng,signOutAt:null,lateReason:lateReason||null}; }
   const row={staff_key:PROFILE.key,staff_name:PROFILE.name,work_date:today(),sign_in_at:new Date().toISOString(),sign_in_lat:lat,sign_in_lng:lng};
+  if(lateReason) row.late_reason=lateReason;
   const {data,error}=await sb.from('attendance_log').upsert(row,{onConflict:'staff_key,work_date'}).select().single();
   if(error) throw error; return mapAttendance(data);
 }
