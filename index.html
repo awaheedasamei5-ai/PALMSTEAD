@@ -1436,6 +1436,8 @@ function defaultConfig(){ return {
   leaveTotalDays:20,
   eidObservingStaff:[],
   leaderboardWeights:{collected:1/500,dealsClosed:20,siteVisits:5,tasksCompleted:8,todosCompleted:3,taskSpeedBonus:5},
+  referralPointsPerReferral:50,
+  referralRewards:[{label:'Free Documentation',points:50},{label:'10% Cash Discount',points:150},{label:'Half Plot',points:500},{label:'Full Plot',points:1000}],
   contractCeoName:'FRANK ADU PEPRAH',
   contractCoverImage:'', contractWordmarkImage:'',
   contractPreamble:[
@@ -2341,6 +2343,53 @@ const mapReferral=r=>({id:r.id,referrerLeadId:r.referrer_lead_id,referrerName:r.
   referredName:r.referred_name,referredContact:r.referred_contact,referredLocation:r.referred_location,referredNoPlots:r.referred_no_plots,
   referredLeadId:r.referred_lead_id,status:r.status,pointsAwarded:r.points_awarded,source:r.source,
   createdAt:(r.created_at||'').slice(0,16).replace('T',' '),clearedAt:r.cleared_at});
+async function apiLoadReferrals(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.referrals||[]).slice(); }
+  try{ const {data,error}=await sb.from('referrals').select('*').order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapReferral); }
+  catch(e){ return []; }
+}
+async function apiClientLoadMyReferrals(){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.referrals||[]).filter(r=>r.referrerContact===CLIENT_PROFILE.contact); }
+  try{ const {data,error}=await sb.from('referrals').select('*').order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapReferral); }
+  catch(e){ return []; }
+}
+// The client's own lead id (if they have one on file) is attached as referrer_lead_id
+// so their assigned agent -- not just Management -- can see and follow up on referrals
+// their client sends in (RLS only grants a regular agent visibility into referrals
+// pointing at one of their own leads, same as the staff-side tagging flow).
+async function apiClientInsertReferral({referredName,referredContact,referredLocation,referredNoPlots}){
+  const myLead=(CLIENT_DB&&CLIENT_DB.leads&&CLIENT_DB.leads[0])||null;
+  if(DEMO_MODE){ const d=await demoLoad(); d.referrals=d.referrals||[];
+    const rec={id:uid(),referrerLeadId:myLead?myLead.id:null,referrerName:CLIENT_PROFILE.name,referrerContact:CLIENT_PROFILE.contact,
+      referredName,referredContact,referredLocation,referredNoPlots,referredLeadId:null,status:'Pending',pointsAwarded:0,source:'client',createdAt:today()+' '+nowTime()};
+    d.referrals.unshift(rec); await demoSave(); return rec; }
+  const row={referrer_lead_id:myLead?myLead.id:null,referrer_name:CLIENT_PROFILE.name,referrer_contact:CLIENT_PROFILE.contact,
+    referred_name:referredName,referred_contact:referredContact,referred_location:referredLocation||null,
+    referred_no_plots:referredNoPlots||1,source:'client'};
+  // Same read-back pitfall as the staff version -- referrals_sel_client requires an
+  // exact name+contact match, which this row satisfies, so .select() would actually
+  // work here, but skip it anyway for consistency and because the caller already has
+  // everything it needs to render a confirmation without a round-trip.
+  const {error}=await sb.from('referrals').insert(row); if(error) throw error;
+}
+// Only Management/office staff can decide this (referrals_upd_staff RLS) -- clearing
+// awards the configured points and stamps cleared_at; the congratulatory SMS is sent
+// by the caller so this stays a pure data operation.
+async function apiClearReferral(id,{referredLeadId,pointsAwarded}){
+  const patch={status:'Cleared',cleared_at:new Date().toISOString(),points_awarded:pointsAwarded,referred_lead_id:referredLeadId||null};
+  if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.referrals||[]).find(x=>x.id===id);
+    if(rec) Object.assign(rec,{status:'Cleared',clearedAt:patch.cleared_at,pointsAwarded,referredLeadId:referredLeadId||null});
+    await demoSave(); return rec; }
+  const {data,error}=await sb.from('referrals').update(patch).eq('id',id).select().single();
+  if(error) throw error; return mapReferral(data);
+}
+async function apiDismissReferral(id){
+  const patch={status:'Not interested'};
+  if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.referrals||[]).find(x=>x.id===id); if(rec) rec.status='Not interested'; await demoSave(); return; }
+  const {error}=await sb.from('referrals').update(patch).eq('id',id); if(error) throw error;
+}
 async function apiInsertEnquiry(row){
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),agentKey:PROFILE.key,agentName:PROFILE.name,...row,createdAt:today()+' '+nowTime()};
     d.enquiries.unshift(rec); await demoSave(); return rec; }
@@ -2776,7 +2825,9 @@ async function apiLoadConfig(){
       contractTerms:data.contract_terms||defaultConfig().contractTerms,
       contractCoverImage:data.contract_cover_image||'',
       contractWordmarkImage:data.contract_wordmark_image||'',
-      leaderboardWeights:data.leaderboard_weights||defaultConfig().leaderboardWeights}; }
+      leaderboardWeights:data.leaderboard_weights||defaultConfig().leaderboardWeights,
+      referralPointsPerReferral:data.referral_points_per_referral!=null?num(data.referral_points_per_referral):50,
+      referralRewards:(data.referral_rewards&&data.referral_rewards.length)?data.referral_rewards:defaultConfig().referralRewards}; }
   }catch(e){}
   return CONFIG;
 }
@@ -2797,7 +2848,9 @@ async function apiSaveConfig(patch){
     receipt_thanks_text:CONFIG.receiptThanksText||'',
     contract_ceo_name:CONFIG.contractCeoName||'',contract_preamble:CONFIG.contractPreamble||'',contract_definitions:CONFIG.contractDefinitions||'',contract_terms:CONFIG.contractTerms||'',
     contract_cover_image:CONFIG.contractCoverImage||null,contract_wordmark_image:CONFIG.contractWordmarkImage||null,
-    leaderboard_weights:CONFIG.leaderboardWeights||defaultConfig().leaderboardWeights};
+    leaderboard_weights:CONFIG.leaderboardWeights||defaultConfig().leaderboardWeights,
+    referral_points_per_referral:num(CONFIG.referralPointsPerReferral)||50,
+    referral_rewards:CONFIG.referralRewards||defaultConfig().referralRewards};
   const {error}=await sb.from('app_config').upsert(row); if(error) throw error;
 }
 /* ---- pricing change audit trail --------------------------------------------
@@ -4742,7 +4795,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
     clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,mgmtreports:viewManagementReportsApp,notifications:viewNotifications,
-    clientallocation:viewClientAllocation}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
+    clientallocation:viewClientAllocation,clientreferrals:viewClientReferrals,referralsapp:()=>{ mgrTab='Referrals'; managerView(); }}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -4759,7 +4812,7 @@ function tabForRoute(name){
     if(name==='clientvisit') return 'clientvisit';
     if(name==='clientfeedback') return 'clientfeedback';
     if(name==='clientsettings') return 'clientsettings';
-    if(name==='clientmore'||name==='clientcontact') return 'clientmore';
+    if(name==='clientmore'||name==='clientcontact'||name==='clientreferrals') return 'clientmore';
     if(name==='clientallocation') return 'clienthome';
     return 'clienthome';
   }
@@ -4865,6 +4918,7 @@ Object.assign(ic,{
  phone:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 5c0 9 6 15 15 15l-.5-4-4-1-2 2a12 12 0 01-5-5l2-2-1-4-4-.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
  chat:'<svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16a1 1 0 011 1v10a1 1 0 01-1 1H9l-4 4v-4H4a1 1 0 01-1-1V6a1 1 0 011-1z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
  gear:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+ gift:'<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="9" width="18" height="4" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="4.5" y="13" width="15" height="8" rx="1" stroke="currentColor" stroke-width="1.8"/><path d="M12 9v12M12 9c-1.5-3-6-3-6 0M12 9c1.5-3 6-3 6 0" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
  clock:'<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
  alert:'<svg viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
  flag:'<svg viewBox="0 0 24 24" fill="none"><path d="M5 21V4m0 1h12l-3 4 3 4H5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -4902,6 +4956,7 @@ if(document.body) document.body.insertAdjacentHTML('afterbegin',FIC_DEFS);
 // as premium flat design rather than the skeuomorphic look the shadow gave it.
 function ficChip(g){return '<rect x="4" y="3" width="48" height="48" rx="15" fill="url(#fic-'+g+')"/><rect x="4" y="3" width="48" height="48" rx="15" fill="url(#fic-hi)"/><rect x="4.5" y="3.5" width="47" height="47" rx="14.5" fill="none" stroke="#fff" stroke-opacity="0.16"/>';}
 const FIC_GLYPHS={
+ gift:{g:'gGold',p:'<rect x="17" y="26" width="22" height="15" rx="1.5" fill="#fff"/><rect x="15" y="20" width="26" height="7" rx="1.5" fill="#fff"/><rect x="26" y="20" width="4" height="21" fill="var(--green)"/><path d="M28 20c0-4-3-7-6-7s-3 5 0 7M28 20c0-4 3-7 6-7s3 5 0 7" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/>'},
  leaderboard:{g:'gGold',p:'<path d="M20 15h16v5a8 8 0 01-16 0z" fill="#fff"/><path d="M20 17h-4v1a4 4 0 004 4M36 17h4v1a4 4 0 01-4 4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><rect x="26" y="28" width="4" height="6" fill="#fff"/><rect x="20" y="34" width="16" height="4.5" rx="1.6" fill="#fff"/>'},
  announce:{g:'gLime',p:'<path d="M18 24l16-6v20l-16-6z" fill="#fff"/><rect x="14" y="24" width="5" height="8" rx="1.5" fill="#fff"/><path d="M20 33v5a2 2 0 004 0v-4" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round"/><path d="M37 26a5 5 0 010 6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>'},
  target:{g:'gLime',p:'<circle cx="28" cy="27" r="11" fill="none" stroke="#fff" stroke-width="2.6"/><circle cx="28" cy="27" r="5.6" fill="none" stroke="#fff" stroke-width="2.6"/><circle cx="28" cy="27" r="1.9" fill="#fff"/>'},
@@ -5109,7 +5164,7 @@ function groupedAppGridHtml(groups){
     <div class="appGridGroupLabel">${esc(g.title)}</div>
     <div class="appGrid">${g.items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`).join('');
 }
-const VAULT_ICONS={'Documents':'📁','Operations':'🗂️','Money':'💰','Insights':'📊','My pipeline':'📈','Client touchpoints':'🤝','Inventory & records':'🏘️','Pricing & money':'💳','Team & company':'🏢','System':'⚙️','Documents & tools':'🧰'};
+const VAULT_ICONS={'Documents':'📁','Operations':'🗂️','Money':'💰','Insights':'📊','My pipeline':'📈','Client touchpoints':'🤝','Inventory & records':'🏘️','Pricing & money':'💳','Team & company':'🏢','System':'⚙️','Documents & tools':'🧰','Referrals':'🎁'};
 // A vault is a collapsed <details> card -- tap it and the apps inside expand in
 // place. Cuts a 13-tile flat grid down to 4 tiles up front, instead of just
 // labelling the same flat grid (which is what the section-header version did).
@@ -5162,7 +5217,8 @@ function viewOfficeDesk(){
       {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
       {key:'Feedback',fic:'feedback',label:'Team Feedback'},
       {key:'Leave Schedules',fic:'calendar',label:'Leave Schedules'},
-      ...(showCompanyLeads?[{key:'Site Visit Auth',fic:'sitevisitauth',label:'Site Visit Auth'}]:[])
+      ...(showCompanyLeads?[{key:'Site Visit Auth',fic:'sitevisitauth',label:'Site Visit Auth'}]:[]),
+      {key:'Referrals',fic:'gift',label:'Referrals'}
     ]},
     {title:'Money',items:[
       ...(canManagePayments()?[{key:'Log Payment',fic:'payment',label:'Log Payment'}]:[]),
@@ -10126,8 +10182,9 @@ function viewClientMore(){
   V.innerHTML=`<div class="pagehead"><div><h2>More</h2><p>Contact your agent or PEP Landbank</p></div></div>
   <div class="appGrid" id="clientMoreGrid">
     <button class="appGridIcon" data-clientmoreapp="contact"><span class="appGridGlyph">${fic('chat')}</span><span class="appGridLabel">Contact</span></button>
+    <button class="appGridIcon" data-clientmoreapp="referrals"><span class="appGridGlyph">${fic('gift')}</span><span class="appGridLabel">Refer &amp; Earn</span></button>
   </div>`;
-  document.querySelectorAll('[data-clientmoreapp]').forEach(b=>b.onclick=()=>route(b.dataset.clientmoreapp==='contact'?'clientcontact':'clientmore'));
+  document.querySelectorAll('[data-clientmoreapp]').forEach(b=>b.onclick=()=>route(b.dataset.clientmoreapp==='contact'?'clientcontact':b.dataset.clientmoreapp==='referrals'?'clientreferrals':'clientmore'));
 }
 async function viewClientContact(){
   V.innerHTML=`${back('clientmore')}<div class="pagehead"><div><h2>Contact</h2><p>Reach your agent or PEP Landbank directly</p></div></div>
@@ -10138,6 +10195,111 @@ async function viewClientContact(){
     ${agent? (renderContactCard({title:'Your agent',name:agent.name,avatar:agent.avatar,phone:agent.phone,whatsapp:agent.whatsapp,social:agent.social_handles})||`<div class="formwrap"><div class="mini">Your agent hasn't added contact details yet.</div></div>`) : `<div class="formwrap"><div class="mini">Agent contact not available yet.</div></div>`}
     <div class="sectitle"><h3>PEP Landbank</h3></div>
     ${renderContactCard({title:'Company',phone:CONFIG.companyPhone,whatsapp:CONFIG.companyWhatsapp,email:CONFIG.companyEmail})||`<div class="formwrap"><div class="mini">Company contact not set up yet.</div></div>`}`;
+}
+/* ================= REFERRALS (Client side) =================
+   Points only ever move in one direction here: earned when Management clears a
+   referral (real, reviewed sale), spendable against the rewards catalog Management
+   configures. Redemption itself is a request to Management, not an automatic
+   discount/transfer -- keeps this consistent with how every other money-adjacent
+   flow in the app works (a human confirms before anything of value changes hands). */
+let CLIENT_REFERRALS_LOADED=false, CLIENT_REFERRALS_LIST=[];
+function clientReferralPoints(){ return CLIENT_REFERRALS_LIST.filter(r=>r.status==='Cleared').reduce((s,r)=>s+(num(r.pointsAwarded)||0),0); }
+async function viewClientReferrals(){
+  V.innerHTML=`${back('clientmore')}<div class="pagehead"><div><h2>Refer &amp; Earn</h2><p>Send friends and family our way — earn points toward real rewards</p></div></div>
+  <div id="clientRefBody"><div style="padding:40px 0"><div class="skel" style="height:120px;border-radius:16px"></div></div></div>`;
+  if(!CLIENT_REFERRALS_LOADED){ try{ CLIENT_REFERRALS_LIST=await withLoadTimeout(apiClientLoadMyReferrals(),15000,'Referrals'); CLIENT_REFERRALS_LOADED=true; }catch(e){} }
+  paintClientReferrals();
+}
+function paintClientReferrals(){
+  const body=document.getElementById('clientRefBody'); if(!body) return;
+  const points=clientReferralPoints();
+  const pending=CLIENT_REFERRALS_LIST.filter(r=>r.status==='Pending');
+  const rewards=CONFIG.referralRewards||[];
+  const mine=CLIENT_REFERRALS_LIST.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  body.innerHTML=`
+  <div class="homeHero">
+    <div class="heroTop"><div><div class="heroGreet">Your referral points</div><div class="heroDate">Every cleared referral earns real rewards</div></div></div>
+    <div class="heroStat"><div class="heroStatLabel">Points balance</div><div class="heroStatValue">${points}</div></div>
+    <div class="heroSecondary">
+      <div class="heroChip"><div class="l">Pending</div><div class="v">${pending.length}</div></div>
+      <div class="heroChip"><div class="l">Referred so far</div><div class="v">${CLIENT_REFERRALS_LIST.length}</div></div>
+    </div>
+  </div>
+  <div style="margin:0 0 16px"><button class="btn gold" id="crefNewBtn" style="width:100%">🎁 Refer a friend</button></div>
+  ${rewards.length?`<div class="sectitle" style="margin-top:0"><h3>Rewards catalog</h3></div>
+  <div class="list" style="margin-bottom:16px">${rewards.map(rw=>{
+    const unlocked=points>=num(rw.points);
+    return `<div class="rowcard" style="opacity:${unlocked?1:.7}"><div class="top"><div><div class="nm">${unlocked?'🏆':'🔒'} ${esc(rw.label)}</div><div class="mini">${num(rw.points)} points</div></div>
+      ${unlocked?`<button class="chip" data-crefredeem="${esc(rw.label)}:${num(rw.points)}">Request this →</button>`:`<span class="tag ghost">${Math.max(0,num(rw.points)-points)} to go</span>`}</div></div>`;
+  }).join('')}</div>`:''}
+  <div class="rowcard" style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#EEF4FF,#F4F6F5);border:1px solid var(--line)">
+    <div class="mini" style="font-size:12.5px;line-height:1.5">💡 Staying on top of your payment plan keeps your account in great shape and your plot allocation moving — every payment on time is a step closer to full ownership. Keep it up!</div>
+  </div>
+  <div class="sectitle"><h3>Your referrals</h3><span class="cnt">${mine.length}</span></div>
+  <div class="list">${mine.length?mine.map(r=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.referredName)}</div><div class="meta">${esc(r.referredContact)}${r.referredLocation?' · '+esc(r.referredLocation):''}</div></div>${referralStatusTag(r.status)}</div>
+    ${r.status==='Cleared'?`<div class="mini" style="margin-top:6px">🎉 You earned ${r.pointsAwarded||0} points for this one</div>`:r.status==='Pending'?`<div class="mini" style="margin-top:6px">We'll be in touch with them soon — you'll be notified once it's confirmed.</div>`:''}</div>`).join(''):emptyState(ic.gift||ic.doc,'No referrals yet','Refer your first friend above to start earning points.')}</div>`;
+  const newBtn=document.getElementById('crefNewBtn'); if(newBtn) newBtn.onclick=openClientReferralModal;
+  body.querySelectorAll('[data-crefredeem]').forEach(b=>b.onclick=()=>requestReferralRedemption(b.dataset.crefredeem));
+}
+async function requestReferralRedemption(rewardKey){
+  const [label,pts]=rewardKey.split(':');
+  if(!confirm('Ask Management to redeem "'+label+'" for '+pts+' points? They\'ll be in touch to arrange it.')) return;
+  try{ await apiSendMessage('manager',CLIENT_PROFILE.name+' would like to redeem their referral points for "'+label+'" ('+pts+' points). Open Office › Referrals to review their history.'); toast('Request sent — Management will be in touch'); }
+  catch(e){ toast('Could not send that request right now'); }
+}
+function openClientReferralModal(){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal" style="max-width:480px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">🎁 Refer a friend</div><button id="closeCrefModal" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Their name *','<input id="cref_name" placeholder="Full name"/>')}
+    ${fld('Location','<input id="cref_location" placeholder="e.g. East Legon, Accra"/>')}
+    ${fld('Contact number *','<input id="cref_contact" placeholder="0244…"/>')}
+    ${fld('Number of plots','<input id="cref_plots" type="number" min="1" value="1"/>')}
+    <div class="mini" style="margin:0 0 14px;line-height:1.5">That's all — fill this in and we take care of the rest: calling them, arranging a site visit, and handling documentation. You'll be notified by SMS once they're contacted, and again once your points land.</div>
+    <div class="formactions"><button class="btn primary" id="cref_save" style="width:100%">Send referral</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeCrefModal').onclick=()=>ov.remove();
+  document.getElementById('cref_save').onclick=async()=>{
+    const name=val('cref_name').trim(), location=val('cref_location').trim(), contact=val('cref_contact').trim(), plots=num(val('cref_plots'))||1;
+    if(!name||!contact){ toast('Name and contact are required'); return; }
+    const btn=document.getElementById('cref_save'); btn.disabled=true; btn.textContent='Sending…';
+    try{
+      await apiClientInsertReferral({referredName:name,referredContact:contact,referredLocation:location,referredNoPlots:plots});
+      CLIENT_REFERRALS_LIST.unshift({id:uid(),referrerName:CLIENT_PROFILE.name,referrerContact:CLIENT_PROFILE.contact,referredName:name,referredContact:contact,referredLocation:location,referredNoPlots:plots,status:'Pending',pointsAwarded:0,source:'client',createdAt:new Date().toISOString()});
+      ov.remove();
+      try{ await apiSendMessage('manager','New referral from '+CLIENT_PROFILE.name+' — '+name+' ('+contact+'). Open Office › Referrals to review.'); }catch(e){}
+      try{ await apiSendSms(CLIENT_PROFILE.contact,'Thanks for referring '+name+' to Palmstead! We will reach out to them shortly. Refer more friends anytime from your Refer & Earn dashboard.','referral_received'); }catch(e){}
+      offerShareReferral(name,contact,location,plots);
+      paintClientReferrals();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Send referral'; }
+  };
+}
+function offerShareReferral(name,contact,location,plots){
+  playChime('success');
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  const summary='Referral sent to Palmstead:\nName: '+name+'\nContact: '+contact+(location?'\nLocation: '+location:'')+'\nPlots: '+plots;
+  const waTarget=CLIENT_PROFILE.whatsapp||CLIENT_PROFILE.contact;
+  ov.innerHTML=`<div id="announceModal" class="successCard" style="padding:34px 22px;position:relative">
+    <button id="closeShareRef" style="position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button>
+    <div class="successCheckWrap"><div class="successCheckCircle"><svg viewBox="0 0 24 24" fill="none"><path d="M6 12.5l4 4L18 7.5" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+    <div class="successTitle">Referral sent!</div>
+    <div class="successSub">We'll take it from here. Want a copy for your records?</div>
+    <div style="display:flex;flex-direction:column;gap:10px;text-align:left">
+      <a class="btn ghost" id="shrefWhatsapp" target="_blank" rel="noopener" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Send a copy to my WhatsApp</a>
+      ${CLIENT_PROFILE.email?`<a class="btn ghost" id="shrefEmail" style="width:100%;text-align:center;text-decoration:none;box-sizing:border-box">Send a copy to my Email</a>`:''}
+    </div>
+    <button class="btn ghost" id="closeShareRef2" style="width:100%;margin-top:14px">Done</button>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeShareRef').onclick=()=>ov.remove();
+  document.getElementById('closeShareRef2').onclick=()=>ov.remove();
+  const waEl=document.getElementById('shrefWhatsapp'); if(waEl) waEl.href='https://wa.me/'+waNumberFromPhone(waTarget)+'?text='+encodeURIComponent(summary);
+  const emailEl=document.getElementById('shrefEmail'); if(emailEl) emailEl.href='mailto:'+CLIENT_PROFILE.email+'?subject='+encodeURIComponent('My Palmstead referral')+'&body='+encodeURIComponent(summary);
 }
 function viewClientAllocation(allocId){
   const alloc=(CLIENT_ALLOCATIONS||[]).find(a=>a.id===allocId);
@@ -11387,11 +11549,13 @@ const MGR_APPS=[
   {key:'Downloads',fic:'downloads',label:'Document Vault'},
   {key:'Notes',fic:'notes',label:'Notes'},
   {key:'SMS',fic:'sms',label:'SMS'},
+  {key:'Referrals',fic:'gift',label:'Referrals',section:'officedesk'},
   {key:'Quotation Settings',fic:'quote',label:'Quotation Settings',section:'settingshub'},
   {key:'Commission Settings',fic:'commission',label:'Commission Settings',section:'settingshub'},
   {key:'Pricing & Targets',fic:'pricetag',label:'Pricing & Targets',section:'settingshub'},
   {key:'Staff Settings',fic:'staffteam',label:'Staff Settings',section:'settingshub'},
   {key:'Company Settings',fic:'building',label:'Company Settings',section:'settingshub'},
+  {key:'Referral Settings',fic:'gift',label:'Referral Settings',section:'settingshub'},
   {key:'System',fic:'serverconfig',label:'System',section:'settingshub'},
 ];
 async function managerView(){
@@ -11456,6 +11620,8 @@ async function managerView(){
     catch(e){ body.innerHTML=emptyState(ic.alertTri,'Could not load System Health',(e.message||'Something went wrong')+' — pull to refresh or tap back and try again.'); }
   }
   else if(mgrTab==='System'){ body.innerHTML=mgrSystemHtml(); bindSystemCtrls(); }
+  else if(mgrTab==='Referrals'){ if(!REFERRALS_LOADED){ try{ REFERRALS_LIST=await withLoadTimeout(apiLoadReferrals(),15000,'Referrals'); REFERRALS_LOADED=true; }catch(e){} } body.innerHTML=mgrReferralsHtml(); bindReferralsCtrls(); }
+  else if(mgrTab==='Referral Settings'){ body.innerHTML=mgrReferralSettingsHtml(); bindReferralSettingsCtrls(); }
 }
 function allAgentLists(){
   const agents=DEMO_MODE? STAFF_LIST.filter(s=>s.role==='agent').map(s=>({name:s.name,key:s.key})) : DB.profiles.filter(p=>p.role==='agent').map(p=>({name:p.name,key:p.agent_key}));
@@ -12419,6 +12585,7 @@ const SETTINGS_APPS=[
   {key:'Pricing & Targets',fic:'pricetag',label:'Pricing & Targets',section:'settingshub'},
   {key:'Staff Settings',fic:'staffteam',label:'Staff Settings',section:'settingshub'},
   {key:'Company Settings',fic:'building',label:'Company Settings',section:'settingshub'},
+  {key:'Referral Settings',fic:'gift',label:'Referral Settings',section:'settingshub'},
   {key:'Backup & Restore',fic:'backup',label:'Backup & Restore',section:'settingshub'},
   {key:'System Health',fic:'pulse',label:'System Health',section:'settingshub'},
   {key:'System',fic:'serverconfig',label:'System',section:'settingshub'}
@@ -12428,6 +12595,7 @@ function mgrSettingsHubHtml(){
   const groups=[
     {title:'Pricing & money',items:['Quotation Settings','Commission Settings','Pricing & Targets'].map(byKey)},
     {title:'Team & company',items:['Staff Settings','Company Settings'].map(byKey)},
+    {title:'Referrals',items:['Referral Settings'].map(byKey)},
     {title:'System',items:['Backup & Restore','System Health','System'].map(byKey)}
   ];
   return `<div id="mgrSettingsGrid">${vaultGridHtml(groups)}</div>`;
@@ -12679,6 +12847,116 @@ function bindSystemCtrls(){
       toast('Backup downloaded');
     }catch(e){ toast('Backup failed: '+(e.message||e)); }
     sysBackupBtn.disabled=false; sysBackupBtn.innerHTML=`<span style="width:15px;height:15px;display:inline-flex;vertical-align:-3px;margin-right:6px">${ic.save}</span>Download full data backup (.json)`;
+  };
+}
+/* ================= REFERRALS (Management side) =================
+   Referrals are staged as Pending (staff-tagged during lead intake, or client-
+   submitted through their own portal) and only turn into earned points once
+   Management marks them Cleared -- deliberately a manual, reviewed step rather than
+   anything automatic, same discipline as the rest of this app's money-adjacent
+   workflows (commission, payment approval). */
+let REFERRALS_LOADED=false, REFERRALS_LIST=[];
+function referralStatusTag(status){
+  if(status==='Cleared') return '<span class="tag ok">Cleared</span>';
+  if(status==='Not interested') return '<span class="tag dgr">Not interested</span>';
+  return '<span class="tag warnt">Pending</span>';
+}
+function mgrReferralsHtml(){
+  const pending=REFERRALS_LIST.filter(r=>r.status==='Pending').sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  const decided=REFERRALS_LIST.filter(r=>r.status!=='Pending').sort((a,b)=>(b.clearedAt||b.createdAt||'').localeCompare(a.clearedAt||a.createdAt||'')).slice(0,30);
+  const rowOf=r=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.referredName)} <span class="mini">referred by ${esc(r.referrerName)}</span></div><div class="meta">${esc(r.referredContact)}${r.referredLocation?' · '+esc(r.referredLocation):''} · ${r.referredNoPlots||1} plot(s)${r.source==='client'?' · via client portal':''}</div></div>${referralStatusTag(r.status)}</div>
+    ${r.status==='Cleared'?`<div class="mini" style="margin-top:6px">🎉 ${r.pointsAwarded||0} points awarded${r.clearedAt?' · '+esc((r.clearedAt||'').slice(0,10)):''}</div>`:''}
+    ${r.status==='Pending'?`<div class="foot" style="gap:8px;flex-wrap:wrap"><button class="chip" data-refclear="${r.id}">Mark cleared — awarded points</button><button class="chip" data-refdismiss="${r.id}" style="color:#B91C1C">Not interested</button></div>`:''}</div>`;
+  return `<div class="sectitle" style="margin-top:0"><h3>Pending</h3><span class="cnt">${pending.length}</span></div>
+  <div class="list">${pending.length?pending.map(rowOf).join(''):emptyState(ic.gift||ic.doc,'Nothing pending','New referrals — from staff tagging a lead as referred, or clients submitting via their own portal — show up here.')}</div>
+  <div class="sectitle"><h3>Recently decided</h3><span class="cnt">${decided.length}</span></div>
+  <div class="list">${decided.length?decided.map(rowOf).join(''):emptyState(ic.doc,'Nothing yet','')}</div>`;
+}
+function bindReferralsCtrls(){
+  document.querySelectorAll('[data-refclear]').forEach(b=>b.onclick=()=>{
+    const r=REFERRALS_LIST.find(x=>x.id===b.dataset.refclear); if(r) openReferralClearModal(r);
+  });
+  document.querySelectorAll('[data-refdismiss]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Mark this referral as not interested? It will be archived, no points awarded.')) return;
+    try{ await apiDismissReferral(b.dataset.refdismiss); const r=REFERRALS_LIST.find(x=>x.id===b.dataset.refdismiss); if(r) r.status='Not interested'; toast('Archived'); managerView(); }
+    catch(e){ toast('Failed: '+(e.message||e)); }
+  });
+}
+function openReferralClearModal(r){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal" style="max-width:480px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Clear ${esc(r.referrerName)}'s referral</div><button id="closeRefClear" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <p class="mini" style="margin:-4px 0 12px">Confirms ${esc(r.referredName)} actually bought, and credits ${esc(r.referrerName)} with points. A confirmation SMS goes to them right after.</p>
+    ${fld("Link to the client's lead",'<input id="refc_search" placeholder="Search '+esc(r.referredName)+' in Client Database…" autocomplete="off"/>')}
+    <div id="refc_results"></div>
+    <div id="refc_picked" class="hidden rowcard" style="margin:8px 0;padding:10px 14px"></div>
+    ${fld('Points to award','<input id="refc_points" type="number" min="0" value="'+(num(CONFIG.referralPointsPerReferral)||50)+'"/>')}
+    <div class="formactions"><button class="btn primary" id="refc_save" style="width:100%">Clear &amp; award points</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeRefClear').onclick=()=>ov.remove();
+  let pickedLeadId=null;
+  const search=document.getElementById('refc_search');
+  search.oninput=debounce(async()=>{
+    const q=search.value.trim().toLowerCase();
+    const results=document.getElementById('refc_results');
+    if(q.length<2){ results.innerHTML=''; return; }
+    if(!CLIENTDB_LOADED){ try{ await withLoadTimeout(apiLoadClientDatabase(),15000,'Client list'); }catch(e){} }
+    const matches=(CLIENTDB_LIST||[]).filter(l=>(l.name||'').toLowerCase().includes(q)).slice(0,6);
+    results.innerHTML=matches.length?matches.map(l=>`<button type="button" class="chip" data-refpicklead="${esc(l.id)}" style="display:block;width:100%;text-align:left;margin:6px 0">${esc(l.name)} · ${esc(l.contact||'')}</button>`).join(''):'<div class="mini" style="margin-top:6px">No matches — you can still clear this without linking a lead.</div>';
+    results.querySelectorAll('[data-refpicklead]').forEach(btn=>btn.onclick=()=>{
+      const picked=matches.find(l=>l.id===btn.dataset.refpicklead); if(!picked) return;
+      pickedLeadId=picked.id;
+      const p=document.getElementById('refc_picked');
+      p.classList.remove('hidden'); p.innerHTML=`Linked to <b>${esc(picked.name)}</b> <button type="button" class="chip" id="refc_clearpick" style="margin-left:8px">Change</button>`;
+      document.getElementById('refc_clearpick').onclick=()=>{ pickedLeadId=null; p.classList.add('hidden'); p.innerHTML=''; };
+      results.innerHTML=''; search.value='';
+    });
+  },200);
+  document.getElementById('refc_save').onclick=async()=>{
+    const points=num(val('refc_points'))||0;
+    const btn=document.getElementById('refc_save'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const updated=await apiClearReferral(r.id,{referredLeadId:pickedLeadId,pointsAwarded:points});
+      Object.assign(r,updated);
+      toast('Referral cleared — '+points+' points awarded'); ov.remove();
+      try{ await apiSendSms(r.referrerContact,'Great news! Your referral of '+r.referredName+' has gone through and you have earned '+points+' points with Palmstead. Keep referring to earn more — check your Referrals dashboard for your rewards.','referral_cleared'); }catch(e){}
+      managerView();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Clear & award points'; }
+  };
+}
+function mgrReferralSettingsHtml(){
+  const rewards=CONFIG.referralRewards||[];
+  return `${settingsSectionHead('gift','Referral points & rewards','what a cleared referral earns, and what points can buy')}
+  <div class="formwrap">
+    ${fld('Points per cleared referral','<input id="ref_points" type="number" min="0" value="'+(num(CONFIG.referralPointsPerReferral)||50)+'"/>','awarded once Management marks a referral as Cleared')}
+    <div class="mini" style="font-weight:700;margin:14px 0 8px">Rewards catalog</div>
+    <div id="ref_rewardsList">${rewards.map((rw,i)=>`<div class="grid2" style="margin-bottom:8px" data-refrewardrow="${i}">
+      ${fld('Reward','<input class="refrw_label" value="'+esc(rw.label||'')+'"/>')}
+      ${fld('Points needed','<input class="refrw_points" type="number" min="0" value="'+(num(rw.points)||0)+'"/>')}
+    </div>`).join('')}</div>
+    <button type="button" class="chip" id="ref_addReward" style="width:100%;margin-bottom:14px">+ Add a reward tier</button>
+    <div class="formactions"><button class="btn primary" id="ref_saveSettings" style="width:100%">Save referral settings</button></div>
+  </div>`;
+}
+function bindReferralSettingsCtrls(){
+  document.getElementById('ref_addReward').onclick=()=>{
+    const list=document.getElementById('ref_rewardsList');
+    const wrap=document.createElement('div');
+    wrap.innerHTML=`<div class="grid2" style="margin-bottom:8px">${fld('Reward','<input class="refrw_label" placeholder="e.g. Free Documentation"/>')}${fld('Points needed','<input class="refrw_points" type="number" min="0" value="0"/>')}</div>`;
+    list.appendChild(wrap.firstElementChild);
+  };
+  document.getElementById('ref_saveSettings').onclick=async()=>{
+    const btn=document.getElementById('ref_saveSettings'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const labels=[...document.querySelectorAll('.refrw_label')], points=[...document.querySelectorAll('.refrw_points')];
+      const rewards=labels.map((el,i)=>({label:el.value.trim(),points:num(points[i].value)||0})).filter(r=>r.label);
+      await apiSaveConfig({referralPointsPerReferral:num(val('ref_points'))||50,referralRewards:rewards});
+      toast('Referral settings saved');
+      managerView();
+    }catch(e){ toast('Could not save: '+(e.message||e)); btn.disabled=false; btn.textContent='Save referral settings'; }
   };
 }
 /* Server-side backup/restore of core business records (leads, plots, payments, contracts,
