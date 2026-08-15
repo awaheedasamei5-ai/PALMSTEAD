@@ -7713,7 +7713,8 @@ function mapTodo(r){ return {id:r.id,ownerKey:r.owner_key,ownerName:r.owner_name
   date:r.item_date,startTime:(r.start_time||'').slice(0,5),endTime:(r.end_time||'').slice(0,5),status:r.status==='done'?'closed':r.status,
   assignedTo:r.assigned_to,assignedToName:r.assigned_to_name,escalatedTo:r.escalated_to,escalatedToName:r.escalated_to_name,
   escalatedBy:r.escalated_by,escalatedByName:r.escalated_by_name,escalatedAt:r.escalated_at,escalationNote:r.escalation_note,
-  rescheduledToId:r.rescheduled_to_id,createdAt:r.created_at,closedAt:r.status==='done'?r.completed_at:null}; }
+  rescheduledToId:r.rescheduled_to_id,createdAt:r.created_at,closedAt:r.status==='done'?r.completed_at:null,
+  recursFreq:r.recurs_freq,recursInterval:r.recurs_interval,recursUntil:r.recurs_until,recursParentId:r.recurs_parent_id}; }
 async function apiLoadTodos(fromDate,toDate){
   // Filtered by assignee, not creator/owner -- a to-do escalated to someone else
   // needs to show up on THEIR list and disappear from the escalator's, same as
@@ -7731,6 +7732,64 @@ async function apiInsertTodo(t){
     title:t.title,notes:t.notes||null,contact:t.contact||null,
     item_date:t.date,start_time:t.startTime,end_time:t.endTime}).select().single();
   if(error) throw error; return mapTodo(data);
+}
+// Simplified recurrence -- not full RFC5545, just daily/weekly/monthly + an
+// interval and an optional end date, capped at 12 occurrences total (materialized
+// as real rows up front, matching this codebase's existing simple-generation
+// style rather than expanding virtually at read time).
+function generateRecurrenceDates(startDate,freq,interval,until,cap){
+  const dates=[startDate]; let cur=startDate;
+  while(dates.length<cap){
+    if(freq==='daily') cur=isoPlusDays(cur,interval);
+    else if(freq==='weekly') cur=isoPlusDays(cur,7*interval);
+    else if(freq==='monthly'){
+      // Clamp to the target month's real last day instead of letting native Date
+      // overflow into the month after -- e.g. Jan 31 + 1 month lands on Feb 28,
+      // not rolls over to Mar 3.
+      const [y,m,d]=cur.split('-').map(Number);
+      const idx=m-1+interval; const ty=y+Math.floor(idx/12); const tm=((idx%12)+12)%12;
+      const lastDay=new Date(ty,tm+1,0).getDate();
+      cur=ty+'-'+String(tm+1).padStart(2,'0')+'-'+String(Math.min(d,lastDay)).padStart(2,'0');
+    }
+    else break;
+    if(until && cur>until) break;
+    dates.push(cur);
+  }
+  return dates;
+}
+// Separate from apiInsertTodo (which every reschedule/escalate call also uses
+// internally for a single occurrence) so recurrence generation only ever fires
+// where a "Repeat" option was actually chosen. Returns every occurrence created,
+// not just the first, so the caller can add them all to TODO_LIST at once.
+async function apiInsertRecurringTodo(t,recur){
+  if(DEMO_MODE) return [await apiInsertTodo(t)];
+  const dates=generateRecurrenceDates(t.date,recur.freq,recur.interval||1,recur.until||null,12);
+  const rows=dates.map(d=>({kind:'todo',owner_key:PROFILE.key,owner_name:PROFILE.name,
+    assigned_to:PROFILE.key,assigned_to_name:PROFILE.name,assigned_by:PROFILE.key,assigned_by_name:PROFILE.name,
+    title:t.title,notes:t.notes||null,contact:t.contact||null,
+    item_date:d,start_time:t.startTime,end_time:t.endTime,
+    recurs_freq:recur.freq,recurs_interval:recur.interval||1,recurs_until:recur.until||null}));
+  const {data,error}=await sb.from('schedule_items').insert(rows).select();
+  if(error) throw error;
+  const mapped=(data||[]).map(mapTodo);
+  if(mapped.length>1){
+    const parentId=mapped[0].id;
+    const childIds=mapped.slice(1).map(m=>m.id);
+    await sb.from('schedule_items').update({recurs_parent_id:parentId}).in('id',childIds);
+    mapped.slice(1).forEach(m=>m.recursParentId=parentId);
+  }
+  return mapped;
+}
+// "Stop repeating" -- cancels every still-open, still-upcoming occurrence in the
+// series (today's/past occurrences are left alone, same as any other closed/done
+// history in this app). seriesId can be either the first occurrence's own id or
+// any later occurrence's recurs_parent_id -- both point at the same first row.
+async function apiCancelFutureRecurrence(seriesId,fromDate){
+  if(DEMO_MODE) return;
+  const {error}=await sb.from('schedule_items').update({status:'cancelled',cancelled_at:new Date().toISOString()})
+    .or(`recurs_parent_id.eq.${seriesId},id.eq.${seriesId}`)
+    .eq('status','open').gte('item_date',fromDate);
+  if(error) throw error;
 }
 async function apiUpdateTodoStatus(id,status){
   if(DEMO_MODE){ const d=await demoLoad(); const t=(d.todos||[]).find(x=>x.id===id); if(t){ t.status=status; if(status==='closed') t.closedAt=new Date().toISOString(); } await demoSave(); return; }
@@ -7826,6 +7885,7 @@ function timeInputHtml(id,cur){ return `<input id="${id}" type="time" step="300"
 function todoStatusTag(s){
   if(s==='closed') return '<span class="tag ok">Closed</span>';
   if(s==='rescheduled') return '<span class="tag warnt">Rescheduled</span>';
+  if(s==='cancelled') return '<span class="tag dgr">Cancelled</span>';
   return '<span class="tag ghost">Open</span>';
 }
 function todoTabHtml(){
@@ -7837,10 +7897,12 @@ function todoTabHtml(){
 }
 function todoRowHtml(t){
   const notMine=t.ownerKey&&t.ownerKey!==t.assignedTo;
-  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(t.startTime)}–${esc(t.endTime)} · ${esc(t.title)}</div>${notMine?`<div class="meta">Escalated from ${esc(t.ownerName||t.ownerKey)}${t.escalationNote?': "'+esc(t.escalationNote)+'"':''}</div>`:''}${t.notes?`<div class="meta">${esc(t.notes)}</div>`:''}</div>${todoStatusTag(t.status)}</div>
+  const isRecurring=!!(t.recursFreq||t.recursParentId);
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(t.startTime)}–${esc(t.endTime)} · ${esc(t.title)}${isRecurring?' <span title="Part of a repeating series">🔁</span>':''}</div>${notMine?`<div class="meta">Escalated from ${esc(t.ownerName||t.ownerKey)}${t.escalationNote?': "'+esc(t.escalationNote)+'"':''}</div>`:''}${t.notes?`<div class="meta">${esc(t.notes)}</div>`:''}</div>${todoStatusTag(t.status)}</div>
   ${t.contact?`<div style="margin-top:8px">${contactLinks(t.contact)}</div>`:''}
-  ${t.status==='open'?`<div class="foot" style="gap:7px;flex-wrap:wrap;margin-top:10px"><button class="chip" data-todoreschedule="${esc(t.id)}">Reschedule</button><button class="chip" data-todoescalate="${esc(t.id)}">Escalate</button><button class="btn primary" data-todoclose="${esc(t.id)}" style="padding:8px 18px;font-size:12.5px">Mark closed</button></div>`:''}
-  ${t.status==='rescheduled'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Moved to a new time</div>`:''}</div>`;
+  ${t.status==='open'?`<div class="foot" style="gap:7px;flex-wrap:wrap;margin-top:10px"><button class="chip" data-todoreschedule="${esc(t.id)}">Reschedule</button><button class="chip" data-todoescalate="${esc(t.id)}">Escalate</button>${isRecurring?`<button class="chip" data-todostoprepeat="${esc(t.id)}">Stop repeating</button>`:''}<button class="btn primary" data-todoclose="${esc(t.id)}" style="padding:8px 18px;font-size:12.5px">Mark closed</button></div>`:''}
+  ${t.status==='rescheduled'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Moved to a new time</div>`:''}
+  ${t.status==='cancelled'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Series stopped</div>`:''}</div>`;
 }
 function bindTodoCtrls(){
   const dateNav=document.getElementById('todo_dateNav');
@@ -7856,6 +7918,17 @@ function bindTodoCtrls(){
   });
   document.querySelectorAll('[data-todoescalate]').forEach(b=>b.onclick=()=>{
     const t=TODO_LIST.find(x=>x.id===b.dataset.todoescalate); if(t) openEscalateTodoModal(t);
+  });
+  document.querySelectorAll('[data-todostoprepeat]').forEach(b=>b.onclick=async()=>{
+    const t=TODO_LIST.find(x=>x.id===b.dataset.todostoprepeat); if(!t) return;
+    if(!confirm('Stop this repeating series? Today and any past occurrences stay as they are — only upcoming ones are cancelled.')) return;
+    b.disabled=true;
+    try{
+      const seriesId=t.recursParentId||t.id;
+      await apiCancelFutureRecurrence(seriesId,isoPlusDays(t.date,1));
+      TODO_LIST.forEach(x=>{ if(x.status==='open'&&x.date>t.date&&(x.id===seriesId||x.recursParentId===seriesId)) x.status='cancelled'; });
+      toast('Series stopped'); paintTodoTab();
+    }catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
   });
   const reportBtn=document.getElementById('todoReportBtn'); if(reportBtn) reportBtn.onclick=openTodoReportModal;
 }
@@ -7878,6 +7951,8 @@ function openTodoNewModal(){
     ${fld('Date','<input id="td_date" type="date" value="'+TODO_DATE+'"/>')}
     <div class="grid2">${fld('Start time',timeInputHtml('td_start','09:00'))}${fld('End time',timeInputHtml('td_end','10:00'))}</div>
     <div id="td_conflictWarn" class="mini" style="color:var(--danger);margin:-8px 0 12px"></div>
+    ${fld('Repeat',sel('td_repeat',['Does not repeat','Daily','Weekly','Monthly']))}
+    <div id="td_repeatUntilWrap" class="hidden">${fld('Repeat until','<input id="td_repeatUntil" type="date"/>','optional — stops after 12 occurrences either way')}</div>
     ${others.length?fld('Invite colleagues','<div class="chips">'+others.map(s=>`<button type="button" class="chip2" data-tdinvite="${esc(s.key)}">${esc(s.name)}</button>`).join('')+'</div>','it appears on their to-do list too, if that time is free'):''}
     ${fld('Contact number','<input id="td_contact" placeholder="0244…"/>','optional — enables Call/WhatsApp quick actions')}
     ${fld('Notes','<textarea id="td_notes" placeholder="Any detail to remember"></textarea>','optional')}
@@ -7886,6 +7961,7 @@ function openTodoNewModal(){
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeTodoNew').onclick=()=>ov.remove();
+  document.getElementById('td_repeat').onchange=e=>{ document.getElementById('td_repeatUntilWrap').classList.toggle('hidden',e.target.value==='Does not repeat'); };
   const invited=new Set();
   ov.querySelectorAll('[data-tdinvite]').forEach(b=>b.onclick=()=>{
     const key=b.dataset.tdinvite;
@@ -7917,10 +7993,18 @@ function openTodoNewModal(){
     const reason=multiConflictReasonText(result);
     if(reason){ toast(reason); btn.disabled=false; btn.textContent='Save to-do'; return; }
     try{
-      const rec=await apiInsertTodo({title,notes:val('td_notes').trim(),contact:val('td_contact').trim(),date,startTime:start,endTime:end});
-      if(invited.size) await apiInviteToScheduleItem(rec.id,[...invited]).catch(()=>{});
-      TODO_LIST.push(rec); TODO_LIST.sort((a,b)=>a.date===b.date?a.startTime.localeCompare(b.startTime):a.date.localeCompare(b.date));
-      toast('To-do saved'); ov.remove(); todoArmAlarms(); paintTodoTab();
+      const t={title,notes:val('td_notes').trim(),contact:val('td_contact').trim(),date,startTime:start,endTime:end};
+      const repeatChoice=val('td_repeat');
+      let recs;
+      if(repeatChoice==='Does not repeat'){
+        recs=[await apiInsertTodo(t)];
+      }else{
+        const freq=repeatChoice==='Daily'?'daily':repeatChoice==='Weekly'?'weekly':'monthly';
+        recs=await apiInsertRecurringTodo(t,{freq,interval:1,until:val('td_repeatUntil')||null});
+      }
+      if(invited.size) await apiInviteToScheduleItem(recs[0].id,[...invited]).catch(()=>{});
+      TODO_LIST.push(...recs); TODO_LIST.sort((a,b)=>a.date===b.date?a.startTime.localeCompare(b.startTime):a.date.localeCompare(b.date));
+      toast(recs.length>1?recs.length+' occurrences saved':'To-do saved'); ov.remove(); todoArmAlarms(); paintTodoTab();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save to-do'; }
   };
 }
