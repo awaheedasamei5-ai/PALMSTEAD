@@ -669,6 +669,10 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .attClockBtn .sub{font-size:9px;color:rgba(255,255,255,.75);text-transform:uppercase;letter-spacing:.06em}
 .attClockStats{display:flex;gap:10px;position:relative;z-index:1}
 .attClockStat{flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:10px 8px}
+.attMonthStats{display:flex;gap:10px;margin-bottom:18px}
+.attMonthStat{flex:1;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 8px;box-shadow:var(--shadow)}
+.attMonthStat .l{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
+.attMonthStat .v{font-size:16px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-top:3px;color:var(--ink)}
 .attClockStat .l{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.6);font-weight:700}
 .attClockStat .v{font-size:14px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-top:3px;color:#fff}
 .themeSwatchRow{display:flex;flex-wrap:wrap;gap:8px}
@@ -3286,6 +3290,48 @@ function attComparisonHtml(){
 function staffOnLeave(staffKey,date){
   return (DB.leaveRequests||[]).find(r=>r.agentKey===staffKey&&leaveIsBlocking(r.status)&&(r.dates||[]).includes(date));
 }
+// Month-to-date attendance KPI for one staff member. "Expected" working days comes
+// straight from the calendar (isWorkingDayIso, holiday+CONFIG.workDays aware) --
+// no dependency on anyone's actual attendance rows. daysAttended/onTimeDays come
+// from the same shared leaderboard_rows RPC (ATTENDANCE_MONTH_ROWS) that already
+// powers the "you vs team" comparison and the Leaderboard, so this can never drift
+// from those. Whatever isn't attended and isn't covered by leave counts as an
+// absence. KPI is a deliberately strict red/green call (not amber) per how this
+// was asked for: on track only if on-time rate is >=90% AND at most 1 absence.
+function attendanceMonthStatsFor(staffKey){
+  const monthStart=today().slice(0,7)+'-01';
+  let expected=0, leaveCount=0;
+  for(let d=monthStart; d<=today(); d=isoPlusDays(d,1)){
+    if(!isWorkingDayIso(d)) continue;
+    expected++;
+    if(staffOnLeave(staffKey,d)) leaveCount++;
+  }
+  const row=ATTENDANCE_MONTH_ROWS.find(r=>r.staffKey===staffKey);
+  const daysAttended=row?row.daysAttended:0, onTimeDays=row?row.onTimeDays:0;
+  const absences=Math.max(0,expected-daysAttended-leaveCount);
+  const onTimeRate=daysAttended>0?onTimeDays/daysAttended:1;
+  const good=onTimeRate>=0.9&&absences<=1;
+  return {expected,daysAttended,onTimeDays,leaveCount,absences,onTimeRate,good};
+}
+function attKpiTag(stats){
+  return stats.good?'<span class="tag ok">● On track</span>':'<span class="tag dgr">● At risk</span>';
+}
+function attMonthStatsHtml(staffKey){
+  const stats=attendanceMonthStatsFor(staffKey);
+  return `<div class="sectitle" style="margin-top:0"><h3>This month</h3>${attKpiTag(stats)}</div>
+  <div class="attMonthStats">
+    <div class="attMonthStat"><div class="l">Days present</div><div class="v">${stats.daysAttended}</div></div>
+    <div class="attMonthStat"><div class="l">Absences</div><div class="v">${stats.absences}</div></div>
+    <div class="attMonthStat"><div class="l">On leave</div><div class="v">${stats.leaveCount}</div></div>
+  </div>`;
+}
+// "At the office" / "Off-site: {reason}" tag for a sign-in or sign-out, only shown
+// once an office location is actually configured (otherwise every row would just
+// say "location not checked", which isn't useful).
+function attLocationTagHtml(isOffSite,reason){
+  if(CONFIG.officeLat==null||CONFIG.officeLng==null) return '';
+  return isOffSite?`<div class="mini" style="color:#B4472F">📍 Off-site${reason?': '+esc(reason):''}</div>`:'<div class="mini" style="color:var(--muted)">📍 At the office</div>';
+}
 function attHoursWorkedStr(t){
   if(!t||!t.signInAt) return '--:--';
   const mins=Math.max(0,Math.round((new Date(t.signOutAt||Date.now())-new Date(t.signInAt))/60000));
@@ -3313,6 +3359,7 @@ function paintAttendanceBody(){
       <div class="attClockStat"><div class="l">Hours</div><div class="v">${attHoursWorkedStr(t)}</div></div>
     </div>
   </div>
+  ${attMonthStatsHtml(PROFILE.key)}
   ${attComparisonHtml()}
   ${isMgr?`<div class="sectitle" style="margin-top:0"><h3>Team today</h3><span class="cnt">${ATTENDANCE_TEAM_TODAY.filter(a=>a.signInAt).length} of ${STAFF_LIST.length} signed in</span></div>
   <div class="list" style="margin-bottom:18px">${teamAttendanceTodayHtml()}</div>`:''}
@@ -3345,12 +3392,27 @@ function teamAttendanceTodayHtml(){
       statusTag=`<span class="tag dgr">Absent</span>`;
       metaText='Not signed in';
     }
-    return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(s.name)}</div><div class="meta">${metaText}</div></div>${statusTag}</div></div>`;
+    const kpi=attendanceMonthStatsFor(s.key);
+    return `<div class="rowcard"><div class="top">
+      <div style="display:flex;gap:10px;min-width:0">
+        ${rec&&rec.signInPhoto?`<img src="${rec.signInPhoto}" style="width:38px;height:38px;border-radius:100%;object-fit:cover;flex:0 0 auto"/>`:''}
+        <div style="min-width:0"><div class="nm">${esc(s.name)}</div><div class="meta">${metaText}</div>${rec&&rec.signInAt?attLocationTagHtml(rec.isOffSiteIn,rec.signInReason):''}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:0 0 auto">${statusTag}${attKpiTag(kpi)}</div>
+    </div></div>`;
   }).join('');
 }
 function attendanceHistoryRowHtml(a){
   const onLeave=!a.signInAt?staffOnLeave(PROFILE.key,a.workDate):null;
-  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(fmtLongDate(a.workDate))}</div><div class="meta">${a.signInAt?('In '+esc(a.signInAt.slice(11,16))+(a.lateReason?' · '+esc(a.lateReason):'')):(onLeave?'On leave':'—')}${a.signOutAt?(' · Out '+esc(a.signOutAt.slice(11,16))):''}</div></div></div></div>`;
+  return `<div class="rowcard"><div class="top">
+    <div style="display:flex;gap:10px;min-width:0">
+      ${a.signInPhoto?`<img src="${a.signInPhoto}" style="width:38px;height:38px;border-radius:100%;object-fit:cover;flex:0 0 auto"/>`:''}
+      <div style="min-width:0"><div class="nm">${esc(fmtLongDate(a.workDate))}</div><div class="meta">${a.signInAt?('In '+esc(a.signInAt.slice(11,16))+(a.lateReason?' · '+esc(a.lateReason):'')):(onLeave?'On leave':'—')}${a.signOutAt?(' · Out '+esc(a.signOutAt.slice(11,16))):''}</div>
+      ${a.signInAt?attLocationTagHtml(a.isOffSiteIn,a.signInReason):''}
+      ${a.signOutAt&&a.isOffSiteOut?`<div class="mini" style="color:#B4472F">📍 Signed out off-site${a.signOutReason?': '+esc(a.signOutReason):''}</div>`:''}
+      </div>
+    </div>
+  </div></div>`;
 }
 function promptLateReason(){
   return new Promise(resolve=>{
