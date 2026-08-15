@@ -2370,7 +2370,14 @@ async function apiLoadBadgeCounts(){
   if(opsRes){ const [{count:assignedCount},{count:overdueCount}]=opsRes; counts.opsAssigned=assignedCount||0; counts.opsOverdueTeam=overdueCount||0; }
   return counts;
 }
-async function apiInsertLead(l,c,agentKeyOverride){
+// sendWelcome defaults to false -- a brand new client walking through Add Lead/Company
+// Lead/plot-request-approval should get the "you now have portal access" text, but
+// bulk paths (backup restore, pipeline import) insert many historic rows at once and
+// must NOT blast an SMS per row, so those call sites explicitly leave it off. The
+// client portal's login itself auto-provisions on first attempt with a fixed default
+// PIN (1122, see client_portal_login RPC) -- there's no separate "grant access" step,
+// so as soon as a lead row exists, that PIN genuinely already works.
+async function apiInsertLead(l,c,agentKeyOverride,opts){
   if(DEMO_MODE){ const key=agentKeyOverride||PROFILE.key; const d=await demoLoad(); const row={id:uid(),agent:key,...l,netTotal:c.net,grandTotal:c.grand,balance:c.bal,
       depositTarget:l.depositTarget!=null&&l.depositTarget!==''?num(l.depositTarget):Math.round(c.grand*0.3)};
     d.leads[key]=d.leads[key]||[]; d.leads[key].unshift(row); await demoSave(); return row; }
@@ -2382,7 +2389,12 @@ async function apiInsertLead(l,c,agentKeyOverride){
     deposit_target:l.depositTarget!=null&&l.depositTarget!==''?num(l.depositTarget):Math.round(c.grand*0.3)};
   if(l.leadSource) row.lead_source=l.leadSource;
   if(l.bannerId) row.banner_id=l.bannerId;
-  const {data,error}=await sb.from('leads').insert(row).select().single(); if(error) throw error; return mapLead(data);
+  const {data,error}=await sb.from('leads').insert(row).select().single(); if(error) throw error;
+  const rec=mapLead(data);
+  if(opts&&opts.sendWelcome&&rec.contact){
+    apiSendSms(rec.contact,`Hi ${rec.name||''}, welcome to Palmstead! You can track your purchase, payments and documents anytime through our client portal — log in with your registered phone number, PIN 1122 (please change it once you're in). - PEP Landbank`,'welcome').catch(()=>{});
+  }
+  return rec;
 }
 async function apiUpdateLead(id,patch){
   if(DEMO_MODE){ const d=await demoLoad(); let l=(d.leads[PROFILE.key]||[]).find(x=>x.id===id);
@@ -2592,7 +2604,7 @@ async function apiApprovePlotRequest(req){
     const l={name:req.clientName,contact:req.clientContact,date:today(),stage:'1',priority:'Low',
       plotType:req.plotType,noPlots:req.noPlots,paymentPlan:req.paymentPlan,siteVisit:'No',nextAction:'',notes:req.notes||''};
     const cc=computeLead(l);
-    const rec=await apiInsertLead(l,cc,req.agentKey||undefined);
+    const rec=await apiInsertLead(l,cc,req.agentKey||undefined,{sendWelcome:true});
     DB.leads.unshift(rec);
     resultingId=rec.id;
   }
@@ -3861,7 +3873,7 @@ function openAddClientDbLead(){
     const c=computeLead(l);
     const btn=document.getElementById('saveCdbLead'); btn.disabled=true; btn.textContent='Saving…';
     try{
-      const row=await apiInsertLead(l,c,agentKey);
+      const row=await apiInsertLead(l,c,agentKey,{sendWelcome:true});
       CLIENTDB_LIST.push(row); if(agentKey===PROFILE.agent_key) DB.leads.push(row);
       toast('Client added'); ov.remove();
       const body=document.getElementById('cdbBody'); if(body){ body.innerHTML=clientDatabaseBodyHtml(); bindClientDatabaseCtrls(body); }
@@ -4101,7 +4113,7 @@ function openAddCompanyLeadModal(){
     const c=computeLead(l);
     const btn=document.getElementById('saveCompanyLead'); btn.disabled=true; btn.textContent='Saving…';
     try{
-      const row=await apiInsertLead(l,c,'company');
+      const row=await apiInsertLead(l,c,'company',{sendWelcome:true});
       COMPANY_LEADS_LIST.unshift(row); if(PROFILE.agent_key==='company') DB.leads.push(row);
       if(src.referrerLeadId){ try{ await apiInsertReferral({referrerLeadId:src.referrerLeadId,referrerName:src.referrerName,referrerContact:src.referrerContact,referredName:name,referredContact:contact,referredLocation:'',referredNoPlots:val('cl_noplots'),referredLeadId:row.id}); }catch(e){} }
       toast('Company lead added'); ov.remove();
@@ -5555,7 +5567,8 @@ function viewOfficeDesk(){
       {key:'Duties',fic:'clipboard',label:'Operations Tracker',badgeCountKey:PROFILE.role==='manager'?'opsOverdueTeam':'opsAssigned'},
       {key:'Feedback',fic:'feedback',label:'Team Feedback'},
       {key:'Banner Tracking',fic:'billboard',label:'Banner Tracking'},
-      {key:'Attendance',fic:'attendance',label:'Attendance'}
+      {key:'Attendance',fic:'attendance',label:'Attendance'},
+      {key:'SMS',fic:'sms',label:'SMS'}
     ]},
     {title:'Money',items:[
       ...(canManagePayments()?[{key:'Log Payment',fic:'payment',label:'Log Payment'}]:[]),
@@ -5581,7 +5594,7 @@ function viewMore(){
     const byKey=k=>all.find(a=>a.key===k);
     const groups=[
       {title:'Insights & data',items:['Data Check','Reports','News','Insights'].map(byKey).filter(Boolean)},
-      {title:'Tools',items:['Settings','Downloads','SMS'].map(byKey).filter(Boolean)}
+      {title:'Tools',items:['Settings','Downloads'].map(byKey).filter(Boolean)}
     ];
     const items=groups.flatMap(g=>g.items);
     grid.innerHTML=vaultGridHtml(groups,{openFirst:true});
@@ -8925,7 +8938,7 @@ async function saveNewLead(){ const l=readLeadForm();
   const src=collectLeadSourceValue('f');
   l.leadSource=src.leadSource; l.bannerId=src.bannerId;
   const c=computeLead(l); const btn=document.getElementById('saveLead'); btn.disabled=true; btn.textContent='Saving…';
-  try{ const row=await apiInsertLead(l,c); DB.leads.unshift(row);
+  try{ const row=await apiInsertLead(l,c,undefined,{sendWelcome:true}); DB.leads.unshift(row);
     if(ADDLEAD_REFERRAL_ID){ try{ await apiLinkReferralToLead(ADDLEAD_REFERRAL_ID,row.id,l.name); }catch(e){} }
     else if(src.referrerLeadId){ try{ await apiInsertReferral({referrerLeadId:src.referrerLeadId,referrerName:src.referrerName,referrerContact:src.referrerContact,referredName:l.name,referredContact:l.contact,referredLocation:'',referredNoPlots:l.noPlots,referredLeadId:row.id}); }catch(e){} }
     await addActivity(l.name,'New lead added','Stage: '+l.stage,l.nextAction);
@@ -12154,7 +12167,7 @@ function openContractNewClientModal(){
     const agentKey=PROFILE.role==='manager'?'company':PROFILE.key;
     const btn=document.getElementById('ca_saveNewClient'); btn.disabled=true; btn.textContent='Saving…';
     try{
-      const row=await apiInsertLead(l,c,agentKey);
+      const row=await apiInsertLead(l,c,agentKey,{sendWelcome:true});
       CLIENTDB_LIST.unshift(row); if(agentKey===PROFILE.agent_key) DB.leads.push(row);
       toast('Client added — generating contract…'); ov.remove();
       await generateAndRecordContract(row);
@@ -12520,7 +12533,7 @@ const MGR_APPS=[
   {key:'Settings',fic:'settings',label:'Settings'},
   {key:'Downloads',fic:'downloads',label:'Document Vault'},
   {key:'Notes',fic:'notes',label:'Notes'},
-  {key:'SMS',fic:'sms',label:'SMS'},
+  {key:'SMS',fic:'sms',label:'SMS',section:'officedesk'},
   {key:'Referrals',fic:'gift',label:'Referrals',section:'salesdesk'},
   {key:'Quotation Settings',fic:'quote',label:'Quotation Settings',section:'settingshub'},
   {key:'Commission Settings',fic:'commission',label:'Commission Settings',section:'settingshub'},
@@ -14341,6 +14354,7 @@ function smsRecipientAreaHtml(){
   return `${fld('Search '+SMS_MODE,'<input id="sms_search" placeholder="Search by name…" value="'+esc(SMS_SEARCH)+'"/>')}
   <div id="smsResultsArea">${smsResultsAreaHtml()}</div>`;
 }
+const SMS_LOGIN_TEMPLATE="Hi! You can now track your purchase, payments and documents anytime through the Palmstead client portal — just log in with your registered phone number. If this is your first time, your PIN is 1122 (please change it once you're in). - PEP Landbank";
 function smsResultsAreaHtml(){
   const list=SMS_MODE==='staff'?SMS_STAFF_LIST:SMS_CLIENTS_LIST;
   const q=SMS_SEARCH.trim().toLowerCase();
@@ -14349,6 +14363,7 @@ function smsResultsAreaHtml(){
     <button class="chip" id="smsSelectAll">Select all shown (${filtered.filter(p=>p.phone).length} with a number)</button>
     ${smsSelectedCount()?`<button class="chip" id="smsClearAll" style="color:#B91C1C">Clear selection</button>`:''}
   </div>
+  ${SMS_MODE==='clients'?`<button class="chip" id="smsLoginTemplateBtn" style="margin-bottom:10px">📋 Send login details to all clients</button>`:''}
   <div class="list" style="max-height:260px;overflow-y:auto">${filtered.length?filtered.map(p=>smsPersonRowHtml(p)).join(''):emptyState(ic.doc,'No matches','Try a different search.')}</div>`;
 }
 function smsPersonRowHtml(p){
@@ -14398,6 +14413,13 @@ function bindSmsResultCtrls(){
   };
   const clearBtn=document.getElementById('smsClearAll');
   if(clearBtn) clearBtn.onclick=()=>{ SMS_SELECTED={}; paintSmsBody(); };
+  const loginTplBtn=document.getElementById('smsLoginTemplateBtn');
+  if(loginTplBtn) loginTplBtn.onclick=()=>{
+    SMS_CLIENTS_LIST.forEach(p=>{ if(p.phone){ const norm=normalizeGhPhone(p.phone); if(norm) SMS_SELECTED[norm]=p.name; } });
+    paintSmsBody();
+    const msgBox=document.getElementById('sms_message'); if(msgBox){ msgBox.value=SMS_LOGIN_TEMPLATE; msgBox.oninput(); }
+    toast('All clients with a phone number selected — review the message, then send');
+  };
 }
 function paintSmsSelectionButtons(){
   const area=document.getElementById('smsRecipientArea'); if(!area) return;
