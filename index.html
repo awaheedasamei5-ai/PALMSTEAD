@@ -2416,6 +2416,16 @@ async function apiDismissReferral(id){
   if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.referrals||[]).find(x=>x.id===id); if(rec) rec.status='Not interested'; await demoSave(); return; }
   const {error}=await sb.from('referrals').update(patch).eq('id',id); if(error) throw error;
 }
+// Used when an agent converts an already-pending referral (staff-tagged or client-
+// submitted) into a real pipeline lead -- deliberately touches ONLY referred_lead_id
+// via a narrow SECURITY DEFINER RPC, never status/points_awarded, so converting a
+// referral can never accidentally (or maliciously) self-award points. That stays a
+// separate, human-confirmed Management action via apiClearReferral.
+async function apiLinkReferralToLead(referralId,leadId,referredName){
+  if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.referrals||[]).find(x=>x.id===referralId); if(rec) rec.referredLeadId=leadId; await demoSave(); return; }
+  const {error}=await sb.rpc('link_referral_to_lead',{p_referral_id:referralId,p_lead_id:leadId}); if(error) throw error;
+  apiSendPush({ownerKind:'staff',ownerId:'manager',title:'Referral now in pipeline',body:(referredName||'A referral')+' has been added to the pipeline — review in Office › Referrals.',tag:'referral'});
+}
 async function apiInsertEnquiry(row){
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),agentKey:PROFILE.key,agentName:PROFILE.name,...row,createdAt:today()+' '+nowTime()};
     d.enquiries.unshift(rec); await demoSave(); return rec; }
@@ -6564,6 +6574,10 @@ function plotBlockOf(plotNumber){ const m=String(plotNumber||'').match(/^([A-Za-
 function canManagePlots(){ return PROFILE.role==='manager' || PROFILE.key==='elias' || PROFILE.key==='emmanuel'; }
 function canManagePayments(){ return PROFILE.role==='manager' || PROFILE.key==='elias'; }
 function canViewClientDatabase(){ return PROFILE.role==='manager' || ['elias','emmanuel','elizabeth'].includes(PROFILE.key); }
+// Mirrors the referrals_upd_staff RLS policy exactly -- a plain agent's own UPDATE
+// attempt on a referral would be silently rejected by RLS, so the UI has to know
+// this in advance rather than let them click a button that's guaranteed to fail.
+function canClearReferrals(){ return PROFILE.role==='manager' || ['elias','emmanuel','elizabeth'].includes(PROFILE.key); }
 const DOC_STAGES=[
   {key:'allocation',label:'Allocation'},
   {key:'picking',label:'Picking'},
@@ -8576,12 +8590,17 @@ function bindDiscModeToggle(prefix,getMode,setMode,repaint){
   });
 }
 let ADDLEAD_DISC_MODE='total';
-function formAddLead(){
+// referralId set only when reached via "Contact & add to my pipeline" on a referral
+// this agent already owns -- saveNewLead links back to that referral (via the narrow
+// RPC) instead of creating a brand-new referral row for the same referred person.
+let ADDLEAD_REFERRAL_ID=null;
+function formAddLead(prefill){
   const canEnterPayments=canManagePayments();
   ADDLEAD_DISC_MODE='total';
-  V.innerHTML=`${back('home')}<div class="pagehead"><div><div class="eyebrow">New lead</div><h2>Add to pipeline</h2><p>Saved straight into your Royal Palm pipeline.</p></div></div>
-  <div class="formwrap">${fld('Lead name *','<input id="f_name" placeholder="e.g. Kwame Mensah"/>')}
-  <div class="grid2">${fld('Contact *','<input id="f_contact" placeholder="0244…"/>')}${fld('Date added','<input id="f_date" type="date" value="'+today()+'"/>')}</div>
+  ADDLEAD_REFERRAL_ID=(prefill&&prefill.referralId)||null;
+  V.innerHTML=`${back('home')}<div class="pagehead"><div><div class="eyebrow">New lead</div><h2>Add to pipeline</h2><p>${prefill?'From a referral — most of this is pre-filled.':'Saved straight into your Royal Palm pipeline.'}</p></div></div>
+  <div class="formwrap">${fld('Lead name *','<input id="f_name" placeholder="e.g. Kwame Mensah" value="'+esc((prefill&&prefill.name)||'')+'"/>')}
+  <div class="grid2">${fld('Contact *','<input id="f_contact" placeholder="0244…" value="'+esc((prefill&&prefill.contact)||'')+'"/>')}${fld('Date added','<input id="f_date" type="date" value="'+today()+'"/>')}</div>
   <div class="grid2">${fld('Stage',stageSel('f_stage','1'))}${fld('Priority',sel('f_priority',['High','Medium','Low'],'Low'))}</div>
   <div class="grid2">${fld('Plot type',sel('f_plot',['Full Plot','Half Plot']))}${fld('No. of plots','<input id="f_plots" type="number" min="0" step="0.5" value="1"/>')}</div>
   <div class="grid2">${fld('Unit price (GHS)','<input id="f_unit" type="number" placeholder="auto"/>','Full '+CONFIG.fullPrice+' · Half '+CONFIG.halfPrice)}${fld('Discount (GHS)','<input id="f_disc" type="number" placeholder="auto"/>')}</div>
@@ -8592,12 +8611,28 @@ function formAddLead(){
   ${leadSourceFieldsHtml('f')}
   <div class="calcbox" id="calc"></div>
   ${fld('Next action','<input id="f_next" placeholder="e.g. Follow up Monday"/>')}
-  ${fld('Notes','<textarea id="f_notes" placeholder="Context, preferences, history…"></textarea>')}
+  ${fld('Notes','<textarea id="f_notes" placeholder="Context, preferences, history…">'+esc(prefill&&prefill.location?('Referral location: '+prefill.location):'')+'</textarea>')}
   <div class="formactions"><button class="btn ghost" onclick="route('home')">Cancel</button><button class="btn primary" id="saveLead">Save lead</button></div></div>`;
   ['f_plot','f_plots','f_unit','f_disc','f_plan','f_paid','f_deptarget'].forEach(i=>{ const el=document.getElementById(i); if(el) el.addEventListener('input',paintCalc); });
   bindDiscModeToggle('addlead',()=>ADDLEAD_DISC_MODE,m=>ADDLEAD_DISC_MODE=m,paintCalc);
   bindLeadSourceFieldsCtrls('f',()=>(DB.leads||[]).map(l=>({id:l.id,name:l.name,contact:l.contact})));
+  if(prefill&&prefill.referralId&&prefill.referrerLeadId) applyReferralSourcePrefill(prefill);
   paintCalc(); document.getElementById('saveLead').onclick=saveNewLead;
+}
+// Skips the search-for-referrer step entirely -- we already know exactly who
+// referred this lead (the referral row itself), so pre-picks it the same way a
+// manual search-and-pick would leave LEAD_SOURCE_STATE.f.
+function applyReferralSourcePrefill(prefill){
+  const sourceSel=document.getElementById('f_source'); if(!sourceSel) return;
+  sourceSel.value='Referral'; sourceSel.dispatchEvent(new Event('change'));
+  const state=LEAD_SOURCE_STATE.f; if(!state) return;
+  state.referrerLeadId=prefill.referrerLeadId; state.referrerName=prefill.referrerName; state.referrerContact=prefill.referrerContact;
+  const yesBtn=document.getElementById('f_refYes'), noBtn=document.getElementById('f_refNo'), searchWrap=document.getElementById('f_referrerSearchWrap');
+  if(yesBtn) yesBtn.classList.add('on'); if(noBtn) noBtn.classList.remove('on'); if(searchWrap) searchWrap.classList.remove('hidden');
+  const p=document.getElementById('f_refPicked'); if(!p) return;
+  p.classList.remove('hidden');
+  p.innerHTML=`Referred by <b>${esc(prefill.referrerName)}</b> <button type="button" class="chip" id="f_refClear" style="margin-left:8px">Change</button>`;
+  document.getElementById('f_refClear').onclick=()=>{ state.referrerLeadId=null; state.referrerName=null; state.referrerContact=null; p.classList.add('hidden'); p.innerHTML=''; };
 }
 function readLeadForm(){return {name:val('f_name').trim(),contact:val('f_contact').trim(),date:val('f_date'),stage:val('f_stage'),
   priority:val('f_priority'),plotType:val('f_plot'),noPlots:val('f_plots'),unitPrice:val('f_unit')||null,
@@ -8614,7 +8649,8 @@ async function saveNewLead(){ const l=readLeadForm();
   l.leadSource=src.leadSource; l.bannerId=src.bannerId;
   const c=computeLead(l); const btn=document.getElementById('saveLead'); btn.disabled=true; btn.textContent='Saving…';
   try{ const row=await apiInsertLead(l,c); DB.leads.unshift(row);
-    if(src.referrerLeadId){ try{ await apiInsertReferral({referrerLeadId:src.referrerLeadId,referrerName:src.referrerName,referrerContact:src.referrerContact,referredName:l.name,referredContact:l.contact,referredLocation:'',referredNoPlots:l.noPlots,referredLeadId:row.id}); }catch(e){} }
+    if(ADDLEAD_REFERRAL_ID){ try{ await apiLinkReferralToLead(ADDLEAD_REFERRAL_ID,row.id,l.name); }catch(e){} }
+    else if(src.referrerLeadId){ try{ await apiInsertReferral({referrerLeadId:src.referrerLeadId,referrerName:src.referrerName,referrerContact:src.referrerContact,referredName:l.name,referredContact:l.contact,referredLocation:'',referredNoPlots:l.noPlots,referredLeadId:row.id}); }catch(e){} }
     await addActivity(l.name,'New lead added','Stage: '+l.stage,l.nextAction);
     toast('Lead saved to your pipeline'); route('pipeline');
   }catch(e){ toast('Save failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save lead'; }
@@ -13277,11 +13313,17 @@ function referralStatusTag(status){
   return '<span class="tag warnt">Pending</span>';
 }
 function mgrReferralsHtml(){
+  const canClear=canClearReferrals();
   const pending=REFERRALS_LIST.filter(r=>r.status==='Pending').sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
   const decided=REFERRALS_LIST.filter(r=>r.status!=='Pending').sort((a,b)=>(b.clearedAt||b.createdAt||'').localeCompare(a.clearedAt||a.createdAt||'')).slice(0,30);
+  const pendingActionsHtml=r=>canClear
+    ?`<div class="foot" style="gap:8px;flex-wrap:wrap"><button class="chip" data-refclear="${r.id}">Mark cleared — awarded points</button><button class="chip" data-refdismiss="${r.id}" style="color:#B91C1C">Not interested</button></div>`
+    :(r.referredLeadId
+      ?`<div class="foot"><span class="tag ok">✓ In the pipeline — waiting on Management to clear</span></div>`
+      :`<div class="foot"><button class="chip" data-refconvert="${r.id}">Contact &amp; add to my pipeline</button></div>`);
   const rowOf=r=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.referredName)} <span class="mini">referred by ${esc(r.referrerName)}</span></div><div class="meta">${esc(r.referredContact)}${r.referredLocation?' · '+esc(r.referredLocation):''} · ${r.referredNoPlots||1} plot(s)${r.source==='client'?' · via client portal':''}</div></div>${referralStatusTag(r.status)}</div>
     ${r.status==='Cleared'?`<div class="mini" style="margin-top:6px">🎉 ${r.pointsAwarded||0} points awarded${r.clearedAt?' · '+esc((r.clearedAt||'').slice(0,10)):''}</div>`:''}
-    ${r.status==='Pending'?`<div class="foot" style="gap:8px;flex-wrap:wrap"><button class="chip" data-refclear="${r.id}">Mark cleared — awarded points</button><button class="chip" data-refdismiss="${r.id}" style="color:#B91C1C">Not interested</button></div>`:''}</div>`;
+    ${r.status==='Pending'?pendingActionsHtml(r):''}</div>`;
   return `<div class="sectitle" style="margin-top:0"><h3>Pending</h3><span class="cnt">${pending.length}</span></div>
   <div class="list">${pending.length?pending.map(rowOf).join(''):emptyState(ic.gift||ic.doc,'Nothing pending','New referrals — from staff tagging a lead as referred, or clients submitting via their own portal — show up here.')}</div>
   <div class="sectitle"><h3>Recently decided</h3><span class="cnt">${decided.length}</span></div>
@@ -13295,6 +13337,11 @@ function bindReferralsCtrls(){
     if(!confirm('Mark this referral as not interested? It will be archived, no points awarded.')) return;
     try{ await apiDismissReferral(b.dataset.refdismiss); const r=REFERRALS_LIST.find(x=>x.id===b.dataset.refdismiss); if(r) r.status='Not interested'; toast('Archived'); managerView(); }
     catch(e){ toast('Failed: '+(e.message||e)); }
+  });
+  document.querySelectorAll('[data-refconvert]').forEach(b=>b.onclick=()=>{
+    const r=REFERRALS_LIST.find(x=>x.id===b.dataset.refconvert); if(!r) return;
+    route('addlead',{referralId:r.id,name:r.referredName,contact:r.referredContact,location:r.referredLocation,
+      referrerLeadId:r.referrerLeadId,referrerName:r.referrerName,referrerContact:r.referrerContact});
   });
 }
 function openReferralClearModal(r){
