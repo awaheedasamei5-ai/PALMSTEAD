@@ -714,6 +714,7 @@ input[type="file"]{max-width:100%;box-sizing:border-box}
 .dayGridBlock{position:absolute;left:2px;right:2px;border-radius:6px;padding:3px 6px;overflow:hidden;box-sizing:border-box;cursor:pointer;transition:.15s}
 .dayGridBlock:hover{filter:brightness(0.97)}
 .dayGridBlockTime{font-size:9px;font-weight:700;color:var(--muted);line-height:1.2}
+.dayGridInviteeBadge{font-size:8.5px;font-weight:700;opacity:.85}
 .dayGridBlockTitle{font-size:11px;font-weight:700;color:var(--text);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dayGridBlock.conflict{outline:2px solid var(--danger);outline-offset:-2px}
 .dayGridBlock.dayGridBlockDone{opacity:.55}
@@ -7759,6 +7760,54 @@ function scheduleConflictReasonText(hits,staffName){
   const h=hits[0];
   return `${staffName?staffName+' already has':'You already have'} "${h.title}" ${h.startTime}–${h.endTime} that day.`;
 }
+/* ---- Multi-attendee invites -- schedule_item_invitees is purely additive,
+   assigned_to on the item itself stays the single "owner". Inviting someone
+   auto-populates their own agenda (apiLoadDayAgenda/apiLoadWeekAgenda pull items
+   where the viewer is an invitee too, not just assigned_to) -- but only onto
+   time they haven't already committed elsewhere, which is what the conflict
+   check below is for. */
+const mapScheduleItemInvitee=r=>({id:r.id,scheduleItemId:r.schedule_item_id,staffKey:r.staff_key,staffName:r.staff_name,status:r.status,respondedAt:r.responded_at,createdAt:r.created_at});
+async function apiInviteToScheduleItem(itemId,staffKeys){
+  if(!staffKeys||!staffKeys.length||DEMO_MODE) return [];
+  const rows=staffKeys.map(key=>{ const s=STAFF_LIST.find(x=>x.key===key); return {schedule_item_id:itemId,staff_key:key,staff_name:s?s.name:key}; });
+  const {data,error}=await sb.from('schedule_item_invitees').upsert(rows,{onConflict:'schedule_item_id,staff_key'}).select();
+  if(error) throw error; return (data||[]).map(mapScheduleItemInvitee);
+}
+async function apiLoadInviteesForItems(itemIds){
+  if(!itemIds||!itemIds.length||DEMO_MODE) return [];
+  try{ const {data,error}=await sb.from('schedule_item_invitees').select('*').in('schedule_item_id',itemIds); if(error) throw error;
+    return (data||[]).map(mapScheduleItemInvitee); }
+  catch(e){ return []; }
+}
+async function apiRespondToInvite(inviteId,status){
+  if(DEMO_MODE) return;
+  const {error}=await sb.from('schedule_item_invitees').update({status,responded_at:new Date().toISOString()}).eq('id',inviteId);
+  if(error) throw error;
+}
+// Extends the single-staff conflict check to a whole invite list at once, via the
+// narrow check_schedule_conflicts_multi RPC (returns only id/title/times, not full
+// row access into a colleague's private task notes/contacts), plus checks each
+// invitee's leave_requests -- surfaces both "X is busy 2-3pm" and "Y is on leave"
+// before the meeting is actually saved.
+async function apiCheckScheduleConflictsMulti(staffKeys,date,start,end,excludeId){
+  if(!staffKeys||!staffKeys.length||DEMO_MODE) return {busy:[],onLeave:[]};
+  let busy=[], onLeave=[];
+  try{
+    const {data}=await sb.rpc('check_schedule_conflicts_multi',{p_staff_keys:staffKeys,p_date:date,p_start:start,p_end:end,p_exclude_id:excludeId||null});
+    busy=(data||[]).map(r=>({staffKey:r.staff_key,staffName:r.staff_name,id:r.id,title:r.title,startTime:(r.start_time||'').slice(0,5),endTime:(r.end_time||'').slice(0,5)}));
+  }catch(e){}
+  try{
+    const {data}=await sb.from('leave_requests').select('agent_key,agent_name,dates,status').in('agent_key',staffKeys);
+    onLeave=(data||[]).filter(r=>leaveIsBlocking(r.status)&&(r.dates||[]).includes(date)).map(r=>({staffKey:r.agent_key,staffName:r.agent_name}));
+  }catch(e){}
+  return {busy,onLeave};
+}
+function multiConflictReasonText(result){
+  const lines=[];
+  (result.busy||[]).forEach(h=>lines.push(`${h.staffName||h.staffKey} already has "${h.title}" ${h.startTime}–${h.endTime} that day.`));
+  (result.onLeave||[]).forEach(h=>lines.push(`${h.staffName||h.staffKey} is on leave that day.`));
+  return lines.length?lines.join(' '):null;
+}
 // Real start/end time inputs instead of a fixed whole-hour dropdown -- native time
 // picker on every device, 5-minute increments, no artificial "every to-do is exactly
 // an hour" constraint.
@@ -7811,12 +7860,14 @@ function paintTodoTab(){
 function openTodoNewModal(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
+  const others=STAFF_LIST.filter(s=>s.key!==PROFILE.key);
   ov.innerHTML=`<div id="announceModal">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">New to-do</div><button id="closeTodoNew" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     ${fld('Title *','<input id="td_title" placeholder="e.g. Call Mr. Antwi about deposit"/>')}
     ${fld('Date','<input id="td_date" type="date" value="'+TODO_DATE+'"/>')}
     <div class="grid2">${fld('Start time',timeInputHtml('td_start','09:00'))}${fld('End time',timeInputHtml('td_end','10:00'))}</div>
     <div id="td_conflictWarn" class="mini" style="color:var(--danger);margin:-8px 0 12px"></div>
+    ${others.length?fld('Invite colleagues','<div class="chips">'+others.map(s=>`<button type="button" class="chip2" data-tdinvite="${esc(s.key)}">${esc(s.name)}</button>`).join('')+'</div>','it appears on their to-do list too, if that time is free'):''}
     ${fld('Contact number','<input id="td_contact" placeholder="0244…"/>','optional — enables Call/WhatsApp quick actions')}
     ${fld('Notes','<textarea id="td_notes" placeholder="Any detail to remember"></textarea>','optional')}
     <div class="formactions"><button class="btn primary" id="td_save" style="width:100%">Save to-do</button></div>
@@ -7824,14 +7875,23 @@ function openTodoNewModal(){
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeTodoNew').onclick=()=>ov.remove();
+  const invited=new Set();
+  ov.querySelectorAll('[data-tdinvite]').forEach(b=>b.onclick=()=>{
+    const key=b.dataset.tdinvite;
+    if(invited.has(key)){ invited.delete(key); b.classList.remove('on'); } else { invited.add(key); b.classList.add('on'); }
+    checkTdConflict();
+  });
   // Live warning as soon as start/end/date are all filled -- same "check early,
   // recheck right before commit" shape as the leave calendar's conflict flow.
+  // Once colleagues are invited, this checks their schedules and leave too, not
+  // just yours.
   const checkTdConflict=debounce(async()=>{
     const start=val('td_start'), end=val('td_end'), date=val('td_date')||TODO_DATE;
     const warnEl=document.getElementById('td_conflictWarn'); if(!warnEl) return;
     if(!start||!end||end<=start){ warnEl.textContent=''; return; }
-    const hits=await apiCheckScheduleConflicts(PROFILE.key,date,start,end,null);
-    warnEl.textContent=scheduleConflictReasonText(hits)||'';
+    const keys=[PROFILE.key,...invited];
+    const result=await apiCheckScheduleConflictsMulti(keys,date,start,end,null);
+    warnEl.textContent=multiConflictReasonText(result)||'';
   },300);
   ['td_start','td_end','td_date'].forEach(id=>document.getElementById(id).addEventListener('input',checkTdConflict));
   document.getElementById('td_save').onclick=async()=>{
@@ -7841,10 +7901,13 @@ function openTodoNewModal(){
     const btn=document.getElementById('td_save'); btn.disabled=true; btn.textContent='Saving…';
     // Re-check right before committing -- catches a race where this exact slot
     // got taken (by another new/rescheduled to-do) since the modal opened.
-    const hits=await apiCheckScheduleConflicts(PROFILE.key,date,start,end,null);
-    if(hits.length){ toast(scheduleConflictReasonText(hits)); btn.disabled=false; btn.textContent='Save to-do'; return; }
+    const keys=[PROFILE.key,...invited];
+    const result=await apiCheckScheduleConflictsMulti(keys,date,start,end,null);
+    const reason=multiConflictReasonText(result);
+    if(reason){ toast(reason); btn.disabled=false; btn.textContent='Save to-do'; return; }
     try{
       const rec=await apiInsertTodo({title,notes:val('td_notes').trim(),contact:val('td_contact').trim(),date,startTime:start,endTime:end});
+      if(invited.size) await apiInviteToScheduleItem(rec.id,[...invited]).catch(()=>{});
       TODO_LIST.push(rec); TODO_LIST.sort((a,b)=>a.date===b.date?a.startTime.localeCompare(b.startTime):a.date.localeCompare(b.date));
       toast('To-do saved'); ov.remove(); todoArmAlarms(); paintTodoTab();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save to-do'; }
@@ -7972,8 +8035,9 @@ function scheduleBlockHtml(item,color,hasConflict){
   const isDone=item.status==='closed', isCancelled=item.status==='cancelled';
   const stateCls=isDone?' dayGridBlockDone':isCancelled?' dayGridBlockCancelled':'';
   const prefix=isDone?'✓ ':isCancelled?'✕ ':'';
-  return `<div class="dayGridBlock${hasConflict?' conflict':''}${stateCls}" data-daygridopen="${esc(item.id)}" style="top:${top}px;height:${h}px;background:${color}22;border-left:3px solid ${color}" title="${esc(item.title)} ${esc(item.startTime)}–${esc(item.endTime)}">
-    <div class="dayGridBlockTime">${esc(item.startTime)}–${esc(item.endTime)}</div>
+  const inviteeCount=(item.inviteeKeys||[]).length;
+  return `<div class="dayGridBlock${hasConflict?' conflict':''}${stateCls}" data-daygridopen="${esc(item.id)}" style="top:${top}px;height:${h}px;background:${color}22;border-left:3px solid ${color}" title="${esc(item.title)} ${esc(item.startTime)}–${esc(item.endTime)}${inviteeCount?' · +'+inviteeCount+' invited':''}">
+    <div class="dayGridBlockTime">${esc(item.startTime)}–${esc(item.endTime)}${inviteeCount?` <span class="dayGridInviteeBadge">👥${inviteeCount}</span>`:''}</div>
     <div class="dayGridBlockTitle">${prefix}${esc(item.title)}</div>
   </div>`;
 }
@@ -8015,16 +8079,33 @@ async function apiLoadDayAgenda(date,staffKeys){
     return {blocks,dueTasks};
   }
   try{
-    const [blockRes,taskRes]=await Promise.all([
+    const [blockRes,taskRes,inviteeRes]=await Promise.all([
       sb.from('schedule_items').select('*').eq('kind','todo').eq('item_date',date).in('assigned_to',staffKeys).neq('status','rescheduled'),
-      sb.from('schedule_items').select('*').eq('kind','task').eq('due_date',date).in('assigned_to',staffKeys)
+      sb.from('schedule_items').select('*').eq('kind','task').eq('due_date',date).in('assigned_to',staffKeys),
+      sb.from('schedule_item_invitees').select('schedule_item_id,staff_key').in('staff_key',staffKeys)
     ]);
-    return {blocks:(blockRes.data||[]).map(mapTodo), dueTasks:(taskRes.data||[]).map(mapTask)};
+    const existingIds=new Set((blockRes.data||[]).map(r=>r.id));
+    let blocks=(blockRes.data||[]).map(mapTodo);
+    // A colleague invited to someone else's todo/meeting sees it on their own agenda
+    // too -- the whole point of inviting them -- fetched separately since it's not
+    // in assigned_to's result set at all.
+    const inviteeItemIds=[...new Set((inviteeRes.data||[]).map(r=>r.schedule_item_id))].filter(id=>!existingIds.has(id));
+    if(inviteeItemIds.length){
+      const {data:invRows}=await sb.from('schedule_items').select('*').eq('kind','todo').eq('item_date',date).in('id',inviteeItemIds).neq('status','rescheduled');
+      blocks=blocks.concat((invRows||[]).map(mapTodo));
+    }
+    const inviteesByItem={};
+    (inviteeRes.data||[]).forEach(r=>{ (inviteesByItem[r.schedule_item_id]=inviteesByItem[r.schedule_item_id]||[]).push(r.staff_key); });
+    blocks.forEach(b=>{ b.inviteeKeys=inviteesByItem[b.id]||[]; });
+    return {blocks, dueTasks:(taskRes.data||[]).map(mapTask)};
   }catch(e){ return {blocks:[],dueTasks:[]}; }
 }
 function groupItemsByStaff(items,staffList){
   const byKey={}; staffList.forEach(s=>byKey[s.key]=[]);
-  items.forEach(it=>{ const k=it.assignedTo; if(byKey[k]) byKey[k].push(it); else byKey[k]=[it]; });
+  items.forEach(it=>{
+    const keys=new Set([it.assignedTo,...(it.inviteeKeys||[])].filter(Boolean));
+    keys.forEach(k=>{ if(byKey[k]) byKey[k].push(it); else byKey[k]=[it]; });
+  });
   Object.values(byKey).forEach(arr=>arr.sort((a,b)=>a.startTime.localeCompare(b.startTime)));
   return byKey;
 }
@@ -8051,8 +8132,18 @@ async function apiLoadWeekAgenda(startDate,staffKeys){
     return (d.todos||[]).filter(t=>t.date>=startDate&&t.date<=endDate&&staffKeys.includes(t.assignedTo)&&t.status!=='rescheduled');
   }
   try{
-    const {data}=await sb.from('schedule_items').select('*').eq('kind','todo').gte('item_date',startDate).lte('item_date',endDate).in('assigned_to',staffKeys).neq('status','rescheduled');
-    return (data||[]).map(mapTodo);
+    const [ownRes,inviteeRes]=await Promise.all([
+      sb.from('schedule_items').select('*').eq('kind','todo').gte('item_date',startDate).lte('item_date',endDate).in('assigned_to',staffKeys).neq('status','rescheduled'),
+      sb.from('schedule_item_invitees').select('schedule_item_id').in('staff_key',staffKeys)
+    ]);
+    const existingIds=new Set((ownRes.data||[]).map(r=>r.id));
+    let items=(ownRes.data||[]).map(mapTodo);
+    const inviteeItemIds=[...new Set((inviteeRes.data||[]).map(r=>r.schedule_item_id))].filter(id=>!existingIds.has(id));
+    if(inviteeItemIds.length){
+      const {data:invRows}=await sb.from('schedule_items').select('*').eq('kind','todo').gte('item_date',startDate).lte('item_date',endDate).in('id',inviteeItemIds).neq('status','rescheduled');
+      items=items.concat((invRows||[]).map(mapTodo));
+    }
+    return items;
   }catch(e){ return []; }
 }
 function groupItemsByDate(items){
