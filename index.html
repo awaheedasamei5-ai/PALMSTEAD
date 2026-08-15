@@ -16106,7 +16106,12 @@ function hijriEidWindowsForGregorianYear(gYear){
   return results.map(r=>({name:r.name,dates:[isoPlusDays(r.centerIso,-1),r.centerIso,isoPlusDays(r.centerIso,1)]}));
 }
 function isWeekendIso(iso){ const dow=new Date(iso+'T00:00:00').getDay(); return dow===0||dow===6; }
-function isWorkingDayIso(iso){ return !isWeekendIso(iso); }
+// Despite the name, this used to only check weekends -- it never consulted the
+// holiday map below, so e.g. Christmas Day would count as a "working day" for
+// any absence/attendance math built on top of it. Fixed to also exclude public
+// holidays; CONFIG.workDays support (for non-Mon-Fri rosters) is layered on by
+// whichever caller needs it, not baked in here.
+function isWorkingDayIso(iso){ return !isWeekendIso(iso) && !leaveHolidayMapForYear(new Date(iso+'T00:00:00').getFullYear()).has(iso); }
 function nextWorkingDayIso(iso){ let d=isoPlusDays(iso,1); while(isWeekendIso(d)) d=isoPlusDays(d,1); return d; }
 function prevWorkingDayIso(iso){ let d=isoPlusDays(iso,-1); while(isWeekendIso(d)) d=isoPlusDays(d,-1); return d; }
 // Fixed-date + Easter-derived + algorithmic-Eid Ghana public holidays. Management
@@ -16129,9 +16134,12 @@ function ghanaHolidaysForYear(year){
   hijriEidWindowsForGregorianYear(year).forEach(w=>w.dates.forEach(d=>list.push({date:d,name:w.name,isEid:true})));
   return list;
 }
+const _holidayMapCache={};
 function leaveHolidayMapForYear(year){
+  if(_holidayMapCache[year]) return _holidayMapCache[year];
   const map=new Map();
   ghanaHolidaysForYear(year).forEach(h=>{ if(!map.has(h.date)) map.set(h.date,h); });
+  _holidayMapCache[year]=map;
   return map;
 }
 // Every OTHER staff member's pending/approved leave date, plus the working day
