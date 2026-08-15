@@ -1675,7 +1675,7 @@ const mapLead=r=>({id:r.id,agent:r.agent_key,name:r.name,contact:r.contact,date:
   plotType:r.plot_type,noPlots:r.no_plots,unitPrice:r.unit_price,discount:r.discount,netTotal:r.net_total,
   paymentPlan:r.payment_plan,grandTotal:r.grand_total,siteVisit:r.site_visit,priority:r.priority,
   amtPaid:r.amt_paid,balance:r.balance,nextAction:r.next_action,notes:r.notes,tags:r.tags,depositTarget:r.deposit_target,
-  docStage:r.doc_stage,docStageUpdatedAt:r.doc_stage_updated_at,leadSource:r.lead_source,bannerId:r.banner_id,address:r.address});
+  docStage:r.doc_stage,docStageUpdatedAt:r.doc_stage_updated_at,leadSource:r.lead_source,bannerId:r.banner_id,address:r.address,kyc:r.kyc||{}});
 const mapEnq=r=>({id:r.id,agentKey:r.agent_key,agentName:r.agent_name,name:r.name,contact:r.contact,location:r.location,
   types:(r.types||'').split(',').filter(Boolean),plot:r.plot,source:r.source,details:r.details,follow:r.follow,
   followDate:r.follow_date,createdAt:(r.created_at||'').slice(0,16).replace('T',' ')});
@@ -2320,6 +2320,7 @@ async function apiUpdateLead(id,patch){
   if('agent' in patch) dbPatch.agent_key=patch.agent;
   if('leadSource' in patch) dbPatch.lead_source=patch.leadSource;
   if('bannerId' in patch) dbPatch.banner_id=patch.bannerId;
+  if('kyc' in patch) dbPatch.kyc=patch.kyc;
   const {error}=await sb.from('leads').update(dbPatch).eq('id',id); if(error) throw error;
 }
 // Seeds a referral record the moment staff tag "this lead was referred by an existing
@@ -10776,24 +10777,25 @@ async function buildContractOfSalePDF(lead){
   doc.setFont('times','bold'); doc.setFontSize(11); doc.text('I. PERSONAL DETAILS',14,y); y+=9;
   doc.setFont('times','normal'); doc.setFontSize(10.5);
   doc.text('NAME OF CLIENT: '+String(lead.name||'').toUpperCase(),14,y); y+=10;
-  pdfContractField(doc,14,y,86,'NATIONALITY',''); pdfContractField(doc,108,y,86,'OCCUPATION',''); y+=10;
-  pdfContractField(doc,14,y,86,'DATE OF BIRTH',''); pdfContractField(doc,108,y,86,'PHONE',lead.contact||''); y+=12;
-  doc.text('ID TYPE:',14,y); pdfContractCheckRow(doc,34,y,pageW,['Voters','Passport','Ghana Card',"Driver's License"],''); y+=11;
-  pdfContractField(doc,14,y,pageW-28,'ID NO.',''); y+=10;
-  pdfContractField(doc,14,y,pageW-28,'ADDRESS',''); y+=10;
-  pdfContractField(doc,14,y,86,'EMAIL',''); pdfContractField(doc,108,y,86,'LOCATION',''); y+=13;
+  const k=lead.kyc||{};
+  pdfContractField(doc,14,y,86,'NATIONALITY',k.nationality||''); pdfContractField(doc,108,y,86,'OCCUPATION',k.occupation||''); y+=10;
+  pdfContractField(doc,14,y,86,'DATE OF BIRTH',k.dob?fmtLongDate(k.dob):''); pdfContractField(doc,108,y,86,'PHONE',lead.contact||''); y+=12;
+  doc.text('ID TYPE:',14,y); pdfContractCheckRow(doc,34,y,pageW,['Voters','Passport','Ghana Card',"Driver's License"],k.idType||''); y+=11;
+  pdfContractField(doc,14,y,pageW-28,'ID NO.',k.idNumber||''); y+=10;
+  pdfContractField(doc,14,y,pageW-28,'ADDRESS',lead.address||''); y+=10;
+  pdfContractField(doc,14,y,86,'EMAIL',k.email||''); pdfContractField(doc,108,y,86,'LOCATION',k.location||''); y+=13;
 
   doc.setFont('times','bold'); doc.setFontSize(11); doc.text('II. CONTACT PERSON',14,y); y+=9;
   doc.setFont('times','normal'); doc.setFontSize(10.5);
-  pdfContractField(doc,14,y,pageW-28,'NAME',''); y+=10;
-  pdfContractField(doc,14,y,86,'PHONE',''); pdfContractField(doc,108,y,86,'EMAIL',''); y+=10;
-  pdfContractField(doc,14,y,pageW-28,'ADDRESS',''); y+=10;
-  pdfContractField(doc,14,y,pageW-28,'RELATION TO CLIENT',''); y+=13;
+  pdfContractField(doc,14,y,pageW-28,'NAME',k.contactName||''); y+=10;
+  pdfContractField(doc,14,y,86,'PHONE',k.contactPhone||''); pdfContractField(doc,108,y,86,'EMAIL',k.contactEmail||''); y+=10;
+  pdfContractField(doc,14,y,pageW-28,'ADDRESS',k.contactAddress||''); y+=10;
+  pdfContractField(doc,14,y,pageW-28,'RELATION TO CLIENT',k.contactRelation||''); y+=13;
 
   doc.setFont('times','bold'); doc.setFontSize(11); doc.text('III. LAND USAGE AND DEVELOPMENT',14,y); y+=11;
   doc.setFont('times','normal'); doc.setFontSize(10.5);
-  pdfContractCheckRow(doc,14,y,pageW,['Residential','Commercial'],'Residential'); y+=11;
-  pdfContractField(doc,14,y,pageW-28,'If commercial indicate exact usage',''); y+=16;
+  pdfContractCheckRow(doc,14,y,pageW,['Residential','Commercial'],k.landUsage||'Residential'); y+=11;
+  pdfContractField(doc,14,y,pageW-28,'If commercial indicate exact usage',k.landUsageDetail||''); y+=16;
   doc.text('PREFERRED PACKAGE: Carefully select a package that best suits your financial plan.',14,y); y+=10;
   const pkgMap={'Full Payment':'1. OUTRIGHT','3 Months':'2. Three (3) Months','6 Months':'3. Six (6) Months','9 Months':'4. Nine (9) Months','12 Months':'5. Twelve (12) Months'};
   pdfContractCheckRow(doc,14,y,pageW,['1. OUTRIGHT','2. Three (3) Months','3. Six (6) Months','4. Nine (9) Months','5. Twelve (12) Months'],pkgMap[lead.paymentPlan]||'');
@@ -10980,29 +10982,56 @@ async function apiMarkContractRequestsRead(ids){
 // (matching the reference document, which has it pre-filled there) -- it must never
 // silently fall back to their phone number again, so this catches a missing address
 // before a contract ever gets generated instead of leaving it wrong in the PDF.
-function promptForLeadAddress(lead){
+// Covers every field the Contract of Sale's blank "KNOW YOUR CUSTOMER AND
+// TRANSACTION DETAILS" page (I-III) needs -- previously always printed empty,
+// requiring the client to hand-write it after the fact. Pre-filled from
+// whatever's already saved (lead.address / lead.kyc), so it doubles as an
+// editor on repeat visits, not just a first-time blank prompt.
+function promptForLeadKyc(lead){
+  const k=lead.kyc||{};
+  const idTypes=['Voters','Passport','Ghana Card',"Driver's License"];
   return new Promise(resolve=>{
     let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
     ov=document.createElement('div'); ov.id='announceOverlay';
-    ov.innerHTML=`<div id="announceModal">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(lead.name)}'s address</div><button id="pla_close" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
-      <div class="mini" style="margin-bottom:14px">No address on file yet. This is what prints on the contract's Purchaser identification line — get it right before it goes out.</div>
-      ${fld('Address','<textarea id="pla_address" rows="2" placeholder="e.g. 15 Lyneham Walk, Hackney E5 0HX"></textarea>')}
-      <div class="formactions"><button class="btn ghost" id="pla_skip" style="flex:1">Skip for now</button><button class="btn primary" id="pla_save" style="flex:1">Save &amp; continue</button></div>
+    ov.innerHTML=`<div id="announceModal" style="max-width:520px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(lead.name)}'s contract details</div><button id="pk_close" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+      <div class="mini" style="margin-bottom:14px">Fills in the Know Your Customer page of the contract instead of printing it blank. Anything left out just prints blank as before — nothing here is required.</div>
+      ${fld('Address','<textarea id="pk_address" rows="2" placeholder="e.g. 15 Lyneham Walk, Hackney E5 0HX">'+esc(lead.address||'')+'</textarea>')}
+      <div class="grid2">${fld('Nationality','<input id="pk_nat" value="'+esc(k.nationality||'')+'"/>')}${fld('Occupation','<input id="pk_occ" value="'+esc(k.occupation||'')+'"/>')}</div>
+      <div class="grid2">${fld('Date of birth','<input id="pk_dob" type="date" value="'+esc(k.dob||'')+'"/>')}${fld('ID type',sel('pk_idtype',idTypes,k.idType))}</div>
+      ${fld('ID number','<input id="pk_idnum" value="'+esc(k.idNumber||'')+'"/>')}
+      <div class="grid2">${fld('Email','<input id="pk_email" type="email" value="'+esc(k.email||'')+'"/>')}${fld('Location','<input id="pk_loc" value="'+esc(k.location||'')+'"/>')}</div>
+      <div class="mini" style="font-weight:700;margin:14px 0 8px">Contact person</div>
+      ${fld('Name','<input id="pk_cname" value="'+esc(k.contactName||'')+'"/>')}
+      <div class="grid2">${fld('Phone','<input id="pk_cphone" value="'+esc(k.contactPhone||'')+'"/>')}${fld('Email','<input id="pk_cemail" type="email" value="'+esc(k.contactEmail||'')+'"/>')}</div>
+      ${fld('Address','<input id="pk_caddr" value="'+esc(k.contactAddress||'')+'"/>')}
+      ${fld('Relation to client','<input id="pk_crel" value="'+esc(k.contactRelation||'')+'"/>')}
+      <div class="mini" style="font-weight:700;margin:14px 0 8px">Land usage</div>
+      <div class="grid2">${fld('Usage',sel('pk_usage',['Residential','Commercial'],k.landUsage||'Residential'))}${fld('If commercial, exact usage','<input id="pk_usagedetail" value="'+esc(k.landUsageDetail||'')+'"/>')}</div>
+      <div class="formactions"><button class="btn ghost" id="pk_skip" style="flex:1">Skip for now</button><button class="btn primary" id="pk_save" style="flex:1">Save &amp; continue</button></div>
     </div>`;
     document.body.appendChild(ov);
     const finish=v=>{ ov.remove(); resolve(v); };
     ov.addEventListener('click',e=>{ if(e.target===ov) finish(null); });
-    document.getElementById('pla_close').onclick=()=>finish(null);
-    document.getElementById('pla_skip').onclick=()=>finish('');
-    document.getElementById('pla_save').onclick=()=>finish(val('pla_address').trim());
+    document.getElementById('pk_close').onclick=()=>finish(null);
+    document.getElementById('pk_skip').onclick=()=>finish('skip');
+    document.getElementById('pk_save').onclick=()=>finish({
+      address:val('pk_address').trim(),
+      kyc:{nationality:val('pk_nat').trim(),occupation:val('pk_occ').trim(),dob:val('pk_dob'),idType:val('pk_idtype'),idNumber:val('pk_idnum').trim(),
+        email:val('pk_email').trim(),location:val('pk_loc').trim(),contactName:val('pk_cname').trim(),contactPhone:val('pk_cphone').trim(),
+        contactEmail:val('pk_cemail').trim(),contactAddress:val('pk_caddr').trim(),contactRelation:val('pk_crel').trim(),
+        landUsage:val('pk_usage'),landUsageDetail:val('pk_usagedetail').trim()}
+    });
   });
 }
 async function generateAndRecordContract(lead){
-  if(!lead.address){
-    const address=await promptForLeadAddress(lead);
-    if(address===null) return;
-    if(address){ lead.address=address; try{ await apiUpdateLead(lead.id,{address}); }catch(e){} }
+  if(!lead.address && !(lead.kyc&&Object.keys(lead.kyc).length)){
+    const result=await promptForLeadKyc(lead);
+    if(result===null) return;
+    if(result!=='skip'){
+      lead.address=result.address; lead.kyc=result.kyc;
+      try{ await apiUpdateLead(lead.id,{address:result.address,kyc:result.kyc}); }catch(e){}
+    }
   }
   await buildContractOfSalePDF(lead);
   try{
