@@ -13750,7 +13750,8 @@ function mapExpense(r){ return {id:r.id,category:r.category,amount:num(r.amount)
   receiptData:r.receipt_data,receiptName:r.receipt_name,loggedBy:r.logged_by,loggedByName:r.logged_by_name,status:r.status,
   decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedAt:r.decided_at,decisionNote:r.decision_note,fundRequestId:r.fund_request_id,createdAt:r.created_at}; }
 function mapFundReq(r){ return {id:r.id,type:r.req_type,amount:num(r.amount),purpose:r.purpose,requestedBy:r.requested_by,requestedByName:r.requested_by_name,
-  status:r.status,decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedAt:r.decided_at,decisionNote:r.decision_note,approvalSignature:r.approval_signature,createdAt:r.created_at}; }
+  status:r.status,decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedAt:r.decided_at,decisionNote:r.decision_note,approvalSignature:r.approval_signature,
+  receiptData:r.receipt_data,receiptName:r.receipt_name,createdAt:r.created_at}; }
 function mapDailyBalance(r){ return {id:r.id,date:r.balance_date,cash:num(r.cash),momo:num(r.momo),bank:num(r.bank),loggedByName:r.logged_by_name,updatedAt:r.updated_at}; }
 async function apiLoadExpenseCategories(){ const {data,error}=await sb.from('expense_categories').select('*').eq('active',true).order('name'); if(error) throw error; return data||[]; }
 async function apiAddExpenseCategory(name,monthlyBudget){ const {data,error}=await sb.from('expense_categories').insert({name,monthly_budget:monthlyBudget||null}).select().single(); if(error) throw error; return data; }
@@ -13766,8 +13767,9 @@ async function apiDecideExpense(id,approve,note){
   if(error) throw error; return mapExpense(data);
 }
 async function apiLoadFundRequests(){ const {data,error}=await sb.from('fund_requests').select('*').order('created_at',{ascending:false}); if(error) throw error; return (data||[]).map(mapFundReq); }
-async function apiInsertFundRequest(type,amount,purpose){
-  const {data,error}=await sb.from('fund_requests').insert({req_type:type,amount,purpose,requested_by:PROFILE.key,requested_by_name:PROFILE.name}).select().single();
+async function apiInsertFundRequest(type,amount,purpose,receiptData,receiptName){
+  const {data,error}=await sb.from('fund_requests').insert({req_type:type,amount,purpose,requested_by:PROFILE.key,requested_by_name:PROFILE.name,
+    receipt_data:receiptData||null,receipt_name:receiptName||null}).select().single();
   if(error) throw error; return mapFundReq(data);
 }
 async function apiDecideFundRequest(id,approve,note){
@@ -13884,6 +13886,8 @@ function expFundsTabHtml(){
   ${fld('Type',sel('fr_type',['General budget','Specific / untagged spending'],'General budget'))}
   ${fld('Amount (GHS)','<input id="fr_amount" type="number" min="0" step="0.01" placeholder="0.00"/>')}
   ${fld('Purpose','<textarea id="fr_purpose" placeholder="What is this for?"></textarea>')}
+  ${fld('Supporting document','<input id="fr_receipt" type="file" accept="image/*,.pdf"/>','optional — quote, invoice, or similar')}
+  <div id="fr_receiptPreview"></div>
   <div class="formactions"><button class="btn primary" id="frSaveBtn" style="width:100%">Send request</button></div>
   </div>
   ${outstanding.length?`<div class="sectitle"><h3>Outstanding advances</h3><span class="cnt">${outstanding.length}</span></div>
@@ -13897,7 +13901,7 @@ function fundReqRowHtml(f){
   const logged=fundReqHasLoggedSpend(f.id);
   return `<div class="rowcard"><div class="top"><div><div class="nm">${f.type==='budget'?'General budget':'Specific spend'} · ${ghs(f.amount)}</div><div class="meta">${esc((f.createdAt||'').slice(0,10))}${f.requestedByName?' · by '+esc(f.requestedByName):''}</div></div>${expStatusTag(f.status)}</div>
   <div class="note">${esc(f.purpose)}</div>
-  ${f.status==='approved'?`<div class="foot" style="gap:8px;flex-wrap:wrap">${logged?'<span class="tag ok">✓ Spend logged</span>':'<span class="tag warnt">Not yet logged</span>'}<button class="chip" data-frslip="${esc(f.id)}">Download approval slip</button></div>`:''}</div>`;
+  ${f.status==='approved'?`<div class="foot" style="gap:8px;flex-wrap:wrap">${logged?'<span class="tag ok">✓ Spend logged</span>':'<span class="tag warnt">Not yet logged</span>'}<button class="chip" data-frslip="${esc(f.id)}">Download approval slip</button>${f.receiptData?`<button class="chip" data-frreceipt="${esc(f.id)}">View document</button>`:''}</div>`:f.receiptData?`<div class="foot" style="gap:8px"><button class="chip" data-frreceipt="${esc(f.id)}">View document</button></div>`:''}</div>`;
 }
 // Approving funds and logging what was actually spent are deliberately two
 // separate human steps (see expFundsTabHtml comment above) -- this modal is
@@ -13964,7 +13968,7 @@ function expApprovalsTabHtml(){
     <div class="note">${esc(f.purpose)}</div>
     <div class="foot" style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px"><button class="chip" data-frreject="${esc(f.id)}" style="color:var(--danger)">Reject</button><button class="btn primary" data-frapprove="${esc(f.id)}" style="padding:8px 18px;font-size:12.5px">Approve</button></div></div>`).join(''):emptyState(ic.doc,'Nothing pending','')}</div>`;
 }
-let EXP_RECEIPT_PENDING=null;
+let EXP_RECEIPT_PENDING=null, FR_RECEIPT_PENDING=null;
 function bindExpensesCtrls(){
   const receiptInput=document.getElementById('exp_receipt');
   if(receiptInput) receiptInput.onchange=async()=>{
@@ -14003,6 +14007,20 @@ function bindExpensesCtrls(){
     try{ const updated=await apiDecideExpense(b.dataset.expreject,false); Object.assign(EXPENSES_LIST.find(x=>x.id===updated.id),updated); toast('Expense rejected'); paintExpensesApp(); }
     catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
   });
+  const frReceiptInput=document.getElementById('fr_receipt');
+  if(frReceiptInput) frReceiptInput.onchange=async()=>{
+    const file=frReceiptInput.files[0]; if(!file) return;
+    try{
+      const isImage=file.type.startsWith('image/');
+      const data=isImage?await resizeImageToB64(file,1200,1600,0.8):await readFileAsB64(file,4*1024*1024);
+      FR_RECEIPT_PENDING={data,name:file.name};
+      document.getElementById('fr_receiptPreview').innerHTML=isImage?`<img src="${data}" style="max-width:140px;border-radius:10px;margin-top:6px"/>`:`<div class="mini" style="margin-top:6px">📎 ${esc(file.name)}</div>`;
+    }catch(e){ toast('Could not attach that file: '+(e.message||e)); }
+  };
+  document.querySelectorAll('[data-frreceipt]').forEach(b=>b.onclick=()=>{
+    const f=FUND_REQUESTS_LIST.find(x=>x.id===b.dataset.frreceipt); if(!f||!f.receiptData) return;
+    window.open(f.receiptData,'_blank');
+  });
   const frBtn=document.getElementById('frSaveBtn');
   if(frBtn) frBtn.onclick=async()=>{
     const amount=num(val('fr_amount'));
@@ -14011,8 +14029,8 @@ function bindExpensesCtrls(){
     frBtn.disabled=true; frBtn.textContent='Sending…';
     try{
       const type=val('fr_type')==='General budget'?'budget':'specific';
-      const rec=await apiInsertFundRequest(type,amount,purpose);
-      FUND_REQUESTS_LIST.unshift(rec);
+      const rec=await apiInsertFundRequest(type,amount,purpose,FR_RECEIPT_PENDING?FR_RECEIPT_PENDING.data:null,FR_RECEIPT_PENDING?FR_RECEIPT_PENDING.name:null);
+      FUND_REQUESTS_LIST.unshift(rec); FR_RECEIPT_PENDING=null;
       toast('Request sent to Management'); paintExpensesApp();
     }catch(e){ toast('Failed: '+(e.message||e)); frBtn.disabled=false; frBtn.textContent='Send request'; }
   };
