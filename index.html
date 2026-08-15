@@ -2967,7 +2967,10 @@ async function checkPaymentDueReminders(){
         msg=`Hi ${l.name}, your payment of ${ghs(owed)} for your plot at Royal Palm Enclave is now overdue. Please make payment as soon as possible or contact us. - PEP Landbank`;
       }
       if(!kind || sentSet.has(l.id+'|'+kind)) continue;
-      if(l.contact) apiSendSms(l.contact,msg,'payment_'+kind+'_reminder');
+      if(l.contact){
+        apiSendSms(l.contact,msg,'payment_'+kind+'_reminder');
+        apiSendPush({ownerKind:'client',ownerContact:l.contact,title:'Payment '+kind,body:msg,tag:'payment'});
+      }
       nudges.push(l.name+(l.agent?(' ('+l.agent+')'):'')+' — '+kind);
       try{ await sb.from('payment_reminders_log').insert({lead_id:l.id,month_key:monthKey,kind}); }catch(e){}
     }
@@ -3456,10 +3459,10 @@ async function subscribeWebPush(){
 // Thin wrapper over the send-push Edge Function -- mirrors apiSendSms's silent-fail
 // discipline so a push failure (unconfigured VAPID keys, no subscription yet, etc.)
 // never blocks the flow that triggered it (task assigned, payment due, ...).
-async function apiSendPush({ownerKind,ownerId,title,body,url,tag}){
-  if(DEMO_MODE || !sb || !ownerId) return;
+async function apiSendPush({ownerKind,ownerId,ownerContact,title,body,url,tag}){
+  if(DEMO_MODE || !sb || (!ownerId && !ownerContact)) return;
   try{
-    await sb.functions.invoke('send-push',{body:{ownerKind,ownerId:String(ownerId),title,body,url,tag}});
+    await sb.functions.invoke('send-push',{body:{ownerKind,ownerId:ownerId?String(ownerId):null,ownerContact:ownerContact||null,title,body,url,tag}});
   }catch(e){}
 }
 /* ================= CLIENT DATABASE (Elias + Management only) =================
