@@ -3063,7 +3063,10 @@ async function apiInsertTask(t){
   const {data,error}=await sb.from('schedule_items').insert(row).select().single(); if(error) throw error;
   const rec=mapTask(data);
   try{ await apiLogTaskEvent(rec.id,'assigned',{toKey:t.assignedTo,toName:t.assignedToName,note:t.description||null}); }catch(e){}
-  if(t.assignedTo!==PROFILE.key){ const phone=phoneForStaffKey(t.assignedTo); if(phone) apiSendSms(phone,`New task from ${PROFILE.name}: "${t.title}". Open Palmstead to view it.`,'task_assigned'); }
+  if(t.assignedTo!==PROFILE.key){
+    const phone=phoneForStaffKey(t.assignedTo); if(phone) apiSendSms(phone,`New task from ${PROFILE.name}: "${t.title}". Open Palmstead to view it.`,'task_assigned');
+    apiSendPush({ownerKind:'staff',ownerId:t.assignedTo,title:'New task assigned',body:`${PROFILE.name}: "${t.title}"`,tag:'task'});
+  }
   return rec;
 }
 async function apiUpdateTaskStatus(id,status,fromStatus){
@@ -3098,7 +3101,10 @@ async function apiEscalateTask(id,toKey,toName,note){
     opened_at:null,started_at:null}).eq('id',id);
   if(error) throw error;
   try{ await apiLogTaskEvent(id,'escalated',{fromKey:cur?cur.assigned_to:null,fromName:cur?cur.assigned_to_name:null,toKey,toName,note:note||null}); }catch(e){}
-  if(toKey!==PROFILE.key){ const phone=phoneForStaffKey(toKey); if(phone) apiSendSms(phone,`${PROFILE.name} escalated a task to you on Palmstead${note?(': '+note):''}.`,'task_escalated'); }
+  if(toKey!==PROFILE.key){
+    const phone=phoneForStaffKey(toKey); if(phone) apiSendSms(phone,`${PROFILE.name} escalated a task to you on Palmstead${note?(': '+note):''}.`,'task_escalated');
+    apiSendPush({ownerKind:'staff',ownerId:toKey,title:'Task escalated to you',body:`${PROFILE.name}${note?(': '+note):''}`,tag:'task'});
+  }
 }
 async function apiEditTaskContent(id,newTitle,newDescription){
   if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id);
@@ -10625,6 +10631,9 @@ function openClientReferralModal(){
       ov.remove();
       try{ await apiSendMessage('manager','New referral from '+CLIENT_PROFILE.name+' — '+name+' ('+contact+'). Open Office › Referrals to review.'); }catch(e){}
       try{ await apiSendSms(CLIENT_PROFILE.contact,'Thanks for referring '+name+' to Palmstead! We will reach out to them shortly. Refer more friends anytime from your Refer & Earn dashboard.','referral_received'); }catch(e){}
+      apiSendPush({ownerKind:'staff',ownerId:'manager',title:'New referral',body:CLIENT_PROFILE.name+' referred '+name+' ('+contact+')',tag:'referral'});
+      const myLead=(CLIENT_DB&&CLIENT_DB.leads&&CLIENT_DB.leads[0])||null;
+      if(myLead&&myLead.agent&&myLead.agent!=='manager') apiSendPush({ownerKind:'staff',ownerId:myLead.agent,title:'Your client sent a referral',body:CLIENT_PROFILE.name+' referred '+name+' ('+contact+')',tag:'referral'});
       offerShareReferral(name,contact,location,plots);
       paintClientReferrals();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Send referral'; }
