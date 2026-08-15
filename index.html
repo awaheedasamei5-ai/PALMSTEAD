@@ -651,6 +651,7 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .profileHero .role{font-size:11.5px;color:rgba(255,255,255,.7);margin-top:2px;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
 .profileHero .email{font-size:11.5px;color:rgba(255,255,255,.55);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .settingsSectitle .ssTitleRow{display:flex;align-items:center;gap:10px}
+.settingsSectitle .ssTitleRow h3{flex:1;min-width:0;overflow-wrap:break-word}
 .settingsSectitle .ssIcon{width:32px;height:32px;border-radius:10px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
   background:linear-gradient(135deg,var(--green),var(--leaf));color:#fff;box-shadow:0 6px 14px -6px rgba(12,122,147,.5)}
 .settingsSectitle .ssIcon svg{width:16px;height:16px}
@@ -669,8 +670,8 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 
 .formwrap{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px 17px;box-shadow:var(--shadow);animation:fadeUp .4s ease both}
 .field{margin-bottom:15px}
-.field label{display:block;font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:7px;letter-spacing:.01em}
-.field .hint{font-weight:400;color:var(--muted);font-size:11.5px}
+.field label{display:block;font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:7px;letter-spacing:.01em;overflow-wrap:break-word;word-break:break-word}
+.field .hint{font-weight:400;color:var(--muted);font-size:11.5px;overflow-wrap:break-word;word-break:break-word}
 .field input,.field select,.field textarea{width:100%;padding:12.5px 13px;border:1.5px solid var(--line);border-radius:12px;
   background:var(--card);color:var(--text);outline:none;transition:border-color .16s,box-shadow .16s,transform .16s}
 .field textarea{min-height:84px;resize:vertical;line-height:1.5}
