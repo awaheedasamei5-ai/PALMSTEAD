@@ -9021,20 +9021,22 @@ async function paintTeamTab(){
 }
 // Manager-only, on-demand branded PDF for Operations -- same period-picker shape
 // as Management Reports (reportPeriodRange is shared, not duplicated).
-let OPSRPT_PERIOD='month', OPSRPT_FROM='', OPSRPT_TO='';
+let OPSRPT_PERIOD='month', OPSRPT_FROM='', OPSRPT_TO='', OPSRPT_COMPARE=false;
 async function paintOpsReportsTab(){
   const body=document.getElementById('dutiesReportsBody'); if(!body) return;
   const isCustom=OPSRPT_PERIOD==='custom';
   body.innerHTML=`<div class="formwrap">
   <div class="sectitle" style="margin-top:0"><h3>Period</h3></div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-    ${['week','month','lastmonth','custom'].map(k=>`<button class="chip ${OPSRPT_PERIOD===k?'on':''}" data-opsrptperiod="${k}">${k==='week'?'This week':k==='month'?'This month':k==='lastmonth'?'Last month':'Custom range'}</button>`).join('')}
+    ${['week','month','lastmonth','year','lastyear','custom'].map(k=>`<button class="chip ${OPSRPT_PERIOD===k?'on':''}" data-opsrptperiod="${k}">${k==='week'?'This week':k==='month'?'This month':k==='lastmonth'?'Last month':k==='year'?'This year':k==='lastyear'?'Last year':'Custom range'}</button>`).join('')}
   </div>
   ${isCustom?`<div class="grid2">${fld('From','<input id="opsrpt_from" type="date" value="'+(OPSRPT_FROM||today())+'"/>')}${fld('To','<input id="opsrpt_to" type="date" value="'+(OPSRPT_TO||today())+'"/>')}</div>`:''}
+  <label class="mini" style="display:flex;align-items:center;gap:8px;margin:2px 0 14px;cursor:pointer"><input type="checkbox" id="opsrpt_compare"${OPSRPT_COMPARE?' checked':''}/> Compare to the same-length previous period</label>
   <div class="formactions"><button class="btn primary" id="opsRptGoBtn" style="width:100%">Generate PDF report</button></div>
-  <p class="mini" style="margin-top:10px">Per-staff assigned/completed/overdue/escalated, by category, and company-wide To-Do List activity for the period.</p>
+  <p class="mini" style="margin-top:10px">Per-staff and per-duty (category) assigned/completed/overdue/escalated, average days and hours to close, and company-wide To-Do List activity for the period.</p>
   </div>`;
   body.querySelectorAll('[data-opsrptperiod]').forEach(b=>b.onclick=()=>{ OPSRPT_PERIOD=b.dataset.opsrptperiod; paintOpsReportsTab(); });
+  document.getElementById('opsrpt_compare').onchange=e=>{ OPSRPT_COMPARE=e.target.checked; };
   document.getElementById('opsRptGoBtn').onclick=async()=>{
     if(isCustom){ OPSRPT_FROM=val('opsrpt_from')||today(); OPSRPT_TO=val('opsrpt_to')||today(); }
     const range=reportPeriodRange(OPSRPT_PERIOD,OPSRPT_FROM,OPSRPT_TO);
@@ -9042,7 +9044,9 @@ async function paintOpsReportsTab(){
     try{
       const todos=await apiLoadAllTodosForLeaderboard(range.from,range.to);
       const data=computeOpsReportData(range.from,range.to,todos);
-      buildOpsReportPDF(range,data);
+      let prior=null, priorData=null;
+      if(OPSRPT_COMPARE){ prior=priorPeriodRange(range); const priorTodos=await apiLoadAllTodosForLeaderboard(prior.from,prior.to); priorData=computeOpsReportData(prior.from,prior.to,priorTodos); }
+      buildOpsReportPDF(range,data,prior,priorData);
     }catch(e){ toast('Could not build report: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Generate PDF report';
   };
@@ -16208,7 +16212,7 @@ function buildFundRequestSlipPDF(f){
    current balance snapshot, fully paid = balance<=0, pending = status='pending' rows already
    tracked for approval elsewhere). Deliberately avoids inventing a "deal closed/won" concept
    that doesn't exist anywhere else in the app. Regenerated fresh every time, never stored. */
-let MGMTRPT_PERIOD='month', MGMTRPT_FROM='', MGMTRPT_TO='';
+let MGMTRPT_PERIOD='month', MGMTRPT_FROM='', MGMTRPT_TO='', MGMTRPT_COMPARE=false;
 // customFrom/customTo let other report builders (Ops Reports) share this exact
 // picker without colliding with Management Reports' own MGMTRPT_FROM/TO state --
 // omitting them keeps the original Management Reports call site unchanged.
@@ -16218,7 +16222,28 @@ function reportPeriodRange(key,customFrom,customTo){
   if(key==='month'){ const from=t.slice(0,7)+'-01'; return {from,to:t,label:'This month'}; }
   if(key==='lastmonth'){ const first=new Date(now.getFullYear(),now.getMonth(),1); const lastMonthEnd=new Date(first.getTime()-86400000);
     const from=lastMonthEnd.toISOString().slice(0,7)+'-01'; return {from,to:lastMonthEnd.toISOString().slice(0,10),label:'Last month'}; }
+  if(key==='year'){ const from=t.slice(0,4)+'-01-01'; return {from,to:t,label:'This year'}; }
+  if(key==='lastyear'){ const y=now.getFullYear()-1; return {from:y+'-01-01',to:y+'-12-31',label:'Last year'}; }
   return {from:customFrom||MGMTRPT_FROM||t,to:customTo||MGMTRPT_TO||t,label:'Custom range'};
+}
+// Equal-length period immediately before the given range -- e.g. this-week-vs-
+// last-week, this-month-vs-last-month, this-year-vs-last-year, or any custom
+// range vs. the same-length range right before it. A single reusable primitive
+// so "compare to previous period" works the same way everywhere reportPeriodRange
+// is already called, instead of each report screen inventing its own comparison math.
+function priorPeriodRange(range){
+  const spanDays=(daysBetween(range.from,range.to)||0)+1;
+  const priorTo=isoPlusDays(range.from,-1);
+  const priorFrom=isoPlusDays(priorTo,-(spanDays-1));
+  return {from:priorFrom,to:priorTo,label:'Previous period ('+priorFrom+' to '+priorTo+')'};
+}
+// Percent change from a prior value to a current one, formatted with a sign --
+// null-safe (division by zero or missing prior just reads "—").
+function pctChangeStr(prior,current){
+  if(prior==null||current==null) return '—';
+  if(prior===0) return current===0?'0%':'+∞%';
+  const pct=Math.round(((current-prior)/Math.abs(prior))*100);
+  return (pct>0?'+':'')+pct+'%';
 }
 async function viewManagementReportsApp(){
   if(PROFILE.role!=='manager'){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Management only','Reports are restricted to Management.'); return; }
@@ -16234,17 +16259,21 @@ function paintMgmtRptBody(){
   body.innerHTML=`<div class="formwrap">
   <div class="sectitle" style="margin-top:0"><h3>Period</h3></div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-    ${['week','month','lastmonth','custom'].map(k=>`<button class="chip ${MGMTRPT_PERIOD===k?'on':''}" data-rptperiod="${k}">${k==='week'?'This week':k==='month'?'This month':k==='lastmonth'?'Last month':'Custom range'}</button>`).join('')}
+    ${['week','month','lastmonth','year','lastyear','custom'].map(k=>`<button class="chip ${MGMTRPT_PERIOD===k?'on':''}" data-rptperiod="${k}">${k==='week'?'This week':k==='month'?'This month':k==='lastmonth'?'Last month':k==='year'?'This year':k==='lastyear'?'Last year':'Custom range'}</button>`).join('')}
   </div>
   ${isCustom?`<div class="grid2">${fld('From','<input id="rpt_from" type="date" value="'+(MGMTRPT_FROM||today())+'"/>')}${fld('To','<input id="rpt_to" type="date" value="'+(MGMTRPT_TO||today())+'"/>')}</div>`:''}
+  <label class="mini" style="display:flex;align-items:center;gap:8px;margin:2px 0 14px;cursor:pointer"><input type="checkbox" id="rpt_compare"${MGMTRPT_COMPARE?' checked':''}/> Compare to the same-length previous period</label>
   <div class="formactions"><button class="btn primary" id="rptGoBtn" style="width:100%">Generate PDF report</button></div>
   </div>`;
   body.querySelectorAll('[data-rptperiod]').forEach(b=>b.onclick=()=>{ MGMTRPT_PERIOD=b.dataset.rptperiod; paintMgmtRptBody(); });
+  document.getElementById('rpt_compare').onchange=e=>{ MGMTRPT_COMPARE=e.target.checked; };
   document.getElementById('rptGoBtn').onclick=()=>{
     if(isCustom){ MGMTRPT_FROM=val('rpt_from')||today(); MGMTRPT_TO=val('rpt_to')||today(); }
     const range=reportPeriodRange(MGMTRPT_PERIOD);
     const data=computeManagementReportData(range.from,range.to);
-    buildManagementReportPDF(range,data);
+    let prior=null, priorData=null;
+    if(MGMTRPT_COMPARE){ prior=priorPeriodRange(range); priorData=computeManagementReportData(prior.from,prior.to); }
+    buildManagementReportPDF(range,data,prior,priorData);
   };
 }
 function computeManagementReportData(from,to){
@@ -16299,7 +16328,7 @@ function pdfSimpleTable(doc,y,pageW,headers,rows,colPct){
   });
   return y+7;
 }
-function buildManagementReportPDF(range,d){
+function buildManagementReportPDF(range,d,prior,priorData){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
   const pageW=doc.internal.pageSize.getWidth();
@@ -16312,6 +16341,15 @@ function buildManagementReportPDF(range,d){
     {label:'Site visits',value:d.visitsInRange},
     {label:'Fully paid',value:d.fullyPaidCount}
   ]);
+  if(priorData){
+    y=pdfSectionTitle(doc,y,pageW,'vs. '+prior.label);
+    y=pdfSimpleTable(doc,y,pageW,['METRIC','THIS PERIOD','PREVIOUS PERIOD','CHANGE'],
+      [['New leads',String(d.newLeadsCount),String(priorData.newLeadsCount),pctChangeStr(priorData.newLeadsCount,d.newLeadsCount)],
+       ['Revenue collected',ghs(d.revenue),ghs(priorData.revenue),pctChangeStr(priorData.revenue,d.revenue)],
+       ['Site visits',String(d.visitsInRange),String(priorData.visitsInRange),pctChangeStr(priorData.visitsInRange,d.visitsInRange)],
+       ['Expenses',ghs(d.expensesTotal),ghs(priorData.expensesTotal),pctChangeStr(priorData.expensesTotal,d.expensesTotal)]],
+      [0.34,0.22,0.22,0.22]);
+  }
   const cardW=(pageW-24-12)/4;
   pdfStatCard(doc,12,y,cardW,'Outstanding balance',ghs(d.outstandingTotal));
   pdfStatCard(doc,12+cardW+4,y,cardW,'Expenses (period)',ghs(d.expensesTotal));
@@ -16347,6 +16385,11 @@ function buildManagementReportPDF(range,d){
    so a task assigned last month but closed this month correctly counts as a completion
    in this period. Overdue is a current-state snapshot, not period-filtered, matching how
    Management Reports treats outstandingTotal. */
+// Hours (not just whole days) between two timestamps -- there's no separate
+// timer/duration field anywhere on schedule_items, but createdAt/completedAt
+// are full timestamps already, so hour-level precision falls out of the same
+// data daysBetween uses, just without rounding to a whole day first.
+function hoursBetween(a,b){ const d1=new Date(a),d2=new Date(b); if(isNaN(d1)||isNaN(d2)) return null; return Math.max(0,(d2-d1)/3600000); }
 function computeOpsReportData(from,to,todos){
   const inRange=d=>{ const s=(d||'').slice(0,10); return !!s && s>=from && s<=to; };
   const all=DB.tasks||[];
@@ -16355,20 +16398,41 @@ function computeOpsReportData(from,to,todos){
   const escalatedInRange=all.filter(t=>t.escalatedTo&&inRange(t.escalatedAt));
   const overdueNow=all.filter(t=>t.dueDate&&t.dueDate<today()&&t.status!=='Done'&&t.status!=='Cancelled');
   const perStaff={};
-  const ensure=(key,name)=>{ if(!key) return null; perStaff[key]=perStaff[key]||{name:name||key,assigned:0,completed:0,overdue:0,escalated:0,closeDays:[]}; return perStaff[key]; };
+  const ensure=(key,name)=>{ if(!key) return null; perStaff[key]=perStaff[key]||{name:name||key,assigned:0,completed:0,overdue:0,escalated:0,closeDays:[],closeHours:[]}; return perStaff[key]; };
   assignedInRange.forEach(t=>{ const s=ensure(t.assignedTo,t.assignedToName); if(s) s.assigned++; });
-  completedInRange.forEach(t=>{ const s=ensure(t.assignedTo,t.assignedToName); if(s){ s.completed++; const dd=daysBetween(t.createdAt,t.completedAt); if(dd!=null) s.closeDays.push(dd); } });
+  completedInRange.forEach(t=>{ const s=ensure(t.assignedTo,t.assignedToName); if(s){ s.completed++;
+    const dd=daysBetween(t.createdAt,t.completedAt); if(dd!=null) s.closeDays.push(dd);
+    const hh=hoursBetween(t.createdAt,t.completedAt); if(hh!=null) s.closeHours.push(hh); } });
   overdueNow.forEach(t=>{ const s=ensure(t.assignedTo,t.assignedToName); if(s) s.overdue++; });
   escalatedInRange.forEach(t=>{ const s=ensure(t.escalatedTo,t.escalatedToName); if(s) s.escalated++; });
+  const avg=arr=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;
   const perStaffRows=Object.values(perStaff).map(s=>({name:s.name,assigned:s.assigned,completed:s.completed,overdue:s.overdue,escalated:s.escalated,
-    avgCloseDays:s.closeDays.length?Math.round(s.closeDays.reduce((a,b)=>a+b,0)/s.closeDays.length):null})).sort((a,b)=>b.assigned-a.assigned);
-  const byCategory={};
-  assignedInRange.forEach(t=>{ const c=t.category||'General'; byCategory[c]=(byCategory[c]||0)+1; });
+    avgCloseDays:s.closeDays.length?Math.round(avg(s.closeDays)):null,
+    avgCloseHours:s.closeHours.length?Math.round(avg(s.closeHours)*10)/10:null})).sort((a,b)=>b.assigned-a.assigned);
+  // "Duty-by-duty" breakdown -- per category, not just an assigned-count like
+  // before: how many were assigned in-period, how many completed, and the same
+  // avg-days/avg-hours-to-close math as the per-staff table, bucketed by category
+  // instead of by staff.
+  const byCat={};
+  const ensureCat=c=>{ const k=c||'General'; byCat[k]=byCat[k]||{category:k,assigned:0,completed:0,closeDays:[],closeHours:[]}; return byCat[k]; };
+  assignedInRange.forEach(t=>{ ensureCat(t.category).assigned++; });
+  completedInRange.forEach(t=>{ const c=ensureCat(t.category); c.completed++;
+    const dd=daysBetween(t.createdAt,t.completedAt); if(dd!=null) c.closeDays.push(dd);
+    const hh=hoursBetween(t.createdAt,t.completedAt); if(hh!=null) c.closeHours.push(hh); });
+  const byCategoryStats=Object.values(byCat).map(c=>({category:c.category,assigned:c.assigned,completed:c.completed,
+    avgCloseDays:c.closeDays.length?Math.round(avg(c.closeDays)):null,
+    avgCloseHours:c.closeHours.length?Math.round(avg(c.closeHours)*10)/10:null})).sort((a,b)=>b.assigned-a.assigned);
+  const byCategory={}; assignedInRange.forEach(t=>{ const c=t.category||'General'; byCategory[c]=(byCategory[c]||0)+1; });
   const todoStats={total:(todos||[]).length,closed:(todos||[]).filter(t=>t.status==='closed').length,rescheduled:(todos||[]).filter(t=>t.status==='rescheduled').length};
-  return {perStaffRows,byCategory,todoStats,
-    totalAssigned:assignedInRange.length,totalCompleted:completedInRange.length,totalOverdue:overdueNow.length,totalEscalated:escalatedInRange.length};
+  const allCloseHours=completedInRange.map(t=>hoursBetween(t.createdAt,t.completedAt)).filter(h=>h!=null);
+  return {perStaffRows,byCategory,byCategoryStats,todoStats,
+    totalAssigned:assignedInRange.length,totalCompleted:completedInRange.length,totalOverdue:overdueNow.length,totalEscalated:escalatedInRange.length,
+    avgHoursPerTask:allCloseHours.length?Math.round(avg(allCloseHours)*10)/10:null};
 }
-function buildOpsReportPDF(range,d){
+// prior/priorData are both optional -- only present when "Compare to previous
+// period" was checked. Adds one extra comparison stat bar right under the main
+// one; everything else about the report is unchanged either way.
+function buildOpsReportPDF(range,d,prior,priorData){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
   const pageW=doc.internal.pageSize.getWidth();
@@ -16379,18 +16443,28 @@ function buildOpsReportPDF(range,d){
     {label:'Tasks assigned',value:d.totalAssigned},
     {label:'Completed',value:d.totalCompleted},
     {label:'Overdue (now)',value:d.totalOverdue},
-    {label:'Escalated',value:d.totalEscalated}
+    {label:'Escalated',value:d.totalEscalated},
+    {label:'Avg hrs/task',value:d.avgHoursPerTask!=null?d.avgHoursPerTask:'—'}
   ]);
+  if(priorData){
+    y=pdfSectionTitle(doc,y,pageW,'vs. '+prior.label);
+    y=pdfSimpleTable(doc,y,pageW,['METRIC','THIS PERIOD','PREVIOUS PERIOD','CHANGE'],
+      [['Tasks assigned',String(d.totalAssigned),String(priorData.totalAssigned),pctChangeStr(priorData.totalAssigned,d.totalAssigned)],
+       ['Completed',String(d.totalCompleted),String(priorData.totalCompleted),pctChangeStr(priorData.totalCompleted,d.totalCompleted)],
+       ['Escalated',String(d.totalEscalated),String(priorData.totalEscalated),pctChangeStr(priorData.totalEscalated,d.totalEscalated)],
+       ['Avg hrs/task',d.avgHoursPerTask!=null?String(d.avgHoursPerTask):'—',priorData.avgHoursPerTask!=null?String(priorData.avgHoursPerTask):'—',pctChangeStr(priorData.avgHoursPerTask,d.avgHoursPerTask)]],
+      [0.34,0.22,0.22,0.22]);
+  }
 
   y=pdfSectionTitle(doc,y,pageW,'By staff member');
-  if(d.perStaffRows.length) y=pdfSimpleTable(doc,y,pageW,['STAFF','ASSIGNED','COMPLETED','OVERDUE','ESCALATED','AVG DAYS TO CLOSE'],
-    d.perStaffRows.map(s=>[s.name,String(s.assigned),String(s.completed),String(s.overdue),String(s.escalated),s.avgCloseDays!=null?String(s.avgCloseDays):'—']),[0.28,0.14,0.14,0.14,0.15,0.15]);
+  if(d.perStaffRows.length) y=pdfSimpleTable(doc,y,pageW,['STAFF','ASSIGNED','COMPLETED','OVERDUE','ESCALATED','AVG DAYS','AVG HRS'],
+    d.perStaffRows.map(s=>[s.name,String(s.assigned),String(s.completed),String(s.overdue),String(s.escalated),s.avgCloseDays!=null?String(s.avgCloseDays):'—',s.avgCloseHours!=null?String(s.avgCloseHours):'—']),[0.24,0.12,0.13,0.12,0.13,0.13,0.13]);
   else{ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120); doc.text('No task activity in this period.',12,y); doc.setTextColor(20,20,20); y+=10; }
 
   if(y>250){ doc.addPage(); y=16; }
-  y=pdfSectionTitle(doc,y,pageW,'By category');
-  const catRows=Object.keys(d.byCategory).map(c=>[c,String(d.byCategory[c])]);
-  if(catRows.length) y=pdfSimpleTable(doc,y,pageW,['CATEGORY','TASKS ASSIGNED'],catRows,[0.7,0.3]);
+  y=pdfSectionTitle(doc,y,pageW,'By duty / category');
+  if(d.byCategoryStats.length) y=pdfSimpleTable(doc,y,pageW,['CATEGORY','ASSIGNED','COMPLETED','AVG DAYS TO CLOSE','AVG HOURS TO CLOSE'],
+    d.byCategoryStats.map(c=>[c.category,String(c.assigned),String(c.completed),c.avgCloseDays!=null?String(c.avgCloseDays):'—',c.avgCloseHours!=null?String(c.avgCloseHours):'—']),[0.35,0.15,0.15,0.18,0.17]);
   else{ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120); doc.text('No tasks in this period.',12,y); doc.setTextColor(20,20,20); y+=10; }
 
   if(y>250){ doc.addPage(); y=16; }
