@@ -3407,6 +3407,55 @@ async function setupPushNotifications(){
     PushNotifications.addListener('pushNotificationActionPerformed', ()=>{});
   }catch(e){}
 }
+/* ================= WEB PUSH (browser/PWA -- works for a bookmarked tab too) =================
+   Separate from the native-app path above: Capacitor's push plugin only exists
+   inside a wrapped native build, so anyone using this as a plain web app or an
+   installed PWA (the actual GitHub Pages deployment) got no push at all until
+   now. Public key only -- safe to ship client-side, the private half lives as
+   an Edge Function secret and never reaches the browser. */
+const VAPID_PUBLIC_KEY='BGHSQlbciq-x4N4ZOhXBhmIZZ7EEFrHdOBd1BEGPy6U2wQvV3KHaxE1pdprXBiBl7ryynSFI7bOFMMqGu1YvjWQ';
+function urlBase64ToUint8Array(base64String){
+  const padding='='.repeat((4-base64String.length%4)%4);
+  const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+  const raw=atob(base64);
+  return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
+}
+async function apiSaveWebPushSubscription(sub){
+  if(DEMO_MODE || !sb) return;
+  try{
+    const owner = IS_CLIENT ? {kind:'client',id:CLIENT_PROFILE&&CLIENT_PROFILE.id} : {kind:'staff',id:PROFILE&&PROFILE.key};
+    if(!owner.id) return;
+    const json=sub.toJSON();
+    await sb.from('push_subscriptions').upsert({
+      owner_kind:owner.kind,owner_id:String(owner.id),endpoint:json.endpoint,
+      p256dh:json.keys.p256dh,auth:json.keys.auth,user_agent:navigator.userAgent,
+      last_seen_at:new Date().toISOString()
+    },{onConflict:'endpoint'});
+  }catch(e){}
+}
+async function subscribeWebPush(){
+  try{
+    if(DEMO_MODE || !sb || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if(Notification.permission==='denied') return;
+    const reg=await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub){
+      const perm=await Notification.requestPermission();
+      if(perm!=='granted') return;
+      sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(VAPID_PUBLIC_KEY)});
+    }
+    await apiSaveWebPushSubscription(sub);
+  }catch(e){}
+}
+// Thin wrapper over the send-push Edge Function -- mirrors apiSendSms's silent-fail
+// discipline so a push failure (unconfigured VAPID keys, no subscription yet, etc.)
+// never blocks the flow that triggered it (task assigned, payment due, ...).
+async function apiSendPush({ownerKind,ownerId,title,body,url,tag}){
+  if(DEMO_MODE || !sb || !ownerId) return;
+  try{
+    await sb.functions.invoke('send-push',{body:{ownerKind,ownerId:String(ownerId),title,body,url,tag}});
+  }catch(e){}
+}
 /* ================= CLIENT DATABASE (Elias + Management only) =================
    Company-wide client search, independent of the "my own pipeline" scoping the
    rest of the app uses. This used to merge every fetched row straight into
@@ -4449,6 +4498,7 @@ async function enterApp(){
   checkPaymentDueReminders();
   checkRecurringExpenseReminders();
   setupPushNotifications();
+  subscribeWebPush();
   route(PROFILE.role==='manager'?'mgr':'home');
 }
 let CLIENT_LIVE_CHANNEL=null;
@@ -4502,6 +4552,7 @@ async function enterClientPortal(){
   startInactivityTimer();
   if(CLIENT_PROFILE.isDefaultPin){ setTimeout(()=>toast("You're using the default PIN — set your own in Settings for extra security."),1200); }
   setupPushNotifications();
+  subscribeWebPush();
   await Promise.all([loadPromise,greetPromise]);
   route('clienthome');
 }

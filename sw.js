@@ -3,7 +3,7 @@
    Your data (leads, enquiries, etc.) always comes live from Supabase when online —
    this only caches the app shell so the portal still opens with no signal. */
 
-const CACHE_NAME = 'pep-portal-v6';
+const CACHE_NAME = 'pep-portal-v7';
 const APP_SHELL = [
   './index.html',
   './manifest.webmanifest',
@@ -72,6 +72,36 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => cached);
       return cached || fetchPromise;
+    })
+  );
+});
+
+// Web Push -- fires regardless of whether the app is open in a tab, so alarms
+// and reminders reach staff/clients who only ever opened this as a bookmark or
+// installed PWA and never left a tab running. Payload shape is set by send-push.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) {}
+  const title = data.title || 'Palmstead';
+  const options = {
+    body: data.body || '',
+    icon: './icon-192.png',
+    badge: './favicon-32.png',
+    tag: data.tag || 'general',
+    data: { url: data.url || './index.html' }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || './index.html';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ('focus' in client) { client.focus(); if ('navigate' in client) client.navigate(targetUrl); return; }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
     })
   );
 });
