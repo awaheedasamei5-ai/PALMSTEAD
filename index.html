@@ -622,7 +622,7 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
    commission rowcard with one cohesive premium header, in the same navy->teal
    family as sign-in rather than a plain white card like every other screen. */
 .homeHero{position:relative;overflow:hidden;border-radius:24px;padding:24px 20px 22px;margin-bottom:20px;color:#fff;
-  background:linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%);
+  background:var(--hero-bg,linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%));
   box-shadow:0 20px 44px -14px rgba(11,30,61,.5);animation:fadeUp .4s ease both}
 .homeHero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 88% -15%,rgba(103,232,249,.4),transparent 55%);pointer-events:none}
 .homeHero::after{content:'';position:absolute;left:-10%;bottom:-30%;width:60%;padding-bottom:60%;border-radius:50%;background:radial-gradient(circle,rgba(201,162,39,.22),transparent 70%);pointer-events:none}
@@ -645,7 +645,7 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
    "Change password" header, and a small colored icon per section instead of bare
    text -- same premium-anchor idea as the home hero, scaled down for forms. */
 .profileHero{display:flex;align-items:center;gap:15px;padding:18px;border-radius:20px;margin-bottom:22px;color:#fff;position:relative;overflow:hidden;
-  background:linear-gradient(135deg,var(--ink) 0%,#0F3A52 55%,var(--green) 100%);box-shadow:0 16px 36px -14px rgba(11,30,61,.45);animation:fadeUp .4s ease both}
+  background:var(--hero-bg,linear-gradient(135deg,var(--ink) 0%,#0F3A52 55%,var(--green) 100%));box-shadow:0 16px 36px -14px rgba(11,30,61,.45);animation:fadeUp .4s ease both}
 .profileHero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 88% -15%,rgba(103,232,249,.35),transparent 55%);pointer-events:none}
 .profileHero .avatar{width:60px;height:60px;border-radius:100px;flex:0 0 auto;overflow:hidden;background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.3);
   display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;position:relative;z-index:1}
@@ -654,6 +654,14 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .profileHero .name{font-weight:800;font-size:16.5px;font-family:'Space Grotesk',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .profileHero .role{font-size:11.5px;color:rgba(255,255,255,.7);margin-top:2px;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
 .profileHero .email{font-size:11.5px;color:rgba(255,255,255,.55);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.themeSwatchRow{display:flex;flex-wrap:wrap;gap:8px}
+.themeSwatch{width:34px;height:34px;border-radius:10px;border:2px solid transparent;cursor:pointer;padding:0;transition:.15s}
+.themeSwatch:hover{transform:translateY(-1px)}
+.themeSwatch.on{border-color:var(--ink);box-shadow:0 0 0 2px rgba(11,30,61,.15)}
+.themeSwatchAuto{background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:15px;border:2px dashed var(--muted)}
+.themeSwatchAuto.on{border-style:solid;border-color:var(--ink)}
+body.dark .themeSwatch.on{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.2)}
+body.dark .themeSwatchAuto.on{border-color:#fff}
 .settingsSectitle .ssTitleRow{display:flex;align-items:center;gap:10px}
 .settingsSectitle .ssTitleRow h3{flex:1;min-width:0;overflow-wrap:break-word}
 .settingsSectitle .ssIcon{width:32px;height:32px;border-radius:10px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
@@ -1036,25 +1044,46 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
    Linear gradients only vary along their angle axis, so they blend smoothly at
    any aspect ratio. */
 const WAVE_VARIANTS=[
-  {bg:'linear-gradient(165deg,#050B14 0%,#0A2A3A 30%,#0C7A93 55%,#22D3EE 74%,#BAE6E8 90%,#F2F6F7 100%)',orb1:'rgba(14,165,183,.55)',orb2:'rgba(34,211,238,.5)',orb3:'rgba(201,162,39,.3)'},
-  {bg:'linear-gradient(170deg,#050B14 0%,#0B1E3D 42%,#123F52 72%,#22D3EE 100%)',orb1:'rgba(34,211,238,.5)',orb2:'rgba(14,165,183,.45)',orb3:'rgba(103,232,249,.3)'},
-  {bg:'linear-gradient(135deg,#0B1E3D 0%,#0A2A3A 35%,#0C7A93 70%,#67E8F9 100%)',orb1:'rgba(103,232,249,.5)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(201,162,39,.28)'},
-  {bg:'linear-gradient(180deg,#050B14 0%,#0B1E3D 55%,#0A3E4E 78%,#14C7D6 100%)',orb1:'rgba(20,199,214,.5)',orb2:'rgba(11,30,61,.6)',orb3:'rgba(34,211,238,.35)'},
-  {bg:'linear-gradient(160deg,#050B14 0%,#0B1E3D 30%,#0C7A93 60%,#C9A227 85%,#67E8F9 100%)',orb1:'rgba(201,162,39,.4)',orb2:'rgba(14,165,183,.5)',orb3:'rgba(103,232,249,.3)'},
-  {bg:'linear-gradient(0deg,#050B14 0%,#0B1E3D 28%,#0C7A93 62%,#67E8F9 85%,#F2F6F7 100%)',orb1:'rgba(103,232,249,.45)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(34,211,238,.35)'}
+  {bg:'linear-gradient(165deg,#050B14 0%,#0A2A3A 30%,#0C7A93 55%,#22D3EE 74%,#BAE6E8 90%,#F2F6F7 100%)',orb1:'rgba(14,165,183,.55)',orb2:'rgba(34,211,238,.5)',orb3:'rgba(201,162,39,.3)',heroBg:'linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%)'},
+  {bg:'linear-gradient(170deg,#050B14 0%,#0B1E3D 42%,#123F52 72%,#22D3EE 100%)',orb1:'rgba(34,211,238,.5)',orb2:'rgba(14,165,183,.45)',orb3:'rgba(103,232,249,.3)',heroBg:'linear-gradient(135deg,#050B14 0%,#0B1E3D 45%,#0C7A93 100%)'},
+  {bg:'linear-gradient(135deg,#0B1E3D 0%,#0A2A3A 35%,#0C7A93 70%,#67E8F9 100%)',orb1:'rgba(103,232,249,.5)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(201,162,39,.28)',heroBg:'linear-gradient(135deg,#0B1E3D 0%,#0A2A3A 45%,#0C7A93 100%)'},
+  {bg:'linear-gradient(180deg,#050B14 0%,#0B1E3D 55%,#0A3E4E 78%,#14C7D6 100%)',orb1:'rgba(20,199,214,.5)',orb2:'rgba(11,30,61,.6)',orb3:'rgba(34,211,238,.35)',heroBg:'linear-gradient(135deg,#050B14 0%,#0B1E3D 45%,#0A3E4E 100%)'},
+  {bg:'linear-gradient(160deg,#050B14 0%,#0B1E3D 30%,#0C7A93 60%,#C9A227 85%,#67E8F9 100%)',orb1:'rgba(201,162,39,.4)',orb2:'rgba(14,165,183,.5)',orb3:'rgba(103,232,249,.3)',heroBg:'linear-gradient(135deg,#0B1E3D 0%,#0C7A93 55%,#C9A227 100%)'},
+  {bg:'linear-gradient(0deg,#050B14 0%,#0B1E3D 28%,#0C7A93 62%,#67E8F9 85%,#F2F6F7 100%)',orb1:'rgba(103,232,249,.45)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(34,211,238,.35)',heroBg:'linear-gradient(135deg,#050B14 0%,#0C7A93 50%,#22D3EE 100%)'}
 ];
 // Was an IIFE that only ever ran once at script load -- so within one browser tab,
 // signing out and back in (no real page reload happens) kept showing the exact same
 // background every time. Now callable again on every return to the sign-in screen.
+// A staff/client can also pin a specific variant from Settings (pep_theme_variant in
+// localStorage) instead of the default random-each-time behaviour -- when pinned, the
+// same gradient family also drives --hero-bg, so the signed-in home/profile hero cards
+// match the sign-in screen instead of only theming the pre-auth wave background.
 function applyWaveVariant(){
-  const v=WAVE_VARIANTS[Math.floor(Math.random()*WAVE_VARIANTS.length)];
+  let saved=null; try{ saved=localStorage.getItem('pep_theme_variant'); }catch(e){}
+  const pinned=(saved!=null && saved!=='auto' && WAVE_VARIANTS[+saved]) ? +saved : null;
+  const idx=pinned!==null ? pinned : Math.floor(Math.random()*WAVE_VARIANTS.length);
+  const v=WAVE_VARIANTS[idx];
   const root=document.documentElement.style;
   root.setProperty('--wave-bg',v.bg);
   root.setProperty('--wave-orb1',v.orb1);
   root.setProperty('--wave-orb2',v.orb2);
   root.setProperty('--wave-orb3',v.orb3);
+  root.setProperty('--hero-bg',v.heroBg);
 }
 applyWaveVariant();
+function themeSwatchesHtml(){
+  let cur='auto'; try{ cur=localStorage.getItem('pep_theme_variant')||'auto'; }catch(e){}
+  const swatches=WAVE_VARIANTS.map((v,i)=>`<button type="button" class="themeSwatch ${cur===String(i)?'on':''}" data-themevariant="${i}" style="background:${v.heroBg}" title="Theme ${i+1}"></button>`).join('');
+  return swatches+`<button type="button" class="themeSwatch themeSwatchAuto ${cur==='auto'?'on':''}" data-themevariant="auto" title="Shuffle a new look each time you sign in">🎲</button>`;
+}
+function bindThemeSwatches(){
+  document.querySelectorAll('[data-themevariant]').forEach(b=>b.onclick=()=>{
+    const v=b.dataset.themevariant;
+    try{ localStorage.setItem('pep_theme_variant',v); }catch(e){}
+    applyWaveVariant();
+    document.querySelectorAll('[data-themevariant]').forEach(x=>x.classList.toggle('on',x.dataset.themevariant===v));
+  });
+}
 /* ====================== EMBEDDED LOGO ====================== */
 const LOGO_SRC = "./logo.png";
 const TRULANDER_LOGO_SRC = "./trulander-logo.png";
@@ -10410,6 +10439,7 @@ function formAccount(){
   </div>`; })()}
   ${settingsSectionHead('gear','Display settings','this device only')}
   <div class="formwrap">
+    ${fld('Theme',`<div class="themeSwatchRow">${themeSwatchesHtml()}</div>`,'colors the sign-in screen and the home/profile header cards')}
     ${fld('Font',`<select id="dispFontFamily">
       <option value="inter">Inter (default)</option><option value="system">System default</option><option value="georgia">Georgia (serif)</option><option value="verdana">Verdana (wide)</option>
     </select>`)}
@@ -10466,6 +10496,7 @@ function formAccount(){
     ffSel.value=cur.fam;
     ffSel.onchange=()=>{ try{ localStorage.setItem('pep_font_family',ffSel.value); }catch(e){} applyDisplayPrefs(); };
   }
+  bindThemeSwatches();
   document.getElementById('saveAcct').onclick=saveAccountPw;
   document.getElementById('saveContactBtn').onclick=saveAccountContact;
   document.getElementById('saveAboutMeBtn').onclick=saveAccountAboutMe;
@@ -12227,6 +12258,14 @@ function formClientSettings(){
     ${fld('WhatsApp number','<input id="cs_whatsapp" value="'+esc(splitIntlPhone(CLIENT_PROFILE.whatsapp).local)+'" placeholder="leave blank to use your phone number above"/>')}
     <div class="formactions"><button class="btn primary" id="saveClientChannels">Save</button></div>
   </div>
+  <div class="sectitle"><h3>Display settings <span class="mini">— this device only</span></h3></div>
+  <div class="formwrap">
+    ${fld('Theme',`<div class="themeSwatchRow">${themeSwatchesHtml()}</div>`,'colors the sign-in screen and your home header card')}
+    ${fld('Font',`<select id="dispFontFamily">
+      <option value="inter">Inter (default)</option><option value="system">System default</option><option value="georgia">Georgia (serif)</option><option value="verdana">Verdana (wide)</option>
+    </select>`)}
+    <div class="mini" style="margin-top:2px">Changes apply immediately and are saved to this device.</div>
+  </div>
   <div class="sectitle"><h3>Change your PIN</h3></div>
   <div class="formwrap">
     <div class="mini" style="margin-bottom:14px">${CLIENT_PROFILE.isDefaultPin?"You're currently using the default PIN (1122) — set your own below.":'Choose a new 4–6 digit PIN.'}</div>
@@ -12261,6 +12300,12 @@ function formClientSettings(){
     try{ await apiClientChangePin(p1); toast('PIN updated'); formClientSettings(); }
     catch(e){ toast('Could not update PIN: '+(e.message||e)); btn.disabled=false; btn.textContent='Update PIN'; }
   };
+  { const cur=applyDisplayPrefs();
+    const ffSel=document.getElementById('dispFontFamily');
+    ffSel.value=cur.fam;
+    ffSel.onchange=()=>{ try{ localStorage.setItem('pep_font_family',ffSel.value); }catch(e){} applyDisplayPrefs(); };
+  }
+  bindThemeSwatches();
 }
 
 /* ================= MANAGER ================= */
