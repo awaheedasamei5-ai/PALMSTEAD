@@ -7834,6 +7834,7 @@ async function viewDuties(){
     <button class="chip ${DUTIES_TAB==='tasks'?'on':''}" data-dutiestab="tasks">Tasks</button>
     <button class="chip ${DUTIES_TAB==='todo'?'on':''}" data-dutiestab="todo">To-Do List</button>
     ${isMgr?`<button class="chip ${DUTIES_TAB==='team'?'on':''}" data-dutiestab="team">Team</button>`:''}
+    ${isMgr?`<button class="chip ${DUTIES_TAB==='reports'?'on':''}" data-dutiestab="reports">Reports</button>`:''}
   </div>
   <div id="dutiesMyDayBody" class="${DUTIES_TAB==='myday'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>
   <div id="dutiesTasksBody" class="${DUTIES_TAB==='tasks'?'':'hidden'}">
@@ -7846,7 +7847,8 @@ async function viewDuties(){
   <div class="list" id="dutiesList"></div>
   </div>
   <div id="dutiesTodoBody" class="${DUTIES_TAB==='todo'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>
-  ${isMgr?`<div id="dutiesTeamBody" class="${DUTIES_TAB==='team'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>`:''}`;
+  ${isMgr?`<div id="dutiesTeamBody" class="${DUTIES_TAB==='team'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>`:''}
+  ${isMgr?`<div id="dutiesReportsBody" class="${DUTIES_TAB==='reports'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>`:''}`;
   document.querySelectorAll('[data-dutiestab]').forEach(b=>b.onclick=async()=>{ DUTIES_TAB=b.dataset.dutiestab; await viewDuties(); });
   if(DUTIES_TAB==='tasks'){ bindDutiesCtrls(); paintDuties(); }
   else if(DUTIES_TAB==='todo'){
@@ -7856,6 +7858,7 @@ async function viewDuties(){
   }
   else if(DUTIES_TAB==='myday'){ await paintMyDayTab(); }
   else if(DUTIES_TAB==='team'){ await paintTeamTab(); }
+  else if(DUTIES_TAB==='reports'){ await paintOpsReportsTab(); }
   renderBottomNavNow();
 }
 // "My Day" -- a single-column time-axis of today's to-dos, due-today tasks
@@ -7899,6 +7902,34 @@ async function paintTeamTab(){
     const it=blocks.find(b=>b.id===el.dataset.daygridopen); if(it) toast((it.assignedToName||'')+' · '+it.startTime+'–'+it.endTime+' · '+it.title);
   });
   document.querySelectorAll('[data-taskopen]').forEach(el=>el.onclick=()=>route('taskDetail',el.dataset.taskopen));
+}
+// Manager-only, on-demand branded PDF for Operations -- same period-picker shape
+// as Management Reports (reportPeriodRange is shared, not duplicated).
+let OPSRPT_PERIOD='month', OPSRPT_FROM='', OPSRPT_TO='';
+async function paintOpsReportsTab(){
+  const body=document.getElementById('dutiesReportsBody'); if(!body) return;
+  const isCustom=OPSRPT_PERIOD==='custom';
+  body.innerHTML=`<div class="formwrap">
+  <div class="sectitle" style="margin-top:0"><h3>Period</h3></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    ${['week','month','lastmonth','custom'].map(k=>`<button class="chip ${OPSRPT_PERIOD===k?'on':''}" data-opsrptperiod="${k}">${k==='week'?'This week':k==='month'?'This month':k==='lastmonth'?'Last month':'Custom range'}</button>`).join('')}
+  </div>
+  ${isCustom?`<div class="grid2">${fld('From','<input id="opsrpt_from" type="date" value="'+(OPSRPT_FROM||today())+'"/>')}${fld('To','<input id="opsrpt_to" type="date" value="'+(OPSRPT_TO||today())+'"/>')}</div>`:''}
+  <div class="formactions"><button class="btn primary" id="opsRptGoBtn" style="width:100%">Generate PDF report</button></div>
+  <p class="mini" style="margin-top:10px">Per-staff assigned/completed/overdue/escalated, by category, and company-wide To-Do List activity for the period.</p>
+  </div>`;
+  body.querySelectorAll('[data-opsrptperiod]').forEach(b=>b.onclick=()=>{ OPSRPT_PERIOD=b.dataset.opsrptperiod; paintOpsReportsTab(); });
+  document.getElementById('opsRptGoBtn').onclick=async()=>{
+    if(isCustom){ OPSRPT_FROM=val('opsrpt_from')||today(); OPSRPT_TO=val('opsrpt_to')||today(); }
+    const range=reportPeriodRange(OPSRPT_PERIOD,OPSRPT_FROM,OPSRPT_TO);
+    const btn=document.getElementById('opsRptGoBtn'); btn.disabled=true; btn.textContent='Building…';
+    try{
+      const todos=await apiLoadAllTodosForLeaderboard(range.from,range.to);
+      const data=computeOpsReportData(range.from,range.to,todos);
+      buildOpsReportPDF(range,data);
+    }catch(e){ toast('Could not build report: '+(e.message||e)); }
+    btn.disabled=false; btn.textContent='Generate PDF report';
+  };
 }
 function paintDuties(){
   const all=DB.tasks||[];
@@ -14409,13 +14440,16 @@ function buildFundRequestSlipPDF(f){
    tracked for approval elsewhere). Deliberately avoids inventing a "deal closed/won" concept
    that doesn't exist anywhere else in the app. Regenerated fresh every time, never stored. */
 let MGMTRPT_PERIOD='month', MGMTRPT_FROM='', MGMTRPT_TO='';
-function reportPeriodRange(key){
+// customFrom/customTo let other report builders (Ops Reports) share this exact
+// picker without colliding with Management Reports' own MGMTRPT_FROM/TO state --
+// omitting them keeps the original Management Reports call site unchanged.
+function reportPeriodRange(key,customFrom,customTo){
   const now=new Date(); const t=today();
   if(key==='week'){ const d=new Date(t+'T00:00:00'); const dow=(d.getDay()+6)%7; const from=isoPlusDays(t,-dow); return {from,to:t,label:'This week'}; }
   if(key==='month'){ const from=t.slice(0,7)+'-01'; return {from,to:t,label:'This month'}; }
   if(key==='lastmonth'){ const first=new Date(now.getFullYear(),now.getMonth(),1); const lastMonthEnd=new Date(first.getTime()-86400000);
     const from=lastMonthEnd.toISOString().slice(0,7)+'-01'; return {from,to:lastMonthEnd.toISOString().slice(0,10),label:'Last month'}; }
-  return {from:MGMTRPT_FROM||t,to:MGMTRPT_TO||t,label:'Custom range'};
+  return {from:customFrom||MGMTRPT_FROM||t,to:customTo||MGMTRPT_TO||t,label:'Custom range'};
 }
 async function viewManagementReportsApp(){
   if(PROFILE.role!=='manager'){ V.innerHTML=back('officedesk')+emptyState(ic.doc,'Management only','Reports are restricted to Management.'); return; }
@@ -14534,6 +14568,68 @@ function buildManagementReportPDF(range,d){
   }
 
   const fname='Management_Report_'+range.from+'_to_'+range.to+'.pdf';
+  const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
+  toast('Report downloaded');
+}
+/* Operations Tracker aggregate reporting -- same "compute the data, hand it to a PDF
+   builder built on the same primitives" split as Management Reports. Each task metric
+   is dated by whichever event it actually describes (assigned -> createdAt, completed
+   -> completedAt, escalated -> escalatedAt) rather than lumping everything by createdAt,
+   so a task assigned last month but closed this month correctly counts as a completion
+   in this period. Overdue is a current-state snapshot, not period-filtered, matching how
+   Management Reports treats outstandingTotal. */
+function computeOpsReportData(from,to,todos){
+  const inRange=d=>{ const s=(d||'').slice(0,10); return !!s && s>=from && s<=to; };
+  const all=DB.tasks||[];
+  const assignedInRange=all.filter(t=>inRange(t.createdAt));
+  const completedInRange=all.filter(t=>t.status==='Done'&&inRange(t.completedAt));
+  const escalatedInRange=all.filter(t=>t.escalatedTo&&inRange(t.escalatedAt));
+  const overdueNow=all.filter(t=>t.dueDate&&t.dueDate<today()&&t.status!=='Done'&&t.status!=='Cancelled');
+  const perStaff={};
+  const ensure=(key,name)=>{ if(!key) return null; perStaff[key]=perStaff[key]||{name:name||key,assigned:0,completed:0,overdue:0,escalated:0,closeDays:[]}; return perStaff[key]; };
+  assignedInRange.forEach(t=>{ const s=ensure(t.assignedTo,t.assignedToName); if(s) s.assigned++; });
+  completedInRange.forEach(t=>{ const s=ensure(t.assignedTo,t.assignedToName); if(s){ s.completed++; const dd=daysBetween(t.createdAt,t.completedAt); if(dd!=null) s.closeDays.push(dd); } });
+  overdueNow.forEach(t=>{ const s=ensure(t.assignedTo,t.assignedToName); if(s) s.overdue++; });
+  escalatedInRange.forEach(t=>{ const s=ensure(t.escalatedTo,t.escalatedToName); if(s) s.escalated++; });
+  const perStaffRows=Object.values(perStaff).map(s=>({name:s.name,assigned:s.assigned,completed:s.completed,overdue:s.overdue,escalated:s.escalated,
+    avgCloseDays:s.closeDays.length?Math.round(s.closeDays.reduce((a,b)=>a+b,0)/s.closeDays.length):null})).sort((a,b)=>b.assigned-a.assigned);
+  const byCategory={};
+  assignedInRange.forEach(t=>{ const c=t.category||'General'; byCategory[c]=(byCategory[c]||0)+1; });
+  const todoStats={total:(todos||[]).length,closed:(todos||[]).filter(t=>t.status==='closed').length,rescheduled:(todos||[]).filter(t=>t.status==='rescheduled').length};
+  return {perStaffRows,byCategory,todoStats,
+    totalAssigned:assignedInRange.length,totalCompleted:completedInRange.length,totalOverdue:overdueNow.length,totalEscalated:escalatedInRange.length};
+}
+function buildOpsReportPDF(range,d){
+  if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  let y=pdfBrandedHeader(doc,'OPERATIONS REPORT',range.label+'  ·  '+range.from+' to '+range.to,
+    ['Generated by '+PROFILE.name,new Date().toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})]);
+  y+=6;
+  y=pdfDarkStatBar(doc,y,pageW,[
+    {label:'Tasks assigned',value:d.totalAssigned},
+    {label:'Completed',value:d.totalCompleted},
+    {label:'Overdue (now)',value:d.totalOverdue},
+    {label:'Escalated',value:d.totalEscalated}
+  ]);
+
+  y=pdfSectionTitle(doc,y,pageW,'By staff member');
+  if(d.perStaffRows.length) y=pdfSimpleTable(doc,y,pageW,['STAFF','ASSIGNED','COMPLETED','OVERDUE','ESCALATED','AVG DAYS TO CLOSE'],
+    d.perStaffRows.map(s=>[s.name,String(s.assigned),String(s.completed),String(s.overdue),String(s.escalated),s.avgCloseDays!=null?String(s.avgCloseDays):'—']),[0.28,0.14,0.14,0.14,0.15,0.15]);
+  else{ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120); doc.text('No task activity in this period.',12,y); doc.setTextColor(20,20,20); y+=10; }
+
+  if(y>250){ doc.addPage(); y=16; }
+  y=pdfSectionTitle(doc,y,pageW,'By category');
+  const catRows=Object.keys(d.byCategory).map(c=>[c,String(d.byCategory[c])]);
+  if(catRows.length) y=pdfSimpleTable(doc,y,pageW,['CATEGORY','TASKS ASSIGNED'],catRows,[0.7,0.3]);
+  else{ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(120,120,120); doc.text('No tasks in this period.',12,y); doc.setTextColor(20,20,20); y+=10; }
+
+  if(y>250){ doc.addPage(); y=16; }
+  y=pdfSectionTitle(doc,y,pageW,'To-Do List activity (company-wide)');
+  y=pdfSimpleTable(doc,y,pageW,['METRIC','COUNT'],
+    [['Logged',String(d.todoStats.total)],['Completed',String(d.todoStats.closed)],['Rescheduled',String(d.todoStats.rescheduled)]],[0.7,0.3]);
+
+  const fname='Ops_Report_'+range.from+'_to_'+range.to+'.pdf';
   const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
   toast('Report downloaded');
 }
