@@ -4867,6 +4867,9 @@ async function enterApp(){
   refreshChatNavBadge();
   ensureChatSubscribed();
   ensureClientDbSubscribed();
+  ensureScheduleLiveSubscribed();
+  ensureLeaveLiveSubscribed();
+  ensureAttendanceLiveSubscribed();
   startInactivityTimer();
   startMonthRolloverWatchdog();
   checkClockSanity();
@@ -4903,6 +4906,68 @@ function ensureClientLiveSubscribed(){
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'client_notifications'},()=>{
         apiClientLoadNotifications().then(refreshClientBellBadge).catch(()=>{});
       })
+      .subscribe();
+  }catch(e){}
+}
+/* ---- cross-app realtime: Operations Tracker + Leave + Attendance -- same shape
+   as clientdb-live/messages-live/client-live above (subscribe once after sign-in,
+   idempotent via the CHANNEL-already-set guard, patch local arrays always but only
+   touch the DOM if the relevant screen is actually mounted right now, torn down
+   together with the other channels at logout). RLS already scopes what each
+   subscriber actually receives -- e.g. attendance_log's own SELECT policy means a
+   plain agent's attendance-live subscription only ever delivers their own row,
+   a manager's delivers everyone's, with no extra gating needed here. */
+let SCHEDULE_LIVE_CHANNEL=null;
+function ensureScheduleLiveSubscribed(){
+  if(DEMO_MODE || !sb || SCHEDULE_LIVE_CHANNEL) return;
+  try{
+    const repaintDuties=()=>{
+      if(!document.getElementById('dutiesMyDayBody')) return;
+      if(DUTIES_TAB==='myday') paintMyDayTab();
+      else if(DUTIES_TAB==='month') paintMonthTab();
+      else if(DUTIES_TAB==='team') paintTeamTab();
+      else if(DUTIES_TAB==='todo') todoEnsureRangeLoaded().then(paintTodoTab);
+    };
+    SCHEDULE_LIVE_CHANNEL=sb.channel('schedule-live')
+      .on('postgres_changes',{event:'*',schema:'public',table:'schedule_items'},repaintDuties)
+      .on('postgres_changes',{event:'*',schema:'public',table:'schedule_item_invitees'},repaintDuties)
+      .subscribe();
+  }catch(e){}
+}
+let LEAVE_LIVE_CHANNEL=null;
+function ensureLeaveLiveSubscribed(){
+  if(DEMO_MODE || !sb || LEAVE_LIVE_CHANNEL) return;
+  try{
+    const upsertLocal=row=>{
+      const r=mapLeaveRequest(row);
+      DB.leaveRequests=DB.leaveRequests||[];
+      const i=DB.leaveRequests.findIndex(x=>x.id===r.id);
+      if(i>=0) DB.leaveRequests[i]=r; else DB.leaveRequests.unshift(r);
+      if(document.getElementById('leaveBody')) paintLeaveApp();
+      if(document.getElementById('attBody')) paintAttendanceBody();
+    };
+    LEAVE_LIVE_CHANNEL=sb.channel('leave-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'leave_requests'},payload=>upsertLocal(payload.new))
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'leave_requests'},payload=>upsertLocal(payload.new))
+      .subscribe();
+  }catch(e){}
+}
+let ATTENDANCE_LIVE_CHANNEL=null;
+function ensureAttendanceLiveSubscribed(){
+  if(DEMO_MODE || !sb || ATTENDANCE_LIVE_CHANNEL) return;
+  try{
+    const upsertLocal=row=>{
+      const r=mapAttendance(row);
+      if(r.workDate===today()){
+        const i=ATTENDANCE_TEAM_TODAY.findIndex(x=>x.staffKey===r.staffKey);
+        if(i>=0) ATTENDANCE_TEAM_TODAY[i]=r; else ATTENDANCE_TEAM_TODAY.push(r);
+        if(r.staffKey===PROFILE.key){ ATTENDANCE_TODAY=r; ATTENDANCE_HISTORY=[r,...ATTENDANCE_HISTORY.filter(a=>a.workDate!==r.workDate)]; }
+      }
+      if(document.getElementById('attBody')) paintAttendanceBody();
+    };
+    ATTENDANCE_LIVE_CHANNEL=sb.channel('attendance-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'attendance_log'},payload=>upsertLocal(payload.new))
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'attendance_log'},payload=>upsertLocal(payload.new))
       .subscribe();
   }catch(e){}
 }
@@ -4990,6 +5055,9 @@ document.getElementById('logoutBtn').onclick=async()=>{
   if(CHAT_CHANNEL){ try{ sb.removeChannel(CHAT_CHANNEL); }catch(e){} CHAT_CHANNEL=null; }
   if(CLIENTDB_CHANNEL){ try{ sb.removeChannel(CLIENTDB_CHANNEL); }catch(e){} CLIENTDB_CHANNEL=null; }
   if(CLIENT_LIVE_CHANNEL){ try{ sb.removeChannel(CLIENT_LIVE_CHANNEL); }catch(e){} CLIENT_LIVE_CHANNEL=null; }
+  if(SCHEDULE_LIVE_CHANNEL){ try{ sb.removeChannel(SCHEDULE_LIVE_CHANNEL); }catch(e){} SCHEDULE_LIVE_CHANNEL=null; }
+  if(LEAVE_LIVE_CHANNEL){ try{ sb.removeChannel(LEAVE_LIVE_CHANNEL); }catch(e){} LEAVE_LIVE_CHANNEL=null; }
+  if(ATTENDANCE_LIVE_CHANNEL){ try{ sb.removeChannel(ATTENDANCE_LIVE_CHANNEL); }catch(e){} ATTENDANCE_LIVE_CHANNEL=null; }
   CLIENTDB_LOADED=false; CLIENTDB_LIST=[];
   CLIENT_NOTIFICATIONS=[];
   const bellBtn=document.getElementById('clientBellBtn'); if(bellBtn) bellBtn.classList.add('hidden');
