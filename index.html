@@ -3190,7 +3190,8 @@ async function apiLoadAgentMonthStats(){
    sent, so signing out never clobbers the sign-in timestamp already recorded. */
 const mapAttendance=r=>({id:r.id,staffKey:r.staff_key,staffName:r.staff_name,workDate:r.work_date,
   signInAt:r.sign_in_at,signInLat:r.sign_in_lat,signInLng:r.sign_in_lng,
-  signOutAt:r.sign_out_at,signOutLat:r.sign_out_lat,signOutLng:r.sign_out_lng,notes:r.notes,lateReason:r.late_reason});
+  signOutAt:r.sign_out_at,signOutLat:r.sign_out_lat,signOutLng:r.sign_out_lng,notes:r.notes,lateReason:r.late_reason,
+  signInReason:r.sign_in_reason,signOutReason:r.sign_out_reason,isOffSiteIn:!!r.is_off_site_in,isOffSiteOut:!!r.is_off_site_out,signInPhoto:r.sign_in_photo});
 async function apiLoadMyAttendance(fromDate,toDate){
   if(DEMO_MODE){ return []; }
   const {data,error}=await sb.from('attendance_log').select('*').eq('staff_key',PROFILE.key)
@@ -3202,18 +3203,29 @@ async function apiLoadTeamAttendanceToday(){
   const {data,error}=await sb.from('attendance_log').select('*').eq('work_date',today());
   if(error) throw error; return (data||[]).map(mapAttendance);
 }
-async function apiSignIn(lat,lng,lateReason){
-  if(DEMO_MODE){ return {id:uid(),staffKey:PROFILE.key,staffName:PROFILE.name,workDate:today(),signInAt:new Date().toISOString(),signInLat:lat,signInLng:lng,signOutAt:null,lateReason:lateReason||null}; }
-  const row={staff_key:PROFILE.key,staff_name:PROFILE.name,work_date:today(),sign_in_at:new Date().toISOString(),sign_in_lat:lat,sign_in_lng:lng};
+async function apiSignIn(lat,lng,lateReason,offSiteReason,isOffSite,photo){
+  if(DEMO_MODE){ return {id:uid(),staffKey:PROFILE.key,staffName:PROFILE.name,workDate:today(),signInAt:new Date().toISOString(),signInLat:lat,signInLng:lng,signOutAt:null,lateReason:lateReason||null,signInReason:offSiteReason||null,isOffSiteIn:!!isOffSite,signInPhoto:photo||null}; }
+  const row={staff_key:PROFILE.key,staff_name:PROFILE.name,work_date:today(),sign_in_at:new Date().toISOString(),sign_in_lat:lat,sign_in_lng:lng,is_off_site_in:!!isOffSite};
   if(lateReason) row.late_reason=lateReason;
+  if(offSiteReason) row.sign_in_reason=offSiteReason;
+  if(photo) row.sign_in_photo=photo;
   const {data,error}=await sb.from('attendance_log').upsert(row,{onConflict:'staff_key,work_date'}).select().single();
   if(error) throw error; return mapAttendance(data);
 }
-async function apiSignOut(lat,lng){
-  if(DEMO_MODE){ return {id:uid(),staffKey:PROFILE.key,staffName:PROFILE.name,workDate:today(),signOutAt:new Date().toISOString(),signOutLat:lat,signOutLng:lng}; }
-  const row={staff_key:PROFILE.key,staff_name:PROFILE.name,work_date:today(),sign_out_at:new Date().toISOString(),sign_out_lat:lat,sign_out_lng:lng};
+async function apiSignOut(lat,lng,offSiteReason,isOffSite){
+  if(DEMO_MODE){ return {id:uid(),staffKey:PROFILE.key,staffName:PROFILE.name,workDate:today(),signOutAt:new Date().toISOString(),signOutLat:lat,signOutLng:lng,signOutReason:offSiteReason||null,isOffSiteOut:!!isOffSite}; }
+  const row={staff_key:PROFILE.key,staff_name:PROFILE.name,work_date:today(),sign_out_at:new Date().toISOString(),sign_out_lat:lat,sign_out_lng:lng,is_off_site_out:!!isOffSite};
+  if(offSiteReason) row.sign_out_reason=offSiteReason;
   const {data,error}=await sb.from('attendance_log').upsert(row,{onConflict:'staff_key,work_date'}).select().single();
   if(error) throw error; return mapAttendance(data);
+}
+// Great-circle distance in metres -- used to decide whether a sign-in/out is
+// "at the office" against CONFIG.officeLat/officeLng/officeRadiusMeters.
+function haversineMeters(lat1,lng1,lat2,lng2){
+  const R=6371000, toRad=d=>d*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLng=toRad(lng2-lng1);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
 }
 // Promise wrapper around the same navigator.geolocation.getCurrentPosition call
 // already proven in the banner tracker's "Use my current location" button.
@@ -3363,10 +3375,80 @@ function promptLateReason(){
     };
   });
 }
+// Same modal shape as promptLateReason() but for signing in/out away from the
+// configured office radius -- kept as its own function rather than generalizing
+// promptLateReason so the already-shipped late-reason flow can't regress.
+function promptOffSiteReason(kind){
+  return new Promise(resolve=>{
+    let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+    ov=document.createElement('div'); ov.id='announceOverlay';
+    ov.innerHTML=`<div id="announceModal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Signing ${kind==='in'?'in':'out'} away from the office</div><button id="osr_close" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+      <div class="mini" style="margin-bottom:14px">Your location isn't at the office — say why so it's on record (e.g. running an errand, on assignment, working from a site visit).</div>
+      ${fld('Reason',sel('osr_reason',['Company errand','Client/site assignment','Working from home','Other']))}
+      <div id="osr_otherWrap" class="hidden">${fld('Details','<input id="osr_other" placeholder="Briefly, what happened"/>')}</div>
+      <div class="formactions"><button class="btn primary" id="osr_save" style="width:100%">Continue sign-${kind}</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    const finish=v=>{ ov.remove(); resolve(v); };
+    ov.addEventListener('click',e=>{ if(e.target===ov) finish(null); });
+    document.getElementById('osr_close').onclick=()=>finish(null);
+    document.getElementById('osr_reason').onchange=e=>{ document.getElementById('osr_otherWrap').classList.toggle('hidden',e.target.value!=='Other'); };
+    document.getElementById('osr_save').onclick=()=>{
+      const reason=val('osr_reason');
+      const detail=reason==='Other'?val('osr_other').trim():'';
+      finish(detail?reason+': '+detail:reason);
+    };
+  });
+}
+// Mandatory photo proof at sign-in. Same base64-in-a-column approach as every
+// other image in this app (resizeImageToB64, e.g. Banner Tracker) -- this
+// codebase has no Supabase Storage bucket usage anywhere, so that's the
+// established pattern to follow here too, not something to introduce new.
+function captureSelfie(){
+  return new Promise(resolve=>{
+    let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+    ov=document.createElement('div'); ov.id='announceOverlay';
+    ov.innerHTML=`<div id="announceModal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Photo proof</div><button id="sf_close" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+      <div class="mini" style="margin-bottom:14px">Take a quick selfie to confirm it's really you signing in.</div>
+      <div id="sf_preview" style="width:100%;aspect-ratio:1;max-width:220px;margin:0 auto 14px;border-radius:14px;overflow:hidden;background:#F4F6F5;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted)">No photo yet</div>
+      <input id="sf_input" type="file" accept="image/*" capture="user" class="hidden"/>
+      <div class="formactions" style="margin-bottom:10px"><button class="btn ghost" id="sf_takeBtn" type="button" style="width:100%">📷 Take photo</button></div>
+      <div class="formactions"><button class="btn primary" id="sf_save" style="width:100%" disabled>Continue sign-in</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    let photoB64=null;
+    const finish=v=>{ ov.remove(); resolve(v); };
+    ov.addEventListener('click',e=>{ if(e.target===ov) finish(null); });
+    document.getElementById('sf_close').onclick=()=>finish(null);
+    document.getElementById('sf_takeBtn').onclick=()=>document.getElementById('sf_input').click();
+    document.getElementById('sf_input').onchange=async(e)=>{
+      const file=e.target.files[0]; if(!file) return;
+      try{
+        photoB64=await resizeImageToB64(file,480,480,0.75);
+        document.getElementById('sf_preview').innerHTML=`<img src="${photoB64}" style="width:100%;height:100%;object-fit:cover"/>`;
+        document.getElementById('sf_save').disabled=false;
+      }catch(err){ toast('Could not read that photo'); }
+    };
+    document.getElementById('sf_save').onclick=()=>{ if(!photoB64) return; finish(photoB64); };
+  });
+}
 function bindAttendanceCtrls(){
   const btn=document.getElementById('attClockBtn');
   if(!btn||btn.disabled) return;
   const signingOut=btn.classList.contains('out');
+  // Shared by both directions: resolves {offSiteReason,isOffSite}, or null if the
+  // user cancelled the off-site-reason prompt when one was required.
+  const checkOffSite=async(loc,kind)=>{
+    if(CONFIG.officeLat==null||CONFIG.officeLng==null) return {offSiteReason:null,isOffSite:false};
+    const dist=haversineMeters(loc.lat,loc.lng,CONFIG.officeLat,CONFIG.officeLng);
+    const isOffSite=dist>(num(CONFIG.officeRadiusMeters)||150);
+    if(!isOffSite) return {offSiteReason:null,isOffSite:false};
+    const offSiteReason=await promptOffSiteReason(kind);
+    if(offSiteReason===null) return null;
+    return {offSiteReason,isOffSite:true};
+  };
   btn.onclick=async()=>{
     if(!signingOut){
       const cutoff=CONFIG.attendanceCutoffTime||'09:00';
@@ -3378,7 +3460,13 @@ function bindAttendanceCtrls(){
       btn.disabled=true; btn.querySelector('.lbl').textContent='Locating…';
       try{
         const loc=await getCurrentLocation();
-        const rec=await apiSignIn(loc.lat,loc.lng,lateReason);
+        btn.querySelector('.lbl').textContent='Sign In';
+        const site=await checkOffSite(loc,'in');
+        if(site===null){ btn.disabled=false; return; }
+        const photo=await captureSelfie();
+        if(!photo){ btn.disabled=false; return; }
+        btn.disabled=true; btn.querySelector('.lbl').textContent='Signing in…';
+        const rec=await apiSignIn(loc.lat,loc.lng,lateReason,site.offSiteReason,site.isOffSite,photo);
         ATTENDANCE_TODAY=rec; ATTENDANCE_HISTORY=[rec,...ATTENDANCE_HISTORY.filter(a=>a.workDate!==rec.workDate)];
         toast('Signed in'); paintAttendanceBody();
       }catch(e){ toast('Could not sign in: '+(e.message||e)); btn.disabled=false; btn.querySelector('.lbl').textContent='Sign In'; }
@@ -3386,7 +3474,11 @@ function bindAttendanceCtrls(){
       btn.disabled=true; btn.querySelector('.lbl').textContent='Locating…';
       try{
         const loc=await getCurrentLocation();
-        const rec=await apiSignOut(loc.lat,loc.lng);
+        btn.querySelector('.lbl').textContent='Sign Out';
+        const site=await checkOffSite(loc,'out');
+        if(site===null){ btn.disabled=false; return; }
+        btn.disabled=true; btn.querySelector('.lbl').textContent='Signing out…';
+        const rec=await apiSignOut(loc.lat,loc.lng,site.offSiteReason,site.isOffSite);
         ATTENDANCE_TODAY=rec; ATTENDANCE_HISTORY=[rec,...ATTENDANCE_HISTORY.filter(a=>a.workDate!==rec.workDate)];
         toast('Signed out'); paintAttendanceBody();
       }catch(e){ toast('Could not sign out: '+(e.message||e)); btn.disabled=false; btn.querySelector('.lbl').textContent='Sign Out'; }
