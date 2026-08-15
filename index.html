@@ -1454,7 +1454,7 @@ function defaultConfig(){ return {
   referralPointsPerReferral:50,
   referralRewards:[{label:'Free Documentation',points:50},{label:'10% Cash Discount',points:150},{label:'Half Plot',points:500},{label:'Full Plot',points:1000}],
   contractCeoName:'FRANK ADU PEPRAH',
-  contractCoverImage:'', contractWordmarkImage:'',
+  contractCoverImage:'', contractWordmarkImage:'', receiptLogoImage:'',
   contractPreamble:[
     'i. WHEREAS the Vendor is the beneficial owner of ALL THAT piece or parcel of land, containing an approximate area of {ACRES} acre more or less, situate at Royal Palm Enclave Tsopoli, Accra in the Greater Accra Region of the Republic of Ghana.',
     'ii. The Land was leased by the Dorsi Animle Family represented by the its Head and Lawful representative Numo Napoleon Tawiah Animle of the Shai Osudoku District of the Greater Accra with consent and concurrence of principal members of the family (here-in the Head Lessors) to TRULANDER JSF LIMITED represented by its CEO, Mr. FRANK ADU PEPRAH for a total land area measuring approximately 72.30 Acres (29.27 Hect) by a lease an Indenture dated 1st February, 2025 for a term of 80 years with an option to renew for a further term of 45 years with effect from 1st February, 2025.',
@@ -2861,6 +2861,7 @@ async function apiLoadConfig(){
       contractTerms:data.contract_terms||defaultConfig().contractTerms,
       contractCoverImage:data.contract_cover_image||'',
       contractWordmarkImage:data.contract_wordmark_image||'',
+      receiptLogoImage:data.receipt_logo_image||'',
       leaderboardWeights:data.leaderboard_weights||defaultConfig().leaderboardWeights,
       referralPointsPerReferral:data.referral_points_per_referral!=null?num(data.referral_points_per_referral):50,
       referralRewards:(data.referral_rewards&&data.referral_rewards.length)?data.referral_rewards:defaultConfig().referralRewards}; }
@@ -2884,6 +2885,7 @@ async function apiSaveConfig(patch){
     receipt_thanks_text:CONFIG.receiptThanksText||'',
     contract_ceo_name:CONFIG.contractCeoName||'',contract_preamble:CONFIG.contractPreamble||'',contract_definitions:CONFIG.contractDefinitions||'',contract_terms:CONFIG.contractTerms||'',
     contract_cover_image:CONFIG.contractCoverImage||null,contract_wordmark_image:CONFIG.contractWordmarkImage||null,
+    receipt_logo_image:CONFIG.receiptLogoImage||null,
     leaderboard_weights:CONFIG.leaderboardWeights||defaultConfig().leaderboardWeights,
     referral_points_per_referral:num(CONFIG.referralPointsPerReferral)||50,
     referral_rewards:CONFIG.referralRewards||defaultConfig().referralRewards};
@@ -10845,14 +10847,18 @@ function openClientPlotRequestModal(leads){
 }
 /* One or more payments can land in the same calendar month -- merge whichever ones
    match into a single PDF rather than forcing a pick when there's more than one. */
-function downloadReceiptForMonth(monthKey){
+async function downloadReceiptForMonth(monthKey){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
   const leads=(CLIENT_DB&&CLIENT_DB.leads)||[]; const payments=((CLIENT_DB&&CLIENT_DB.payments)||[]).filter(p=>(p.date||'').slice(0,7)===monthKey);
   if(!payments.length){ toast('No payments recorded for '+monthLabel(monthKey)); return; }
   const sorted=payments.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,leads,CLIENT_PROFILE.name);
   let doc=null;
-  sorted.forEach(p=>{ const lead=leads.find(l=>l.id===p.leadId)||leads[0]; doc=buildReceiptPDF(CLIENT_PROFILE.name,p,lead,doc,portfolioTotal); });
+  for(const p of sorted){
+    const lead=leads.find(l=>l.id===p.leadId)||leads[0];
+    let receiptNumber=null; try{ receiptNumber=await apiEnsureReceiptNumber(p.id,'client-portal'); }catch(e){}
+    doc=buildReceiptPDF(CLIENT_PROFILE.name,p,lead,doc,portfolioTotal,receiptNumber);
+  }
   if(!doc) return;
   const fname='Receipt_'+monthKey+'_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'.pdf';
   const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
@@ -10912,12 +10918,23 @@ function pdfReceiptInfoRow(doc,x,y,colW,r,kind,label,value){
   doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
   doc.text(pdfFitText(doc,value,colW-r*2-3-26),x+r*2+29,y);
 }
-function buildReceiptPDF(clientName,payment,lead,existingDoc,portfolioTotal){
+// Resolves a real, permanent receipt number the first time anyone requests one for
+// this payment (staff or client), logging who/when/why to receipt_log -- an insert-
+// only audit trail. Re-downloading the same payment's receipt later always returns
+// the same number instead of a new one, matching how a real accounting system works.
+// Authorization mirrors payments' own SELECT RLS (see ensure_receipt_number, a narrow
+// SECURITY DEFINER RPC) so this can't be used to mint a number for someone else's payment.
+async function apiEnsureReceiptNumber(paymentId,channel){
+  if(DEMO_MODE || !sb) return 'RCT-'+String(paymentId||'').slice(0,6).toUpperCase();
+  const {data,error}=await sb.rpc('ensure_receipt_number',{p_payment_id:paymentId,p_channel:channel||'download'});
+  if(error) throw error; return data;
+}
+function buildReceiptPDF(clientName,payment,lead,existingDoc,portfolioTotal,receiptNumber){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return null; }
   const {jsPDF}=window.jspdf; const doc=existingDoc||new jsPDF({unit:'mm',format:'a4'});
   if(existingDoc) doc.addPage();
   const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
-  const ref=Math.random().toString(16).slice(2,10).toUpperCase();
+  const ref=receiptNumber||('RCT-'+String((payment&&payment.id)||'').slice(0,6).toUpperCase()||'PENDING');
   const dateStr=payment.date?new Date(payment.date+'T00:00:00').toLocaleDateString('en-GB'):new Date().toLocaleDateString('en-GB');
   const siteName=CONFIG.quoteSiteName||'Royal Palm Enclave, Tsopoli';
   const companyName=CONFIG.quoteCompanyName||'Trulander JSF Limited';
@@ -10926,6 +10943,15 @@ function buildReceiptPDF(clientName,payment,lead,existingDoc,portfolioTotal){
   doc.setFillColor(RECEIPT_CREAM[0],RECEIPT_CREAM[1],RECEIPT_CREAM[2]); doc.rect(0,0,pageW,pageH,'F');
   pdfReceiptArcAccent(doc,pageW);
   doc.setTextColor(RECEIPT_DARK[0],RECEIPT_DARK[1],RECEIPT_DARK[2]);
+
+  if(CONFIG.receiptLogoImage){
+    try{
+      const props=doc.getImageProperties(CONFIG.receiptLogoImage);
+      const maxW=32,maxH=18; let lw=maxW,lh=lw*props.height/props.width;
+      if(lh>maxH){ lh=maxH; lw=lh*props.width/props.height; }
+      doc.addImage(CONFIG.receiptLogoImage,'PNG',R-lw,14,lw,lh);
+    }catch(e){}
+  }
 
   doc.setFont('helvetica','bold'); doc.setFontSize(28);
   doc.text('PAYMENT',L,27); doc.text('RECEIPT',L,43);
@@ -11745,26 +11771,28 @@ function openContractNewClientModal(){
   };
 }
 
-function buildClientReceiptPDF(payment,lead){
+async function buildClientReceiptPDF(payment,lead){
   const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,(CLIENT_DB&&CLIENT_DB.leads)||[],CLIENT_PROFILE.name);
-  const doc=buildReceiptPDF(CLIENT_PROFILE.name,payment,lead,undefined,portfolioTotal); if(!doc) return;
+  let receiptNumber=null; try{ receiptNumber=await apiEnsureReceiptNumber(payment.id,'client-portal'); }catch(e){}
+  const doc=buildReceiptPDF(CLIENT_PROFILE.name,payment,lead,undefined,portfolioTotal,receiptNumber); if(!doc) return;
   const fname='Receipt_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
   const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
 }
 /* Every receipt the client has ever been issued, merged into one PDF (one receipt
    per page) so they can pull their whole payment record in a single download
    instead of hunting for individual ones. */
-function downloadAllReceipts(){
+async function downloadAllReceipts(){
   if(typeof window.jspdf==='undefined'){ toast('PDF library failed to load — check your connection.'); return; }
   const leads=(CLIENT_DB&&CLIENT_DB.leads)||[]; const payments=(CLIENT_DB&&CLIENT_DB.payments)||[];
   if(!payments.length){ toast('No payments recorded yet'); return; }
   const sorted=payments.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const portfolioTotal=computeClientPortfolioTotal(CLIENT_PROFILE.contact,leads,CLIENT_PROFILE.name);
   let doc=null;
-  sorted.forEach(p=>{
+  for(const p of sorted){
     const lead=leads.find(l=>l.id===p.leadId)||leads[0];
-    doc=buildReceiptPDF(CLIENT_PROFILE.name,p,lead,doc,portfolioTotal);
-  });
+    let receiptNumber=null; try{ receiptNumber=await apiEnsureReceiptNumber(p.id,'client-portal'); }catch(e){}
+    doc=buildReceiptPDF(CLIENT_PROFILE.name,p,lead,doc,portfolioTotal,receiptNumber);
+  }
   if(!doc) return;
   const fname='Receipts_All_'+CLIENT_PROFILE.name.replace(/\s+/g,'_')+'_'+today()+'.pdf';
   const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
@@ -11876,9 +11904,10 @@ async function offerSendReceipt(lead,payment){
   const msg=`Hi ${lead.name}, thank you for your payment of ${ghs(payment.amount)} towards your plot at Royal Palm Enclave. Your receipt is attached (also saved to your Palmstead payment history).`;
   document.getElementById('srWhatsapp').href='https://wa.me/'+waNumberFromPhone(waTarget)+'?text='+encodeURIComponent(msg);
   const emailEl=document.getElementById('srEmail'); if(emailEl) emailEl.href='mailto:'+channels.email+'?subject='+encodeURIComponent('Your payment receipt')+'&body='+encodeURIComponent(msg);
-  document.getElementById('srDownload').onclick=()=>{
+  document.getElementById('srDownload').onclick=async()=>{
     const portfolioTotal=computeClientPortfolioTotal(lead.contact,DB.leads||[],lead.name);
-    const doc=buildReceiptPDF(lead.name,payment,lead,undefined,portfolioTotal); if(!doc) return;
+    let receiptNumber=null; try{ receiptNumber=await apiEnsureReceiptNumber(payment.id,'resend'); }catch(e){}
+    const doc=buildReceiptPDF(lead.name,payment,lead,undefined,portfolioTotal,receiptNumber); if(!doc) return;
     const fname='Receipt_'+lead.name.replace(/\s+/g,'_')+'_'+(payment.date||today())+'.pdf';
     doc.save(fname);
   };
@@ -13115,17 +13144,26 @@ function mgrQuotationSettingsHtml(){
   ${fld('Land/site plan note','<textarea id="cfg_quoteLandNoteText" rows="2">'+esc(CONFIG.quoteLandNoteText||'')+'</textarea>','bold note above the footer')}
   ${fld('Footer address','<input id="cfg_quoteFooterAddress" value="'+esc(CONFIG.quoteFooterAddress||'')+'"/>','bottom of every quotation')}
   ${fld('Receipt thank-you text','<textarea id="cfg_receiptThanksText" rows="2">'+esc(CONFIG.receiptThanksText||'')+'</textarea>','appears on every payment receipt')}
+  ${fld('Receipt logo','<input id="cfg_receiptLogoFile" type="file" accept="image/*"/>','optional — replaces text-only branding in the top corner of every payment receipt')}
+  <div id="cfg_receiptLogoPreview">${CONFIG.receiptLogoImage?`<img src="${CONFIG.receiptLogoImage}" style="max-width:120px;max-height:60px;object-fit:contain;margin-top:6px"/>`:''}</div>
   <div class="formactions"><button class="btn primary" id="saveQuoteText">Save text</button></div>
   </div>`;
 }
 function bindQuotationSettingsCtrls(){
+  let receiptLogoImage=CONFIG.receiptLogoImage||'';
+  const logoFile=document.getElementById('cfg_receiptLogoFile');
+  logoFile.onchange=async()=>{
+    if(!logoFile.files[0]) return;
+    try{ receiptLogoImage=await readImageFileAsDataUri(logoFile.files[0],400); document.getElementById('cfg_receiptLogoPreview').innerHTML=`<img src="${receiptLogoImage}" style="max-width:120px;max-height:60px;object-fit:contain;margin-top:6px"/>`; }
+    catch(e){ toast('Could not read that image'); }
+  };
   document.getElementById('saveQuoteText').onclick=async()=>{
     const btn=document.getElementById('saveQuoteText'); btn.disabled=true; btn.textContent='Saving…';
     try{
       await apiSaveConfig({quoteCompanyName:val('cfg_quoteCompanyName').trim(),quoteSiteName:val('cfg_quoteSiteName').trim(),
         quoteDocTypeText:val('cfg_quoteDocTypeText').trim(),quoteNotesText:val('cfg_quoteNotesText').trim(),
         quoteLandNoteText:val('cfg_quoteLandNoteText').trim(),quoteFooterAddress:val('cfg_quoteFooterAddress').trim(),
-        receiptThanksText:val('cfg_receiptThanksText').trim()});
+        receiptThanksText:val('cfg_receiptThanksText').trim(),receiptLogoImage});
       toast('Text saved');
     }catch(e){ toast('Failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save text';
