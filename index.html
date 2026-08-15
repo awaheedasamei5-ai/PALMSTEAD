@@ -722,6 +722,15 @@ input[type="file"]{max-width:100%;box-sizing:border-box}
 .dayGridBlock.dayGridBlockCancelled{opacity:.4}
 .dayGridBlock.dayGridBlockCancelled .dayGridBlockTitle{text-decoration:line-through}
 @media (max-width:640px){.dayGridStaffHead{font-size:10.5px;padding:6px 4px}}
+.monthGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:8px}
+.monthGridWeekday{text-align:center;font-size:10px;font-weight:800;color:var(--muted);padding:4px 0;text-transform:uppercase;letter-spacing:.04em}
+.monthGridCell{aspect-ratio:1;border-radius:10px;border:1px solid var(--line);background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;transition:.15s}
+.monthGridCell:hover{background:var(--paper);transform:translateY(-1px)}
+.monthGridCell.empty{border:none;background:none;cursor:default}
+.monthGridCell.empty:hover{transform:none}
+.monthGridCell.today{border-color:var(--green);border-width:2px}
+.monthGridDate{font-size:12.5px;font-weight:700;color:var(--text)}
+.monthGridCount{font-size:9px;font-weight:800;color:#fff;background:var(--green);border-radius:100px;min-width:15px;height:15px;display:flex;align-items:center;justify-content:center;padding:0 3px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip2{border:1.5px solid var(--line);background:var(--card);border-radius:100px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--text);transition:.15s}
 .lvCalNav{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
@@ -7693,6 +7702,8 @@ function computeDutiesSummary(tasks){
 }
 /* ================= TO-DO LIST (time-boxed personal planner, w/ alarms) ================= */
 let DUTIES_TAB='myday';
+let MONTH_CURSOR=today().slice(0,7);
+let MYDAY_DATE=today();
 let TODO_LOADED=false, TODO_LIST=[], TODO_DATE='';
 let TODO_ALARM_TIMERS=[], TODO_ALARM_ARMED_IDS=new Set();
 // Backed by schedule_items (kind='todo') since the Operations Tracker rebuild -- see
@@ -8149,6 +8160,75 @@ async function apiLoadWeekAgenda(startDate,staffKeys){
 function groupItemsByDate(items){
   const byDate={}; items.forEach(it=>{ (byDate[it.date]=byDate[it.date]||[]).push(it); }); return byDate;
 }
+// Lightweight per-day item counts for the month grid -- just a busy indicator, so
+// this only ever counts (not fetches full rows), including items you're invited to
+// alongside your own, the same "who's actually got something on that day" scope
+// apiLoadDayAgenda/apiLoadWeekAgenda already use.
+async function apiLoadMonthCounts(fromDate,toDate,staffKeys){
+  if(DEMO_MODE){
+    const d=await demoLoad(); const counts={};
+    (d.todos||[]).forEach(t=>{ if(t.date>=fromDate&&t.date<=toDate&&staffKeys.includes(t.assignedTo)&&t.status!=='rescheduled') counts[t.date]=(counts[t.date]||0)+1; });
+    (d.tasks||[]).forEach(t=>{ if(t.dueDate>=fromDate&&t.dueDate<=toDate&&staffKeys.includes(t.assignedTo)) counts[t.dueDate]=(counts[t.dueDate]||0)+1; });
+    return counts;
+  }
+  try{
+    const [todoRes,taskRes,inviteeRes]=await Promise.all([
+      sb.from('schedule_items').select('id,item_date').eq('kind','todo').gte('item_date',fromDate).lte('item_date',toDate).in('assigned_to',staffKeys).neq('status','rescheduled'),
+      sb.from('schedule_items').select('due_date').eq('kind','task').gte('due_date',fromDate).lte('due_date',toDate).in('assigned_to',staffKeys),
+      sb.from('schedule_item_invitees').select('schedule_item_id').in('staff_key',staffKeys)
+    ]);
+    const counts={}; const ownIds=new Set();
+    (todoRes.data||[]).forEach(r=>{ counts[r.item_date]=(counts[r.item_date]||0)+1; ownIds.add(r.id); });
+    (taskRes.data||[]).forEach(r=>{ counts[r.due_date]=(counts[r.due_date]||0)+1; });
+    const inviteeItemIds=[...new Set((inviteeRes.data||[]).map(r=>r.schedule_item_id))].filter(id=>!ownIds.has(id));
+    if(inviteeItemIds.length){
+      const {data:invRows}=await sb.from('schedule_items').select('item_date').eq('kind','todo').gte('item_date',fromDate).lte('item_date',toDate).in('id',inviteeItemIds).neq('status','rescheduled');
+      (invRows||[]).forEach(r=>{ counts[r.item_date]=(counts[r.item_date]||0)+1; });
+    }
+    return counts;
+  }catch(e){ return {}; }
+}
+function monthGridHtml(yearMonth,counts){
+  const [y,m]=yearMonth.split('-').map(Number);
+  const startWeekday=new Date(y,m-1,1).getDay();
+  const daysInMonth=new Date(y,m,0).getDate();
+  const todayIso=today();
+  const cells=[]; for(let i=0;i<startWeekday;i++) cells.push(null);
+  for(let d=1;d<=daysInMonth;d++) cells.push(d);
+  while(cells.length%7!==0) cells.push(null);
+  return `<div class="monthGrid">
+    ${['S','M','T','W','T','F','S'].map(w=>`<div class="monthGridWeekday">${w}</div>`).join('')}
+    ${cells.map(d=>{
+      if(d===null) return `<div class="monthGridCell empty"></div>`;
+      const iso=yearMonth+'-'+String(d).padStart(2,'0');
+      const count=counts[iso]||0;
+      return `<div class="monthGridCell${iso===todayIso?' today':''}" data-monthcellopen="${iso}">
+        <div class="monthGridDate">${d}</div>
+        ${count?`<div class="monthGridCount">${count}</div>`:''}
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+async function paintMonthTab(){
+  const body=document.getElementById('dutiesMonthBody'); if(!body) return;
+  const [y,m]=MONTH_CURSOR.split('-').map(Number);
+  const fromDate=MONTH_CURSOR+'-01';
+  const toDate=MONTH_CURSOR+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0');
+  const counts=await apiLoadMonthCounts(fromDate,toDate,[PROFILE.key]);
+  body.innerHTML=`
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <button class="chip" id="monthPrevBtn">‹</button>
+    <div style="font-weight:800;font-size:15px">${esc(monthLabel(MONTH_CURSOR))}</div>
+    <button class="chip" id="monthNextBtn">›</button>
+  </div>
+  ${monthGridHtml(MONTH_CURSOR,counts)}
+  <div class="mini" style="margin-top:10px;text-align:center">Tap a day to see it in My Day</div>`;
+  document.getElementById('monthPrevBtn').onclick=async()=>{ MONTH_CURSOR=isoPlusMonths(MONTH_CURSOR,-1); await paintMonthTab(); };
+  document.getElementById('monthNextBtn').onclick=async()=>{ MONTH_CURSOR=isoPlusMonths(MONTH_CURSOR,1); await paintMonthTab(); };
+  body.querySelectorAll('[data-monthcellopen]').forEach(el=>el.onclick=async()=>{
+    MYDAY_DATE=el.dataset.monthcellopen; DUTIES_TAB='myday'; await viewDuties();
+  });
+}
 async function viewDuties(){
   const all=DB.tasks||[];
   const mine=all.filter(t=>t.assignedTo===PROFILE.key);
@@ -8158,12 +8238,14 @@ async function viewDuties(){
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Operations Tracker</h2><p>${isMgr?'Every task, who owns it, and how long it’s been open':'Your tasks, and anything you’ve assigned or been escalated'}</p></div></div>
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <button class="chip ${DUTIES_TAB==='myday'?'on':''}" data-dutiestab="myday">My Day</button>
+    <button class="chip ${DUTIES_TAB==='month'?'on':''}" data-dutiestab="month">Month</button>
     <button class="chip ${DUTIES_TAB==='tasks'?'on':''}" data-dutiestab="tasks">Tasks</button>
     <button class="chip ${DUTIES_TAB==='todo'?'on':''}" data-dutiestab="todo">To-Do List</button>
     ${isMgr?`<button class="chip ${DUTIES_TAB==='team'?'on':''}" data-dutiestab="team">Team</button>`:''}
     ${isMgr?`<button class="chip ${DUTIES_TAB==='reports'?'on':''}" data-dutiestab="reports">Reports</button>`:''}
   </div>
   <div id="dutiesMyDayBody" class="${DUTIES_TAB==='myday'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>
+  <div id="dutiesMonthBody" class="${DUTIES_TAB==='month'?'':'hidden'}"><div class="skel" style="height:280px;border-radius:16px"></div></div>
   <div id="dutiesTasksBody" class="${DUTIES_TAB==='tasks'?'':'hidden'}">
   <div class="kpis">${kpi('Open',teamSummary.openCount)}${kpi('Overdue',teamSummary.overdueCount)}${kpi('Completed',teamSummary.doneCount)}${kpi('Avg days to close',teamSummary.avgDaysToClose!=null?teamSummary.avgDaysToClose:'—')}</div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><button class="chip ${dutiesFilter==='mine'?'on':''}" data-dutiesfilter="mine">Mine (${mine.length})</button><button class="chip ${dutiesFilter==='byme'?'on':''}" data-dutiesfilter="byme">Assigned by me (${byMe.length})</button>${isMgr?`<button class="chip ${dutiesFilter==='all'?'on':''}" data-dutiesfilter="all">Team (${all.length})</button>`:''}</div>
@@ -8176,7 +8258,12 @@ async function viewDuties(){
   <div id="dutiesTodoBody" class="${DUTIES_TAB==='todo'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>
   ${isMgr?`<div id="dutiesTeamBody" class="${DUTIES_TAB==='team'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>`:''}
   ${isMgr?`<div id="dutiesReportsBody" class="${DUTIES_TAB==='reports'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>`:''}`;
-  document.querySelectorAll('[data-dutiestab]').forEach(b=>b.onclick=async()=>{ DUTIES_TAB=b.dataset.dutiestab; await viewDuties(); });
+  document.querySelectorAll('[data-dutiestab]').forEach(b=>b.onclick=async()=>{
+    // Clicking "My Day" directly always jumps back to today -- only month-view
+    // click-through leaves MYDAY_DATE pointing at a different day.
+    if(b.dataset.dutiestab==='myday') MYDAY_DATE=today();
+    DUTIES_TAB=b.dataset.dutiestab; await viewDuties();
+  });
   if(DUTIES_TAB==='tasks'){ bindDutiesCtrls(); paintDuties(); }
   else if(DUTIES_TAB==='todo'){
     if(!TODO_DATE) TODO_DATE=today();
@@ -8184,6 +8271,7 @@ async function viewDuties(){
     paintTodoTab();
   }
   else if(DUTIES_TAB==='myday'){ await paintMyDayTab(); }
+  else if(DUTIES_TAB==='month'){ await paintMonthTab(); }
   else if(DUTIES_TAB==='team'){ await paintTeamTab(); }
   else if(DUTIES_TAB==='reports'){ await paintOpsReportsTab(); }
   renderBottomNavNow();
@@ -8193,18 +8281,21 @@ async function viewDuties(){
 // week-ahead preview. The personal counterpart to the manager's Team tab.
 async function paintMyDayTab(){
   const body=document.getElementById('dutiesMyDayBody'); if(!body) return;
-  const date=today();
+  const date=MYDAY_DATE||today();
+  const isToday=date===today();
   const [{blocks,dueTasks},weekItems]=await Promise.all([apiLoadDayAgenda(date,[PROFILE.key]),apiLoadWeekAgenda(date,[PROFILE.key])]);
   const mine=(DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key);
   const summary=computeDutiesSummary(mine);
   const escalatedToMe=mine.filter(t=>t.escalatedTo===PROFILE.key).length;
   body.innerHTML=`
   <div class="kpis">${kpi('Open',summary.openCount)}${kpi('Escalated',escalatedToMe)}${kpi('Overdue',summary.overdueCount)}${kpi('Completed',summary.doneCount)}</div>
-  <div class="sectitle" style="margin-top:0"><h3>Today</h3><span class="cnt">${esc(fmtLongDate(date))}</span></div>
+  <div class="sectitle" style="margin-top:0"><h3>${isToday?'Today':esc(fmtLongDate(date))}</h3><span class="cnt">${isToday?esc(fmtLongDate(date)):`<button class="chip" id="mydayBackToday" style="padding:4px 10px;font-size:11px">Back to today</button>`}</span></div>
   ${renderDayGrid([{key:PROFILE.key,name:'Today'}],{[PROFILE.key]:blocks},false)}
   ${dueTaskChipsHtml(dueTasks)}
   <div class="sectitle"><h3>Coming up this week</h3></div>
   ${weekListHtml(date,groupItemsByDate(weekItems))}`;
+  const backBtn=document.getElementById('mydayBackToday');
+  if(backBtn) backBtn.onclick=async()=>{ MYDAY_DATE=today(); await paintMyDayTab(); };
   document.querySelectorAll('[data-daygridopen]').forEach(el=>el.onclick=()=>{
     const it=blocks.find(b=>b.id===el.dataset.daygridopen); if(it) toast(it.startTime+'–'+it.endTime+' · '+it.title);
   });
@@ -15434,6 +15525,7 @@ function easterSundayForYear(year){
   return year+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');
 }
 function isoPlusDays(iso,n){ const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function isoPlusMonths(yearMonth,n){ const [y,m]=yearMonth.split('-').map(Number); const d=new Date(y,m-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 // Eid al-Fitr = 1 Shawwal (month 10); Eid al-Adha = 10 Dhu al-Hijjah (month 12).
 // A given Gregorian year can only ever contain the tail/head of 1-2 Hijri years,
 // so we probe a small range around the estimate and keep whichever land in-year.
