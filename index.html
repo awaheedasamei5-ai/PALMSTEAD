@@ -6767,6 +6767,7 @@ function buildAuthorizationPDF(a,plotsList,siteManagerName){
   doc.text('Management Signature & Date',12,y+19);
   doc.text('Site Manager: '+(siteManagerName||PROFILE.name),118,y+19);
   doc.text(today()+' '+nowTime(),118,y+24);
+  if(PROFILE.signature_data) pdfStampSignature(doc,120,y+13,40,12,PROFILE.signature_data);
 
   const uri=doc.output('datauristring');
   const fname='Authorization_'+(a.clientName||'client').replace(/\s+/g,'_')+'.pdf';
@@ -9197,14 +9198,25 @@ function buildWeeklyVisitAuthPDF(form,visits){
   doc.setDrawColor(20,20,20); doc.setLineWidth(0.7); doc.rect(x0,tableTop,tableW,y-tableTop);
 
   y+=14;
-  if(y>270){ doc.addPage(); y=16; }
+  if(y>264){ doc.addPage(); y=16; }
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(20,20,20);
+  // Left block: whoever downloads/prints this form signs here as the preparer --
+  // auto-stamped with their own saved signature + today's date, same click-to-sign
+  // convenience used on the leave letter and memo PDFs (getStaffSignature/pdfStampSignature).
   doc.text('Signed:.....................................',x0,y);
+  doc.text('Date:.....................................',x0,y+9);
+  if(PROFILE.signature_data) pdfStampSignature(doc,x0+doc.getTextWidth('Signed: '),y,30,10,PROFILE.signature_data);
+  doc.text(fmtLongDate(today()),x0+doc.getTextWidth('Date: '),y+9);
+
   const rx=x0+tableW-72;
   doc.text('Approved By:.....................................',rx,y);
   doc.text('Signed:.....................................',rx,y+9);
   doc.text('Date:.....................................',rx,y+18);
-  if(form.status==='Finalized'&&form.approvedSignature) pdfStampSignature(doc,rx+30,y+9,32,12,form.approvedSignature);
+  if(form.status==='Finalized'){
+    if(form.approvedByName) doc.text(form.approvedByName,rx+doc.getTextWidth('Approved By: '),y);
+    if(form.approvedSignature) pdfStampSignature(doc,rx+doc.getTextWidth('Signed: '),y+9,30,10,form.approvedSignature);
+    if(form.finalizedAt) doc.text(fmtLongDate(String(form.finalizedAt).slice(0,10)),rx+doc.getTextWidth('Date: '),y+18);
+  }
 
   const fname='SiteVisitAuth_'+(form.visitDate||form.weekStart)+'.pdf'; const uri=doc.output('datauristring'); doc.save(fname); logDownload(fname,'pdf',uri);
 }
