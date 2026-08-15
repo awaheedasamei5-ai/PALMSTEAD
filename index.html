@@ -5236,6 +5236,7 @@ function ensureContractRequestsLiveSubscribed(){
         if(document.getElementById('contractAppBody')) paintContractAppBody();
       } else {
         if(CURRENT_ROUTE_NAME==='clientcontractsale') viewClientContractSale();
+        else if(CURRENT_ROUTE_NAME==='clienthome') clientHome();
       }
     };
     CONTRACT_REQUESTS_LIVE_CHANNEL=sb.channel('contract-requests-live')
@@ -11758,9 +11759,30 @@ async function saveAccountPw(){
 /* ================= CLIENT PORTAL: DASHBOARD & SETTINGS ================= */
 const CLIENT_STAGE_LABELS={'1':'Reservation','2A':'Deposit in progress','2B':'On installment plan','3':'Installments in progress','4':'Fully paid','Lost':'Inactive'};
 function clientStageLabel(s){ return CLIENT_STAGE_LABELS[s]||s||'—'; }
+// Three states per lead: needs KYC/address filled in first (same check
+// generateAndRecordContract uses -- reused here rather than a second definition
+// of "has the client filled this in"), submitted and awaiting Management review,
+// or fulfilled and ready to download. Clicking in the first two states routes to
+// the KYC form (pre-selecting this lead); fulfilled downloads directly via
+// buildContractOfSalePDF, consistent with the app's regenerate-fresh-not-store
+// design for this document.
+function clientContractState(lead){
+  const req=CLIENT_CONTRACT_REQS.filter(r=>r.leadId===lead.id).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
+  if(req&&req.status==='fulfilled') return 'ready';
+  const hasKyc=!!(lead.address||(lead.kyc&&Object.keys(lead.kyc).length));
+  if(req||hasKyc) return 'pending';
+  return 'needsInfo';
+}
+function clientContractButtonHtml(lead){
+  const state=clientContractState(lead);
+  if(state==='ready') return `<button class="btn gold" data-contractdl="${esc(lead.id)}" style="padding:7px 14px;font-size:11.5px">⬇ Download Contract of Sale</button>`;
+  if(state==='pending') return `<button class="btn ghost" data-contractgo="${esc(lead.id)}" style="padding:7px 14px;font-size:11.5px">⏳ Contract — awaiting review</button>`;
+  return `<button class="btn ghost" data-contractgo="${esc(lead.id)}" style="padding:7px 14px;font-size:11.5px">📝 Contract of Sale</button>`;
+}
 async function clientHome(){
   const leads=(CLIENT_DB&&CLIENT_DB.leads)||[];
   const payments=(CLIENT_DB&&CLIENT_DB.payments)||[];
+  if(leads.length){ try{ CLIENT_CONTRACT_REQS=await withLoadTimeout(apiClientLoadMyContractRequests(leads.map(l=>l.id)),15000,'Contract status'); }catch(e){} }
   const totalPlots=leads.reduce((s,l)=>s+num(l.noPlots),0);
   const totalGrand=leads.reduce((s,l)=>{ const c=computeLead(l); return s+(l.grandTotal!=null?num(l.grandTotal):c.grand); },0);
   const totalPaid=leads.reduce((s,l)=>s+num(l.amtPaid),0);
@@ -11835,7 +11857,10 @@ async function clientHome(){
           ${sched?`<div style="margin-top:8px;padding:8px 10px;border-radius:10px;font-size:11.5px;font-weight:600;background:${sched.arrears>0?'#FDECEA':'#EAF6EC'};color:${sched.arrears>0?'#B4472F':'#1E7A56'}">
             ${sched.arrears>0?`Overdue ${ghs(sched.arrears)} — `:''}Next payment ${ghs(sched.expectedThisMonth||sched.monthlyInstallment)} due ${new Date(sched.nextDueDate+'T00:00:00').toLocaleDateString('en-GB')}
           </div>`:''}
-          <div style="margin-top:10px"><button class="btn ghost" data-quote="${l.id}" style="padding:7px 14px;font-size:11.5px">Download quotation</button></div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn ghost" data-quote="${l.id}" style="padding:7px 14px;font-size:11.5px">Download quotation</button>
+            ${clientContractButtonHtml(l)}
+          </div>
         </div>`;
       }).join('') : emptyState(ic.lead,'No purchases on file yet','Once your agent records your purchase, it will show up here.')}
     </div>
@@ -11866,6 +11891,11 @@ async function clientHome(){
     const lead=leads.find(x=>x.id===b.dataset.quote);
     if(lead) buildClientQuotationPDF(lead);
   });
+  V.querySelectorAll('[data-contractdl]').forEach(b=>b.onclick=()=>{
+    const lead=leads.find(x=>x.id===b.dataset.contractdl);
+    if(lead) buildContractOfSalePDF(lead);
+  });
+  V.querySelectorAll('[data-contractgo]').forEach(b=>b.onclick=()=>route('clientcontractsale',b.dataset.contractgo));
   V.querySelectorAll('[data-viewalloc]').forEach(b=>b.onclick=()=>route('clientallocation',b.dataset.viewalloc));
   const stBtn=document.getElementById('dlStatement'); if(stBtn) stBtn.onclick=()=>buildClientStatementPDF();
   const arBtn=document.getElementById('dlAllReceipts'); if(arBtn) arBtn.onclick=()=>downloadAllReceipts();
@@ -11899,14 +11929,16 @@ async function viewClientContact(){
    Management to review and release, the same human-in-the-loop principle as the
    existing staff-side request flow. Never writes to the lead directly -- clients
    have no RLS write access to leads, only to their own submission here. */
-let CLIENT_CONTRACT_LEAD_IDX=0;
-async function viewClientContractSale(){
+let CLIENT_CONTRACT_LEAD_IDX=0, CLIENT_CONTRACT_REQS=[];
+async function viewClientContractSale(preselectLeadId){
   CLIENT_CONTRACT_LEAD_IDX=0;
   V.innerHTML=`${back('clientmore')}<div class="pagehead"><div><div class="eyebrow">Contract of Sale</div><h2>Your contract</h2><p>Fill in your details below — Management reviews and confirms before it's issued.</p></div></div>
   <div id="clientContractBody"><div style="padding:40px 0"><div class="skel" style="height:200px;border-radius:16px"></div></div></div>`;
   const leads=(CLIENT_DB&&CLIENT_DB.leads)||[];
   if(!leads.length){ document.getElementById('clientContractBody').innerHTML=emptyState(ic.doc,'No purchase on file yet','Once your agent records your purchase, you can fill in your contract details here.'); return; }
+  if(preselectLeadId){ const idx=leads.findIndex(l=>l.id===preselectLeadId); if(idx>=0) CLIENT_CONTRACT_LEAD_IDX=idx; }
   let reqs=[]; try{ reqs=await withLoadTimeout(apiClientLoadMyContractRequests(leads.map(l=>l.id)),15000,'Contract status'); }catch(e){}
+  CLIENT_CONTRACT_REQS=reqs;
   paintClientContractSale(leads,reqs);
 }
 function paintClientContractSale(leads,reqs){
@@ -11917,7 +11949,8 @@ function paintClientContractSale(leads,reqs){
   const address=(existing&&existing.clientAddress)||lead.address||'';
   const statusBanner=!existing?'':existing.status==='pending'
     ?`<div class="rowcard" style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#FDF6E3,#F4F6F5);border:1px solid var(--line)"><div class="mini" style="font-weight:700;color:#8A6E12">Submitted — awaiting review</div><div class="mini" style="margin-top:2px">Management is reviewing your details. You can still update and resubmit below if anything changes.</div></div>`
-    :`<div class="rowcard" style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#EAF6EC,#F4F6F5);border:1px solid var(--line)"><div class="mini" style="font-weight:700;color:#1E7A56">Reviewed and issued</div><div class="mini" style="margin-top:2px">Your agent will be in touch with the signed copy. You can still update your details below if anything's changed.</div></div>`;
+    :`<div class="rowcard" style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#EAF6EC,#F4F6F5);border:1px solid var(--line)"><div class="mini" style="font-weight:700;color:#1E7A56">Contract ready</div><div class="mini" style="margin-top:2px">Your Contract of Sale is ready — download it from your home screen, or update your details below if anything's changed.</div>
+      <button class="btn gold" id="cc_downloadBtn" style="width:100%;margin-top:10px">⬇ Download Contract of Sale</button></div>`;
   body.innerHTML=`
   ${leads.length>1?`<div class="chips" style="margin-bottom:16px">${leads.map((l,i)=>`<button type="button" class="chip2 ${i===CLIENT_CONTRACT_LEAD_IDX?'on':''}" data-ccleadpick="${i}">${esc(l.plotType||'Plot')} · ${l.noPlots||1} plot(s)</button>`).join('')}</div>`:''}
   ${statusBanner}
@@ -11937,6 +11970,7 @@ function paintClientContractSale(leads,reqs){
     <div class="formactions"><button class="btn gold" id="ccSubmitBtn" style="width:100%">${existing?'Update &amp; resubmit':'Submit for review'}</button></div>
   </div>`;
   body.querySelectorAll('[data-ccleadpick]').forEach(b=>b.onclick=()=>{ CLIENT_CONTRACT_LEAD_IDX=+b.dataset.ccleadpick; paintClientContractSale(leads,reqs); });
+  const dlBtn=document.getElementById('cc_downloadBtn'); if(dlBtn) dlBtn.onclick=()=>buildContractOfSalePDF(lead);
   document.getElementById('ccSubmitBtn').onclick=async()=>{
     const btn=document.getElementById('ccSubmitBtn'); btn.disabled=true; btn.textContent='Submitting…';
     const address=val('cc_address').trim();
@@ -11946,8 +11980,8 @@ function paintClientContractSale(leads,reqs){
       landUsage:val('cc_usage'),landUsageDetail:val('cc_usagedetail').trim()};
     try{
       await apiClientSubmitContractRequest(lead.id,CLIENT_PROFILE.name,address,kyc,null);
-      route('clientmore');
-      await showClientSuccessModal('Details submitted!',"Thank you — Management will review your details and confirm your contract shortly.");
+      route('clienthome');
+      await showClientSuccessModal('Contract request submitted',"Thank you — Management will review your details and confirm your contract shortly. You'll see it ready to download on your home screen.");
     }catch(e){ toast('Could not submit: '+(e.message||e)); btn.disabled=false; btn.textContent=existing?'Update & resubmit':'Submit for review'; }
   };
 }
