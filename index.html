@@ -10351,6 +10351,8 @@ function formAccount(){
   const hasPin = pinLockExists(PROFILE.key);
   V.innerHTML=`${back(homeRoute)}
   ${profileHeroHtml(PROFILE,PROFILE.role==='manager'?'Management':'Agent')}
+  ${PROFILE.role!=='manager'?`${settingsSectionHead('pulse','Performance','how you compare across the team')}
+  <div class="formwrap" id="perfSectionBody"><div class="skel" style="height:110px;border-radius:16px"></div></div>`:''}
   ${settingsSectionHead('image','Profile picture')}
   <div class="formwrap acctMediaRow">
     <div id="avatarPreview" style="width:64px;height:64px;border-radius:100px;overflow:hidden;flex:0 0 auto;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted);font-size:22px">${PROFILE.avatar?`<img src="${PROFILE.avatar}" style="width:100%;height:100%;object-fit:cover"/>`:esc((PROFILE.name||'?')[0])}</div>
@@ -10443,6 +10445,42 @@ function formAccount(){
   document.getElementById('saveAboutMeBtn').onclick=saveAccountAboutMe;
   if(hasPin){ document.getElementById('removePinBtn').onclick=()=>{ if(!confirm('Remove PIN sign-in from this device?')) return; removePinLock(PROFILE.key); toast('PIN removed from this device'); formAccount(); }; }
   else{ document.getElementById('savePinBtn').onclick=saveAccountPin; }
+  if(PROFILE.role!=='manager') paintPerformanceSection();
+}
+// Agent-only. formAccount() itself stays synchronous (same skeleton-then-async-paint
+// pattern as paintMgrOpsToday() in mgrOverview()) -- reads the exact same leaderboard_rows
+// RPC and agentPoints() formula mgrLeaderboard() uses, so an agent's own rank here can
+// never disagree with what Management sees on the Leaderboard.
+async function paintPerformanceSection(){
+  const body=document.getElementById('perfSectionBody'); if(!body) return;
+  try{
+    const yr=new Date().getFullYear();
+    const rows=await apiLoadLeaderboardRows(yr+'-01-01',yr+'-12-31');
+    const scored=rows.map(r=>({...r,points:agentPoints(r)})).sort((a,b)=>b.points-a.points);
+    const myIdx=scored.findIndex(r=>r.staffKey===PROFILE.key);
+    if(myIdx===-1){ body.innerHTML=emptyState(ic.grid,'No data yet',''); return; }
+    const me=scored[myIdx];
+    const above=myIdx>0?scored[myIdx-1]:null;
+    const gap=above?Math.max(above.points-me.points,0):0;
+    const w=CONFIG.leaderboardWeights||defaultConfig().leaderboardWeights;
+    const suggestions=[];
+    if(above&&gap>0){
+      if(w.siteVisits>0){ const n=Math.ceil(gap/w.siteVisits); suggestions.push(n+' more site visit'+(n===1?'':'s')+' would close the gap'); }
+      if(w.dealsClosed>0){ const n=Math.ceil(gap/w.dealsClosed); suggestions.push(n+' more deal'+(n===1?'':'s')+' closed would close the gap'); }
+      if(w.tasksCompleted>0){ const n=Math.ceil(gap/w.tasksCompleted); suggestions.push(n+' more task'+(n===1?'':'s')+' completed would close the gap'); }
+      if(w.regularity>0){ const n=Math.ceil(gap/w.regularity); suggestions.push(n+' more day'+(n===1?'':'s')+' attended would close the gap'); }
+      if(w.collected>0){ const amt=Math.ceil(gap/w.collected); suggestions.push(ghs(amt)+' more collected would close the gap'); }
+    }
+    body.innerHTML=`
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">
+      <div style="font-size:36px;font-weight:800;font-family:'IBM Plex Mono',monospace;color:var(--gold)">#${myIdx+1}</div>
+      <div><div class="mini">of ${scored.length} on the team</div><div style="font-weight:700;font-size:17px">${me.points} points</div></div>
+    </div>
+    ${above?`<div class="rowcard" style="margin-bottom:14px;padding:12px 14px"><div class="mini">Gap to #${myIdx} — ${esc(above.staffName)}</div><div style="font-weight:700;font-size:16px;color:#B4472F">${gap} point${gap===1?'':'s'}</div></div>`
+      :`<div class="tag ok" style="display:inline-flex;margin-bottom:4px">You're #1 — keep it up</div>`}
+    ${suggestions.length?`<div class="mini" style="font-weight:700;margin:12px 0 6px">Ways to close the gap</div>
+      <ul style="margin:0;padding-left:18px">${suggestions.map(s=>`<li class="mini" style="margin-bottom:4px">${esc(s)}</li>`).join('')}</ul>`:''}`;
+  }catch(e){ body.innerHTML=emptyState(ic.alertTri,'Could not load performance',(e.message||'Something went wrong')+' — pull to refresh or tap back and try again.'); }
 }
 async function saveAccountContact(){
   const phone=val('ct_phone').trim(), whatsapp=val('ct_whatsapp').trim();
@@ -12255,7 +12293,10 @@ async function managerView(){
   else if(mgrTab==='Data Check'){ const renderMgrDataCheck=()=>{ body.innerHTML=renderDataCheck(null); bindDataCheckCtrls(null,renderMgrDataCheck); }; renderMgrDataCheck(); }
   else if(mgrTab==='Leaderboard'){
     if(!LEADERBOARD_TODOS_LOADED){ try{ LEADERBOARD_TODOS_LIST=await withLoadTimeout(apiLoadAllTodosForLeaderboard(isoPlusDays(today(),-90),today()),15000,'Leaderboard'); LEADERBOARD_TODOS_LOADED=true; }catch(e){} }
-    if(!LEADERBOARD_ATTENDANCE_LOADED){ try{ LEADERBOARD_ATTENDANCE_LIST=await withLoadTimeout(apiLoadAllAttendanceForLeaderboard(isoPlusDays(today(),-90),today()),15000,'Attendance'); LEADERBOARD_ATTENDANCE_LOADED=true; }catch(e){} }
+    // deals_closed_year is scoped to the selected year, so this reloads whenever slYear
+    // changes -- everything else the RPC returns (site visits, tasks/to-dos, attendance)
+    // is a fixed 90-day/all-time window independent of slYear.
+    if(LEADERBOARD_ROWS_YEAR!==slYear){ try{ LEADERBOARD_ROWS=await withLoadTimeout(apiLoadLeaderboardRows(slYear+'-01-01',slYear+'-12-31'),15000,'Leaderboard'); LEADERBOARD_ROWS_YEAR=slYear; }catch(e){} }
     body.innerHTML=mgrLeaderboard(); bindLeagueCtrls();
   }
   else if(mgrTab==='Reports'){ body.innerHTML=mgrReports(); bindReportCtrls(); }
@@ -12575,18 +12616,26 @@ function agentPoints(r){
     + (r.daysAttended||0)*(w.regularity||0) + (r.onTimeDays||0)*(w.punctuality||0));
 }
 let LEADERBOARD_TODOS_LOADED=false, LEADERBOARD_TODOS_LIST=[];
+let LEADERBOARD_ROWS_YEAR=null, LEADERBOARD_ROWS=[];
 async function apiLoadAllTodosForLeaderboard(fromDate,toDate){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.todos||[]).filter(t=>t.date>=fromDate&&t.date<=toDate); }
   const {data,error}=await sb.from('schedule_items').select('*').eq('kind','todo').gte('item_date',fromDate).lte('item_date',toDate);
   if(error) throw error; return (data||[]).map(mapTodo);
 }
-let LEADERBOARD_ATTENDANCE_LOADED=false, LEADERBOARD_ATTENDANCE_LIST=[];
-// al_sel_own_or_mgr RLS already lets a manager session see every staff member's rows,
-// so this is a plain company-wide range query, same shape as the todos load above.
-async function apiLoadAllAttendanceForLeaderboard(fromDate,toDate){
+const mapLeaderboardRow=r=>({staffKey:r.staff_key,staffName:r.staff_name,totalCollected:num(r.total_collected),
+  dealsClosedYear:num(r.deals_closed_year),siteVisits:num(r.site_visits),tasksCompleted:num(r.tasks_completed),
+  avgTaskDays:r.avg_task_days!=null?Math.round(num(r.avg_task_days)*10)/10:null,todosCompleted:num(r.todos_completed),
+  daysAttended:num(r.days_attended),onTimeDays:num(r.on_time_days)});
+// Single shared source of truth for every points ingredient (collected, deals closed,
+// site visits, tasks/to-dos done, attendance) -- a narrow SECURITY DEFINER RPC so any
+// staff member can rank themselves against the whole team without the broad leads/
+// payments RLS a manager has. Both mgrLeaderboard() and the agent-facing Performance
+// section in formAccount() read from this exact same call, so their numbers can never
+// drift the way two independent client-side computations eventually would.
+async function apiLoadLeaderboardRows(fromDate,toDate){
   if(DEMO_MODE){ return []; }
-  const {data,error}=await sb.from('attendance_log').select('*').gte('work_date',fromDate).lte('work_date',toDate);
-  if(error) throw error; return (data||[]).map(mapAttendance);
+  const {data,error}=await sb.rpc('leaderboard_rows',{p_from:fromDate,p_to:toDate});
+  if(error) throw error; return (data||[]).map(mapLeaderboardRow);
 }
 function openLeaderboardWeightsModal(){
   const w=CONFIG.leaderboardWeights||defaultConfig().leaderboardWeights;
@@ -12621,9 +12670,6 @@ function openLeaderboardWeightsModal(){
 }
 function mgrLeaderboard(){
   const agents=allAgentLists();
-  const ninetyAgo=isoPlusDays(today(),-90);
-  const recentTasks=(DB.tasks||[]).filter(t=>t.status==='Done'&&(t.completedAt||'').slice(0,10)>=ninetyAgo);
-  const recentTodos=(LEADERBOARD_TODOS_LIST||[]).filter(t=>t.status==='closed');
   const years=new Set([slYear]);
   agents.forEach(a=>a.list.forEach(l=>{ const mk=monthKey(l.date); if(mk) years.add(+mk.slice(0,4)); }));
   const yearList=[...years].sort((a,b)=>b-a);
@@ -12631,29 +12677,27 @@ function mgrLeaderboard(){
   const months=last6MonthKeys();
 
   const rows=agents.map(a=>{
+    // Every points ingredient (totalCollected/dealsClosedYear/siteVisits/tasksCompleted/
+    // avgTaskDays/todosCompleted/daysAttended/onTimeDays) comes from leaderboard_rows() --
+    // the same RPC the Performance tab reads -- not recomputed from DB.leads/DB.payments
+    // here. Everything else below (closedValueYear, totalPipeline, winRate, health,
+    // avgMonthly, monthVals, workloadVolume) is display-only enrichment a manager's own
+    // RLS already gives full access to, so it stays client-computed as before.
+    const lb=(LEADERBOARD_ROWS||[]).find(x=>x.staffKey===a.key)||{};
     const wonYear=a.list.filter(l=>isFullyPaid(l) && monthKey(l.date) && monthKey(l.date).startsWith(String(slYear)));
     const closedValueYear=wonYear.reduce((s,l)=>s+num(l.grandTotal!=null?l.grandTotal:computeLead(l).grand),0);
     const k=kpisOf(a.list);
     const won=a.list.filter(l=>isFullyPaid(l)).length, lost=a.list.filter(l=>l.stage===STAGE_LOST).length;
     const winRate=(won+lost)? Math.round(won/(won+lost)*100) : 0;
     const health=pipelineHealth(a.list);
-    const siteVisits=(DB.sitevisits||[]).filter(v=>v.agentKey===a.key).length || a.list.filter(l=>l.siteVisit==='Yes').length;
     const monthVals=months.map(mk=>(DB.payments||[]).filter(p=>p.agentKey===a.key && (p.date||'').slice(0,7)===mk).reduce((s,p)=>s+num(p.amount),0));
     const monthsActive=monthVals.filter(v=>v>0).length||1;
     const avgMonthly=Math.round(monthVals.reduce((s,v)=>s+v,0)/monthsActive);
     const profile=(DB.profiles||[]).find(p=>p.agent_key===a.key);
-    const myDoneTasks=recentTasks.filter(t=>t.assignedTo===a.key);
-    const tasksCompleted=myDoneTasks.length;
-    const taskDurations=myDoneTasks.map(t=>{ const c=new Date(t.createdAt), d=new Date(t.completedAt); return (d-c)/86400000; }).filter(n=>n>=0&&isFinite(n));
-    const avgTaskDays=taskDurations.length?Math.round((taskDurations.reduce((s,n)=>s+n,0)/taskDurations.length)*10)/10:null;
-    const todosCompleted=recentTodos.filter(t=>t.ownerKey===a.key).length;
     const workloadVolume=(DB.tasks||[]).filter(t=>t.assignedTo===a.key).length + (LEADERBOARD_TODOS_LIST||[]).filter(t=>t.ownerKey===a.key).length;
-    const cutoff=CONFIG.attendanceCutoffTime||'09:00';
-    const myAttendance=(LEADERBOARD_ATTENDANCE_LIST||[]).filter(x=>x.staffKey===a.key&&x.signInAt);
-    const daysAttended=myAttendance.length;
-    const onTimeDays=myAttendance.filter(x=>x.signInAt.slice(11,16)<=cutoff).length;
-    const r={name:a.name,key:a.key,avatar:profile?profile.avatar:null,totalCollected:k.coll,dealsClosedYear:wonYear.length,closedValueYear,
-      totalPipeline:k.val,winRate,health,siteVisits,avgMonthly,monthVals,tasksCompleted,avgTaskDays,todosCompleted,workloadVolume,daysAttended,onTimeDays};
+    const r={name:a.name,key:a.key,avatar:profile?profile.avatar:null,totalCollected:lb.totalCollected||0,dealsClosedYear:lb.dealsClosedYear||0,closedValueYear,
+      totalPipeline:k.val,winRate,health,siteVisits:lb.siteVisits||0,avgMonthly,monthVals,tasksCompleted:lb.tasksCompleted||0,avgTaskDays:lb.avgTaskDays,
+      todosCompleted:lb.todosCompleted||0,workloadVolume,daysAttended:lb.daysAttended||0,onTimeDays:lb.onTimeDays||0};
     r.points=agentPoints(r);
     return r;
   }).sort((x,y)=>y.points-x.points);
