@@ -726,7 +726,7 @@ body.dark .achEarned{color:#E8C158}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media (max-width:430px){.grid2{grid-template-columns:1fr}}
 .acctMediaRow{display:flex;align-items:center;gap:16px}
-@media (max-width:430px){.acctMediaRow{flex-direction:column;align-items:flex-start}}
+@media (max-width:430px){.acctMediaRow{flex-direction:column;align-items:flex-start}.acctMediaRow>div:last-child{width:100%}}
 /* Native file-input buttons have unpredictable intrinsic width on mobile browsers --
    left unconstrained, one can force its whole row (and the page) wider than the
    viewport, which is what read as "text spilling out of the placeholder" and the
@@ -851,7 +851,7 @@ body.dark .empty .bigicon{background:linear-gradient(135deg,#182541,#132038)}
 .agentrow .ai{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
 .agentrow .ai>div{min-width:0}
 .agentrow .nm,.agentrow .mini{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mini{font-size:11px;color:var(--muted)}
+.mini{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
 select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;background:#fff;font-size:13px}
 .footer-note{text-align:center;color:var(--muted);font-size:11.5px;padding:20px 10px 4px;display:flex;align-items:center;justify-content:center;gap:8px}
 .league-wrap{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow-x:auto;animation:fadeUp .4s ease both}
@@ -5724,11 +5724,20 @@ const VAULT_ICONS={'Documents':'📁','Operations':'🗂️','Money':'💰','Ins
 // A vault is a collapsed <details> card -- tap it and the apps inside expand in
 // place. Cuts a 13-tile flat grid down to 4 tiles up front, instead of just
 // labelling the same flat grid (which is what the section-header version did).
+// Which group is open persists per hub (opts.hubId) in VAULT_OPEN_STATE so that
+// navigating into an app and back restores the group the user had open, instead
+// of always resetting to the first one -- see bindVaultAccordion() for the click
+// handler that keeps groups mutually exclusive and writes this state.
+const VAULT_OPEN_STATE={};
 function vaultGridHtml(groups,opts){
   opts=opts||{};
-  return groups.filter(g=>g.items.length).map((g,i)=>{
+  const visible=groups.filter(g=>g.items.length);
+  const remembered=opts.hubId?VAULT_OPEN_STATE[opts.hubId]:undefined;
+  const openTitle=remembered!==undefined?remembered:(opts.openFirst&&visible[0]?visible[0].title:null);
+  return visible.map((g,i)=>{
     const badgeTotal=g.items.reduce((s,a)=>s+(a.badgeKind?unreadByKind(a.badgeKind):0)+(a.badgeCountKey?((DB.badgeCounts&&DB.badgeCounts[a.badgeCountKey])||0):0),0);
-    return `<details class="vaultCard" ${opts.openFirst&&i===0?'open':''}>
+    const isOpen=opts.hubId?g.title===openTitle:(opts.openFirst&&i===0);
+    return `<details class="vaultCard" data-vaulttitle="${esc(g.title)}" ${isOpen?'open':''}>
       <summary class="vaultSummary">
         <span class="vaultIcon">${VAULT_ICONS[g.title]||'📁'}</span>
         <span class="vaultInfo"><span class="vaultTitle">${esc(g.title)}</span><span class="vaultCount">${g.items.length} app${g.items.length===1?'':'s'}</span></span>
@@ -5738,6 +5747,21 @@ function vaultGridHtml(groups,opts){
       <div class="appGrid vaultContents">${g.items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
     </details>`;
   }).join('');
+}
+// Pairs with vaultGridHtml({hubId}) -- enforces one-open-at-a-time and remembers
+// the open group in VAULT_OPEN_STATE[hubId] across remounts of that hub screen.
+function bindVaultAccordion(container,hubId){
+  if(!container||!hubId) return;
+  container.querySelectorAll('details.vaultCard').forEach(d=>{
+    d.addEventListener('toggle',()=>{
+      if(d.open){
+        VAULT_OPEN_STATE[hubId]=d.dataset.vaulttitle;
+        container.querySelectorAll('details.vaultCard').forEach(o=>{ if(o!==d) o.open=false; });
+      } else if(VAULT_OPEN_STATE[hubId]===d.dataset.vaulttitle){
+        VAULT_OPEN_STATE[hubId]=null;
+      }
+    });
+  });
 }
 function bindMgrAppGrid(grid,items){
   grid.querySelectorAll('[data-moreapp]').forEach(b=>{
@@ -5757,8 +5781,9 @@ function viewMgrSalesDesk(){
   ];
   const items=groups.flatMap(g=>g.items);
   V.innerHTML=`<div class="pagehead"><div><h2>Sales</h2><p>Client database, plots, allocations, site visits, enquiries &amp; plot requests</p></div></div>
-  <div id="mgrSalesGrid">${vaultGridHtml(groups,{openFirst:true})}</div>`;
+  <div id="mgrSalesGrid">${vaultGridHtml(groups,{openFirst:true,hubId:'mgrSalesDesk'})}</div>`;
   bindMgrAppGrid(document.getElementById('mgrSalesGrid'),items);
+  bindVaultAccordion(document.getElementById('mgrSalesGrid'),'mgrSalesDesk');
 }
 function viewOfficeDesk(){
   const isMgr=PROFILE.role==='manager';
@@ -5791,8 +5816,9 @@ function viewOfficeDesk(){
   ];
   const items=groups.flatMap(g=>g.items);
   V.innerHTML=`<div class="pagehead"><div><h2>Office</h2><p>Documents, operations &amp; feedback${isMgr?', plus the leaderboard':''} — everything off to the side of your daily pipeline</p></div></div>
-  <div id="officeDeskGrid">${vaultGridHtml(groups,{openFirst:true})}</div>`;
+  <div id="officeDeskGrid">${vaultGridHtml(groups,{openFirst:true,hubId:'officeDesk'})}</div>`;
   bindMgrAppGrid(document.getElementById('officeDeskGrid'),items);
+  bindVaultAccordion(document.getElementById('officeDeskGrid'),'officeDesk');
 }
 function viewMore(){
   V.innerHTML=`<div class="pagehead"><div><h2>More</h2><p>Additional tools and settings</p></div></div>
@@ -5806,8 +5832,9 @@ function viewMore(){
       {title:'Tools',items:['Settings','Downloads'].map(byKey).filter(Boolean)}
     ];
     const items=groups.flatMap(g=>g.items);
-    grid.innerHTML=vaultGridHtml(groups,{openFirst:true});
+    grid.innerHTML=vaultGridHtml(groups,{openFirst:true,hubId:'moreMgr'});
     bindMgrAppGrid(grid,items);
+    bindVaultAccordion(grid,'moreMgr');
   } else {
     const items=[
       {key:'insights',fic:'target',label:'Smart Insights'},
@@ -5821,7 +5848,8 @@ function viewMore(){
       {title:'Insights',items:['insights','portfolio'].map(byKey).filter(Boolean)},
       {title:'Documents & tools',items:['downloads','sms','account'].map(byKey).filter(Boolean)}
     ];
-    grid.innerHTML=vaultGridHtml(groups,{openFirst:true});
+    grid.innerHTML=vaultGridHtml(groups,{openFirst:true,hubId:'moreAgent'});
+    bindVaultAccordion(grid,'moreAgent');
     grid.querySelectorAll('[data-moreapp]').forEach(b=>{
       const item=items.find(a=>a.key===b.dataset.moreapp);
       b.onclick=()=>{ if(item&&item.badgeKind) apiMarkKindRead(item.badgeKind).then(refreshAllBadges); if(item&&item.badgeCountKey&&DB.badgeCounts){ DB.badgeCounts[item.badgeCountKey]=0; refreshAllBadges(); } route(b.dataset.moreapp); };
@@ -10983,7 +11011,7 @@ function formAccount(){
   <div class="formwrap">
     <div class="acctMediaRow" style="margin-bottom:12px">
       <div id="signaturePreview" style="width:120px;height:60px;border-radius:10px;overflow:hidden;flex:0 0 auto;background:#F4F6F5;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">${PROFILE.signature_data?`<img src="${PROFILE.signature_data}" style="max-width:100%;max-height:100%;object-fit:contain"/>`:'No signature yet'}</div>
-      <div style="flex:1;min-width:0"><input type="file" id="signatureInput" accept="image/png,image/jpeg"/><div class="mini" style="margin-top:6px">PNG or JPEG, ideally on a white or transparent background. Used to automatically sign Site Visit Authorization Forms, contracts and other documents when you approve them.</div></div>
+      <div style="flex:1;min-width:0"><input type="file" id="signatureInput" accept="image/png,image/jpeg"/><div class="mini" style="margin-top:6px">PNG/JPEG, white or transparent background. Auto-signs your documents.</div></div>
     </div>
     ${PROFILE.signature_data?'<button class="btn ghost" id="removeSigBtn" style="width:100%">Remove signature</button>':''}
   </div>
@@ -13159,7 +13187,7 @@ async function managerView(){
   else if(mgrTab==='Site visits'){ body.innerHTML=mgrVisits(); bindVisitCtrls(); }
   else if(mgrTab==='News'){ body.innerHTML=mgrNews(); bindNewsCtrls(); }
   else if(mgrTab==='Commission'){ body.innerHTML=mgrCommission(); bindCommissionCtrls(); }
-  else if(mgrTab==='Settings'){ body.innerHTML=mgrSettingsHubHtml(); bindMgrAppGrid(document.getElementById('mgrSettingsGrid'),SETTINGS_APPS); }
+  else if(mgrTab==='Settings'){ body.innerHTML=mgrSettingsHubHtml(); bindMgrAppGrid(document.getElementById('mgrSettingsGrid'),SETTINGS_APPS); bindVaultAccordion(document.getElementById('mgrSettingsGrid'),'settingsHub'); }
   else if(mgrTab==='Quotation Settings'){ body.innerHTML=mgrQuotationSettingsHtml(); bindQuotationSettingsCtrls(); }
   else if(mgrTab==='Commission Settings'){ body.innerHTML=mgrCommissionSettingsHtml(); bindCommissionSettingsCtrls(); }
   else if(mgrTab==='Pricing & Targets'){ if(!PRICING_HISTORY_LOADED){ try{ PRICING_HISTORY_LIST=await withLoadTimeout(apiLoadPricingHistory(),15000,'Pricing history'); PRICING_HISTORY_LOADED=true; }catch(e){} } body.innerHTML=mgrPricingTargetsHtml(); bindPricingTargetsCtrls(); }
@@ -14269,7 +14297,7 @@ function mgrSettingsHubHtml(){
     {title:'Referrals',items:['Referral Settings'].map(byKey)},
     {title:'System',items:['Backup & Restore','System Health','System'].map(byKey)}
   ];
-  return `<div id="mgrSettingsGrid">${vaultGridHtml(groups)}</div>`;
+  return `<div id="mgrSettingsGrid">${vaultGridHtml(groups,{hubId:'settingsHub'})}</div>`;
 }
 function mgrQuotationSettingsHtml(){
   return `${settingsSectionHead('doc','Quotation & receipt text','everything printed on client-facing PDFs')}
