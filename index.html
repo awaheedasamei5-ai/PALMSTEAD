@@ -7378,6 +7378,33 @@ async function apiRescheduleTodo(id,newDate,newStart,newEnd){
   else{ const {error}=await sb.from('schedule_items').update({status:'rescheduled',rescheduled_to_id:rec.id}).eq('id',id); if(error) throw error; }
   return rec;
 }
+/* Time-range conflict detection -- generalizes the Leave Schedules pattern
+   (leaveConflictDatesFromOthers/leaveDatesConflictReason) from whole-date
+   blocking to [start,end) time-range overlap. Queried live rather than off
+   whatever's already in memory, since TODO_LIST only ever holds the current
+   user's own items -- checking someone else's day (a manager assigning time
+   to a colleague) needs a real fetch, not a stale local cache. */
+async function apiCheckScheduleConflicts(staffKey,date,start,end,excludeId){
+  if(DEMO_MODE){
+    const d=await demoLoad();
+    return (d.todos||[]).filter(t=>t.id!==excludeId && t.ownerKey===staffKey && t.date===date &&
+      t.status!=='closed' && t.status!=='rescheduled' && start<t.endTime && t.startTime<end);
+  }
+  try{
+    const {data,error}=await sb.from('schedule_items').select('id,title,start_time,end_time,status')
+      .eq('item_date',date).or(`assigned_to.eq.${staffKey},owner_key.eq.${staffKey}`)
+      .not('status','in','(done,cancelled,rescheduled)').not('start_time','is',null);
+    if(error) return [];
+    return (data||[]).filter(r=>r.id!==excludeId &&
+      start<(r.end_time||'').slice(0,5) && (r.start_time||'').slice(0,5)<end)
+      .map(r=>({id:r.id,title:r.title,startTime:(r.start_time||'').slice(0,5),endTime:(r.end_time||'').slice(0,5)}));
+  }catch(e){ return []; }
+}
+function scheduleConflictReasonText(hits,staffName){
+  if(!hits.length) return null;
+  const h=hits[0];
+  return `${staffName?staffName+' already has':'You already have'} "${h.title}" ${h.startTime}–${h.endTime} that day.`;
+}
 // Real start/end time inputs instead of a fixed whole-hour dropdown -- native time
 // picker on every device, 5-minute increments, no artificial "every to-do is exactly
 // an hour" constraint.
@@ -7431,6 +7458,7 @@ function openTodoNewModal(){
     ${fld('Title *','<input id="td_title" placeholder="e.g. Call Mr. Antwi about deposit"/>')}
     ${fld('Date','<input id="td_date" type="date" value="'+TODO_DATE+'"/>')}
     <div class="grid2">${fld('Start time',timeInputHtml('td_start','09:00'))}${fld('End time',timeInputHtml('td_end','10:00'))}</div>
+    <div id="td_conflictWarn" class="mini" style="color:var(--danger);margin:-8px 0 12px"></div>
     ${fld('Contact number','<input id="td_contact" placeholder="0244…"/>','optional — enables Call/WhatsApp quick actions')}
     ${fld('Notes','<textarea id="td_notes" placeholder="Any detail to remember"></textarea>','optional')}
     <div class="formactions"><button class="btn primary" id="td_save" style="width:100%">Save to-do</button></div>
@@ -7438,13 +7466,27 @@ function openTodoNewModal(){
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeTodoNew').onclick=()=>ov.remove();
+  // Live warning as soon as start/end/date are all filled -- same "check early,
+  // recheck right before commit" shape as the leave calendar's conflict flow.
+  const checkTdConflict=debounce(async()=>{
+    const start=val('td_start'), end=val('td_end'), date=val('td_date')||TODO_DATE;
+    const warnEl=document.getElementById('td_conflictWarn'); if(!warnEl) return;
+    if(!start||!end||end<=start){ warnEl.textContent=''; return; }
+    const hits=await apiCheckScheduleConflicts(PROFILE.key,date,start,end,null);
+    warnEl.textContent=scheduleConflictReasonText(hits)||'';
+  },300);
+  ['td_start','td_end','td_date'].forEach(id=>document.getElementById(id).addEventListener('input',checkTdConflict));
   document.getElementById('td_save').onclick=async()=>{
     const title=val('td_title').trim(); if(!title){ toast('Give it a title'); return; }
-    const start=val('td_start'), end=val('td_end');
+    const start=val('td_start'), end=val('td_end'), date=val('td_date')||TODO_DATE;
     if(end<=start){ toast('End time must be after start time'); return; }
     const btn=document.getElementById('td_save'); btn.disabled=true; btn.textContent='Saving…';
+    // Re-check right before committing -- catches a race where this exact slot
+    // got taken (by another new/rescheduled to-do) since the modal opened.
+    const hits=await apiCheckScheduleConflicts(PROFILE.key,date,start,end,null);
+    if(hits.length){ toast(scheduleConflictReasonText(hits)); btn.disabled=false; btn.textContent='Save to-do'; return; }
     try{
-      const rec=await apiInsertTodo({title,notes:val('td_notes').trim(),contact:val('td_contact').trim(),date:val('td_date')||TODO_DATE,startTime:start,endTime:end});
+      const rec=await apiInsertTodo({title,notes:val('td_notes').trim(),contact:val('td_contact').trim(),date,startTime:start,endTime:end});
       TODO_LIST.push(rec); TODO_LIST.sort((a,b)=>a.date===b.date?a.startTime.localeCompare(b.startTime):a.date.localeCompare(b.date));
       toast('To-do saved'); ov.remove(); todoArmAlarms(); paintTodoTab();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save to-do'; }
@@ -7457,15 +7499,26 @@ function openTodoRescheduleModal(t){
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Reschedule "${esc(t.title)}"</div><button id="closeTodoResched" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     ${fld('New date','<input id="tr_date" type="date" value="'+t.date+'"/>')}
     <div class="grid2">${fld('Start time',timeInputHtml('tr_start',t.startTime))}${fld('End time',timeInputHtml('tr_end',t.endTime))}</div>
+    <div id="tr_conflictWarn" class="mini" style="color:var(--danger);margin:-8px 0 12px"></div>
     <div class="formactions"><button class="btn primary" id="tr_save" style="width:100%">Reschedule</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeTodoResched').onclick=()=>ov.remove();
+  const checkTrConflict=debounce(async()=>{
+    const start=val('tr_start'), end=val('tr_end'), date=val('tr_date');
+    const warnEl=document.getElementById('tr_conflictWarn'); if(!warnEl) return;
+    if(!start||!end||end<=start){ warnEl.textContent=''; return; }
+    const hits=await apiCheckScheduleConflicts(PROFILE.key,date,start,end,t.id);
+    warnEl.textContent=scheduleConflictReasonText(hits)||'';
+  },300);
+  ['tr_start','tr_end','tr_date'].forEach(id=>document.getElementById(id).addEventListener('input',checkTrConflict));
   document.getElementById('tr_save').onclick=async()=>{
     const newDate=val('tr_date'), start=val('tr_start'), end=val('tr_end');
     if(end<=start){ toast('End time must be after start time'); return; }
     const btn=document.getElementById('tr_save'); btn.disabled=true; btn.textContent='Saving…';
+    const hits=await apiCheckScheduleConflicts(PROFILE.key,newDate,start,end,t.id);
+    if(hits.length){ toast(scheduleConflictReasonText(hits)); btn.disabled=false; btn.textContent='Reschedule'; return; }
     try{
       const rec=await apiRescheduleTodo(t.id,newDate,start,end);
       t.status='rescheduled'; t.rescheduledToId=rec.id; TODO_LIST.push(rec);
