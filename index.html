@@ -3201,21 +3201,45 @@ function getCurrentLocation(){
     );
   });
 }
-let ATTENDANCE_HISTORY=[], ATTENDANCE_TODAY=null, ATTENDANCE_TEAM_TODAY=[];
+let ATTENDANCE_HISTORY=[], ATTENDANCE_TODAY=null, ATTENDANCE_TEAM_TODAY=[], ATTENDANCE_MONTH_ROWS=[];
 let ATTENDANCE_CLOCK_TIMER=null;
 async function viewAttendanceApp(){
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Attendance</h2><p>Sign in when you arrive, sign out when you leave — your location is captured automatically.</p></div></div>
   <div id="attBody"><div style="padding:40px 0"><div class="skel" style="height:180px;border-radius:24px"></div></div></div>`;
   try{
     const from=isoPlusDays(today(),-13);
+    const monthStart=today().slice(0,7)+'-01';
     const isMgr=PROFILE.role==='manager';
     if(!LEAVE_REQUESTS_LOADED){ try{ DB.leaveRequests=await apiLoadLeaveRequests(); LEAVE_REQUESTS_LOADED=true; }catch(e){} }
-    const [hist,team]=await Promise.all([apiLoadMyAttendance(from,today()),isMgr?apiLoadTeamAttendanceToday():Promise.resolve([])]);
+    const [hist,team,monthRows]=await Promise.all([apiLoadMyAttendance(from,today()),isMgr?apiLoadTeamAttendanceToday():Promise.resolve([]),apiLoadLeaderboardRows(monthStart,today()).catch(()=>[])]);
     ATTENDANCE_HISTORY=hist;
     ATTENDANCE_TODAY=hist.find(a=>a.workDate===today())||null;
     ATTENDANCE_TEAM_TODAY=team;
+    ATTENDANCE_MONTH_ROWS=monthRows;
   }catch(e){ toast('Could not load attendance: '+(e.message||e)); }
   paintAttendanceBody();
+}
+// "You vs team this month" -- comparison only (days attended, on-time days), not a
+// badge/streak system -- that's the separate Portfolio app's job (Phase 9). Sourced
+// from the same shared leaderboard_rows RPC the Leaderboard/Performance tab already
+// use, so these numbers can never drift from what's shown there.
+function attComparisonHtml(){
+  if(!ATTENDANCE_MONTH_ROWS.length) return '';
+  const rows=ATTENDANCE_MONTH_ROWS.slice().sort((a,b)=>b.daysAttended-a.daysAttended);
+  const maxDays=Math.max(1,...rows.map(r=>r.daysAttended));
+  const mine=rows.find(r=>r.staffKey===PROFILE.key);
+  const myRank=mine?rows.findIndex(r=>r.staffKey===PROFILE.key)+1:null;
+  return `<div class="sectitle" style="margin-top:0"><h3>This month</h3>${myRank?`<span class="cnt">You're #${myRank} of ${rows.length} for days attended</span>`:''}</div>
+  <div class="rowcard" style="margin-bottom:18px;padding:16px">
+    ${rows.map(r=>{
+      const isMe=r.staffKey===PROFILE.key;
+      const pct=Math.round(r.daysAttended/maxDays*100);
+      return `<div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px"><span style="font-weight:${isMe?800:600}">${esc(r.staffName)}${isMe?' (you)':''}</span><span class="mini">${r.daysAttended} day(s) · ${r.onTimeDays} on time</span></div>
+        <div style="height:7px;border-radius:6px;background:#EEF1F6;overflow:hidden"><div style="height:100%;width:${pct}%;background:${isMe?'#C9A227':'var(--leaf)'}"></div></div>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 // Someone on approved/pending leave that day shouldn't read as "Absent" -- cross-
 // references the same company-wide leave_requests list (any staff member can read
@@ -3251,6 +3275,7 @@ function paintAttendanceBody(){
       <div class="attClockStat"><div class="l">Hours</div><div class="v">${attHoursWorkedStr(t)}</div></div>
     </div>
   </div>
+  ${attComparisonHtml()}
   ${isMgr?`<div class="sectitle" style="margin-top:0"><h3>Team today</h3><span class="cnt">${ATTENDANCE_TEAM_TODAY.filter(a=>a.signInAt).length} of ${STAFF_LIST.length} signed in</span></div>
   <div class="list" style="margin-bottom:18px">${teamAttendanceTodayHtml()}</div>`:''}
   <div class="sectitle" style="margin-top:0"><h3>Your recent history</h3></div>
