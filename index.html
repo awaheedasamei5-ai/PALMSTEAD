@@ -681,6 +681,11 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 @media (max-width:430px){.grid2{grid-template-columns:1fr}}
 .acctMediaRow{display:flex;align-items:center;gap:16px}
 @media (max-width:430px){.acctMediaRow{flex-direction:column;align-items:flex-start}}
+/* Native file-input buttons have unpredictable intrinsic width on mobile browsers --
+   left unconstrained, one can force its whole row (and the page) wider than the
+   viewport, which is what read as "text spilling out of the placeholder" and the
+   page wobbling while scrolling on narrow screens. */
+input[type="file"]{max-width:100%;box-sizing:border-box}
 .dayGridWrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card);margin-bottom:16px}
 .dayGrid{display:grid;min-width:100%}
 .dayGridStaffHead{padding:8px 10px;font-size:11.5px;font-weight:800;color:var(--text);text-align:center;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:var(--card)}
