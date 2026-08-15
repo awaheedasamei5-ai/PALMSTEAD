@@ -5324,7 +5324,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
     clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,bannerDetail:viewBannerDetail,attendanceapp:viewAttendanceApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,mgmtreports:viewManagementReportsApp,notifications:viewNotifications,
-    clientallocation:viewClientAllocation,clientreferrals:viewClientReferrals,clientcontractsale:viewClientContractSale,clientvisitexperience:viewClientSiteVisitExperience,referralsapp:()=>{ mgrTab='Referrals'; managerView(); }}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
+    clientallocation:viewClientAllocation,clientreferrals:viewClientReferrals,clientcontractsale:viewClientContractSale,clientvisitexperience:viewClientSiteVisitExperience,portfolio:viewPortfolioApp,referralsapp:()=>{ mgrTab='Referrals'; managerView(); }}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -5798,13 +5798,14 @@ function viewMore(){
   } else {
     const items=[
       {key:'insights',fic:'target',label:'Smart Insights'},
+      {key:'portfolio',fic:'leaderboard',label:'Portfolio',badgeCountKey:'achievements'},
       {key:'downloads',fic:'downloads',label:'Document Vault'},
       {key:'sms',fic:'sms',label:'SMS'},
       {key:'account',fic:'settings',label:'Settings'}
     ];
     const byKey=k=>items.find(a=>a.key===k);
     const groups=[
-      {title:'Insights',items:['insights'].map(byKey).filter(Boolean)},
+      {title:'Insights',items:['insights','portfolio'].map(byKey).filter(Boolean)},
       {title:'Documents & tools',items:['downloads','sms','account'].map(byKey).filter(Boolean)}
     ];
     grid.innerHTML=vaultGridHtml(groups,{openFirst:true});
@@ -10959,8 +10960,6 @@ function formAccount(){
   const hasPin = pinLockExists(PROFILE.key);
   V.innerHTML=`${back(homeRoute)}
   ${profileHeroHtml(PROFILE,PROFILE.role==='manager'?'Management':'Agent')}
-  ${PROFILE.role!=='manager'?`${settingsSectionHead('pulse','Performance','how you compare across the team')}
-  <div class="formwrap" id="perfSectionBody"><div class="skel" style="height:110px;border-radius:16px"></div></div>`:''}
   ${settingsSectionHead('image','Profile picture')}
   <div class="formwrap acctMediaRow">
     <div id="avatarPreview" style="width:64px;height:64px;border-radius:100px;overflow:hidden;flex:0 0 auto;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted);font-size:22px">${PROFILE.avatar?`<img src="${PROFILE.avatar}" style="width:100%;height:100%;object-fit:cover"/>`:esc((PROFILE.name||'?')[0])}</div>
@@ -11055,7 +11054,16 @@ function formAccount(){
   document.getElementById('saveAboutMeBtn').onclick=saveAccountAboutMe;
   if(hasPin){ document.getElementById('removePinBtn').onclick=()=>{ if(!confirm('Remove PIN sign-in from this device?')) return; removePinLock(PROFILE.key); toast('PIN removed from this device'); formAccount(); }; }
   else{ document.getElementById('savePinBtn').onclick=saveAccountPin; }
-  if(PROFILE.role!=='manager') paintPerformanceSection();
+}
+// Portfolio -- agent-only, moved out of Settings into its own app (More > Portfolio)
+// per the user's request. Managers already see everyone on the Leaderboard, so this
+// stays gated the same way paintPerformanceSection() always was.
+async function viewPortfolioApp(){
+  if(PROFILE.role==='manager'){ V.innerHTML=back('more')+emptyState(ic.grid,'See the Leaderboard instead','Portfolio is for individual staff tracking — as Management you already see everyone on the Leaderboard.'); return; }
+  V.innerHTML=`${back('more')}<div class="pagehead"><div><h2>Portfolio</h2><p>Your rank, your progress, and what you've earned</p></div></div>
+  ${settingsSectionHead('pulse','Performance','how you compare across the team')}
+  <div class="formwrap" id="perfSectionBody"><div class="skel" style="height:110px;border-radius:16px"></div></div>`;
+  paintPerformanceSection();
 }
 // Agent-only. formAccount() itself stays synchronous (same skeleton-then-async-paint
 // pattern as paintMgrOpsToday() in mgrOverview()) -- reads the exact same leaderboard_rows
