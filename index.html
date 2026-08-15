@@ -654,6 +654,23 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .profileHero .name{font-weight:800;font-size:16.5px;font-family:'Space Grotesk',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .profileHero .role{font-size:11.5px;color:rgba(255,255,255,.7);margin-top:2px;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
 .profileHero .email{font-size:11.5px;color:rgba(255,255,255,.55);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attClockCard{position:relative;overflow:hidden;border-radius:24px;padding:26px 20px 22px;margin-bottom:18px;color:#fff;text-align:center;
+  background:var(--hero-bg,linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%));box-shadow:0 20px 44px -14px rgba(11,30,61,.5);animation:fadeUp .4s ease both}
+.attClockCard::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 88% -15%,rgba(103,232,249,.4),transparent 55%);pointer-events:none}
+.attClockTime{font-size:32px;font-weight:800;font-family:'IBM Plex Mono',monospace;letter-spacing:-.01em;position:relative;z-index:1}
+.attClockDate{font-size:12px;color:rgba(255,255,255,.65);margin-top:2px;position:relative;z-index:1}
+.attClockBtn{width:132px;height:132px;border-radius:100%;margin:20px auto 16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  border:none;cursor:pointer;position:relative;z-index:1;transition:.15s;box-shadow:0 14px 30px -10px rgba(0,0,0,.4)}
+.attClockBtn.in{background:radial-gradient(circle at 35% 30%,#22D3EE,#0C7A93 65%,#0B1E3D)}
+.attClockBtn.out{background:radial-gradient(circle at 35% 30%,#F7A26E,#B4472F 65%,#5B1F14)}
+.attClockBtn.done{background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.25);cursor:default}
+.attClockBtn:not(:disabled):active{transform:scale(.96)}
+.attClockBtn .lbl{font-size:14px;font-weight:800;color:#fff}
+.attClockBtn .sub{font-size:9px;color:rgba(255,255,255,.75);text-transform:uppercase;letter-spacing:.06em}
+.attClockStats{display:flex;gap:10px;position:relative;z-index:1}
+.attClockStat{flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:10px 8px}
+.attClockStat .l{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.6);font-weight:700}
+.attClockStat .v{font-size:14px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-top:3px;color:#fff}
 .themeSwatchRow{display:flex;flex-wrap:wrap;gap:8px}
 .themeSwatch{width:34px;height:34px;border-radius:10px;border:2px solid transparent;cursor:pointer;padding:0;transition:.15s}
 .themeSwatch:hover{transform:translateY(-1px)}
@@ -3185,12 +3202,14 @@ function getCurrentLocation(){
   });
 }
 let ATTENDANCE_HISTORY=[], ATTENDANCE_TODAY=null, ATTENDANCE_TEAM_TODAY=[];
+let ATTENDANCE_CLOCK_TIMER=null;
 async function viewAttendanceApp(){
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Attendance</h2><p>Sign in when you arrive, sign out when you leave — your location is captured automatically.</p></div></div>
-  <div id="attBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  <div id="attBody"><div style="padding:40px 0"><div class="skel" style="height:180px;border-radius:24px"></div></div></div>`;
   try{
     const from=isoPlusDays(today(),-13);
     const isMgr=PROFILE.role==='manager';
+    if(!LEAVE_REQUESTS_LOADED){ try{ DB.leaveRequests=await apiLoadLeaveRequests(); LEAVE_REQUESTS_LOADED=true; }catch(e){} }
     const [hist,team]=await Promise.all([apiLoadMyAttendance(from,today()),isMgr?apiLoadTeamAttendanceToday():Promise.resolve([])]);
     ATTENDANCE_HISTORY=hist;
     ATTENDANCE_TODAY=hist.find(a=>a.workDate===today())||null;
@@ -3198,58 +3217,129 @@ async function viewAttendanceApp(){
   }catch(e){ toast('Could not load attendance: '+(e.message||e)); }
   paintAttendanceBody();
 }
+// Someone on approved/pending leave that day shouldn't read as "Absent" -- cross-
+// references the same company-wide leave_requests list (any staff member can read
+// all of it, same as the Leave Schedules app itself) the to-do/schedule conflict
+// checks already use via leaveIsBlocking().
+function staffOnLeave(staffKey,date){
+  return (DB.leaveRequests||[]).find(r=>r.agentKey===staffKey&&leaveIsBlocking(r.status)&&(r.dates||[]).includes(date));
+}
+function attHoursWorkedStr(t){
+  if(!t||!t.signInAt) return '--:--';
+  const mins=Math.max(0,Math.round((new Date(t.signOutAt||Date.now())-new Date(t.signInAt))/60000));
+  return Math.floor(mins/60)+'h '+String(mins%60).padStart(2,'0')+'m';
+}
 function paintAttendanceBody(){
   const body=document.getElementById('attBody'); if(!body) return;
   const isMgr=PROFILE.role==='manager';
   const t=ATTENDANCE_TODAY;
   const signedIn=t&&t.signInAt;
   const signedOut=t&&t.signOutAt;
+  const btnState=!signedIn?'in':!signedOut?'out':'done';
   body.innerHTML=`
-  <div class="rowcard" style="margin-bottom:18px;padding:18px">
-    <div style="font-weight:700;font-size:14.5px;margin-bottom:4px">Today · ${esc(fmtLongDate(today()))}</div>
-    <div class="mini" style="margin-bottom:14px">${signedIn?('Signed in at '+esc(t.signInAt.slice(11,16))):'Not signed in yet'}${signedOut?(' · Signed out at '+esc(t.signOutAt.slice(11,16))):''}</div>
-    ${!signedIn?`<button class="btn primary" id="attSignInBtn" style="width:100%">📍 Sign in</button>`
-      :!signedOut?`<button class="btn primary" id="attSignOutBtn" style="width:100%">📍 Sign out</button>`
-      :`<span class="tag ok" style="display:inline-flex">Day complete</span>`}
+  <div class="attClockCard">
+    <div class="attClockTime" id="attLiveClock">${esc(nowTime())}</div>
+    <div class="attClockDate">${esc(fmtLongDate(today()))}</div>
+    <button class="attClockBtn ${btnState}" id="attClockBtn" ${btnState==='done'?'disabled':''}>
+      <span class="lbl">${btnState==='in'?'Sign In':btnState==='out'?'Sign Out':'✓ Done'}</span>
+      <span class="sub">${btnState==='in'?'Tap to clock in':btnState==='out'?'Tap to clock out':'Day complete'}</span>
+    </button>
+    ${signedIn&&t.lateReason?`<div class="mini" style="position:relative;z-index:1;color:rgba(255,255,255,.75);margin:-10px 0 14px">Late reason: ${esc(t.lateReason)}</div>`:''}
+    <div class="attClockStats">
+      <div class="attClockStat"><div class="l">Clock in</div><div class="v">${signedIn?esc(t.signInAt.slice(11,16)):'--:--'}</div></div>
+      <div class="attClockStat"><div class="l">Clock out</div><div class="v">${signedOut?esc(t.signOutAt.slice(11,16)):'--:--'}</div></div>
+      <div class="attClockStat"><div class="l">Hours</div><div class="v">${attHoursWorkedStr(t)}</div></div>
+    </div>
   </div>
   ${isMgr?`<div class="sectitle" style="margin-top:0"><h3>Team today</h3><span class="cnt">${ATTENDANCE_TEAM_TODAY.filter(a=>a.signInAt).length} of ${STAFF_LIST.length} signed in</span></div>
   <div class="list" style="margin-bottom:18px">${teamAttendanceTodayHtml()}</div>`:''}
   <div class="sectitle" style="margin-top:0"><h3>Your recent history</h3></div>
   <div class="list">${ATTENDANCE_HISTORY.length?ATTENDANCE_HISTORY.map(attendanceHistoryRowHtml).join(''):emptyState(ic.grid,'No history yet','')}</div>`;
   bindAttendanceCtrls();
+  clearInterval(ATTENDANCE_CLOCK_TIMER);
+  if(btnState!=='done'){
+    ATTENDANCE_CLOCK_TIMER=setInterval(()=>{
+      const el=document.getElementById('attLiveClock'); if(!el){ clearInterval(ATTENDANCE_CLOCK_TIMER); return; }
+      el.textContent=nowTime();
+      if(signedIn&&!signedOut){ const hEl=document.querySelector('.attClockStat:nth-child(3) .v'); if(hEl) hEl.textContent=attHoursWorkedStr(t); }
+    },30000);
+  }
 }
 function teamAttendanceTodayHtml(){
   const cutoff=CONFIG.attendanceCutoffTime||'09:00';
   return STAFF_LIST.map(s=>{
     const rec=ATTENDANCE_TEAM_TODAY.find(a=>a.staffKey===s.key);
     const late=rec&&rec.signInAt&&rec.signInAt.slice(11,16)>cutoff;
-    return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(s.name)}</div><div class="meta">${rec&&rec.signInAt?('In '+esc(rec.signInAt.slice(11,16))+(rec.signOutAt?(' · Out '+esc(rec.signOutAt.slice(11,16))):'')):'Not signed in'}</div></div>
-    ${rec&&rec.signInAt?(late?`<span class="tag warnt">Late</span>`:`<span class="tag ok">On time</span>`):`<span class="tag ghost">Absent</span>`}</div></div>`;
+    const onLeave=(!rec||!rec.signInAt)?staffOnLeave(s.key,today()):null;
+    let statusTag, metaText;
+    if(rec&&rec.signInAt){
+      statusTag=late?`<span class="tag warnt">Late</span>`:`<span class="tag ok">On time</span>`;
+      metaText='In '+esc(rec.signInAt.slice(11,16))+(rec.signOutAt?(' · Out '+esc(rec.signOutAt.slice(11,16))):'')+(late&&rec.lateReason?' · '+esc(rec.lateReason):'');
+    }else if(onLeave){
+      statusTag=onLeave.status==='approved'?`<span class="tag ghost">On leave</span>`:`<span class="tag warnt">Leave pending</span>`;
+      metaText='Not expected in today';
+    }else{
+      statusTag=`<span class="tag dgr">Absent</span>`;
+      metaText='Not signed in';
+    }
+    return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(s.name)}</div><div class="meta">${metaText}</div></div>${statusTag}</div></div>`;
   }).join('');
 }
 function attendanceHistoryRowHtml(a){
-  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(fmtLongDate(a.workDate))}</div><div class="meta">${a.signInAt?('In '+esc(a.signInAt.slice(11,16))):'—'}${a.signOutAt?(' · Out '+esc(a.signOutAt.slice(11,16))):''}</div></div></div></div>`;
+  const onLeave=!a.signInAt?staffOnLeave(PROFILE.key,a.workDate):null;
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(fmtLongDate(a.workDate))}</div><div class="meta">${a.signInAt?('In '+esc(a.signInAt.slice(11,16))+(a.lateReason?' · '+esc(a.lateReason):'')):(onLeave?'On leave':'—')}${a.signOutAt?(' · Out '+esc(a.signOutAt.slice(11,16))):''}</div></div></div></div>`;
+}
+function promptLateReason(){
+  return new Promise(resolve=>{
+    let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+    ov=document.createElement('div'); ov.id='announceOverlay';
+    ov.innerHTML=`<div id="announceModal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">You're signing in late</div><button id="lr_close" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+      <div class="mini" style="margin-bottom:14px">Cutoff is ${esc(CONFIG.attendanceCutoffTime||'09:00')} — pick a quick reason so it's on record.</div>
+      ${fld('Reason',sel('lr_reason',['Traffic','Personal','Transport','Other']))}
+      <div id="lr_otherWrap" class="hidden">${fld('Details','<input id="lr_other" placeholder="Briefly, what happened"/>')}</div>
+      <div class="formactions"><button class="btn primary" id="lr_save" style="width:100%">Continue sign-in</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    const finish=v=>{ ov.remove(); resolve(v); };
+    ov.addEventListener('click',e=>{ if(e.target===ov) finish(null); });
+    document.getElementById('lr_close').onclick=()=>finish(null);
+    document.getElementById('lr_reason').onchange=e=>{ document.getElementById('lr_otherWrap').classList.toggle('hidden',e.target.value!=='Other'); };
+    document.getElementById('lr_save').onclick=()=>{
+      const reason=val('lr_reason');
+      const detail=reason==='Other'?val('lr_other').trim():'';
+      finish(detail?reason+': '+detail:reason);
+    };
+  });
 }
 function bindAttendanceCtrls(){
-  const inBtn=document.getElementById('attSignInBtn');
-  if(inBtn) inBtn.onclick=async()=>{
-    inBtn.disabled=true; inBtn.textContent='Locating…';
-    try{
-      const loc=await getCurrentLocation();
-      const rec=await apiSignIn(loc.lat,loc.lng);
-      ATTENDANCE_TODAY=rec; ATTENDANCE_HISTORY=[rec,...ATTENDANCE_HISTORY.filter(a=>a.workDate!==rec.workDate)];
-      toast('Signed in'); paintAttendanceBody();
-    }catch(e){ toast('Could not sign in: '+(e.message||e)); inBtn.disabled=false; inBtn.textContent='📍 Sign in'; }
-  };
-  const outBtn=document.getElementById('attSignOutBtn');
-  if(outBtn) outBtn.onclick=async()=>{
-    outBtn.disabled=true; outBtn.textContent='Locating…';
-    try{
-      const loc=await getCurrentLocation();
-      const rec=await apiSignOut(loc.lat,loc.lng);
-      ATTENDANCE_TODAY=rec; ATTENDANCE_HISTORY=[rec,...ATTENDANCE_HISTORY.filter(a=>a.workDate!==rec.workDate)];
-      toast('Signed out'); paintAttendanceBody();
-    }catch(e){ toast('Could not sign out: '+(e.message||e)); outBtn.disabled=false; outBtn.textContent='📍 Sign out'; }
+  const btn=document.getElementById('attClockBtn');
+  if(!btn||btn.disabled) return;
+  const signingOut=btn.classList.contains('out');
+  btn.onclick=async()=>{
+    if(!signingOut){
+      const cutoff=CONFIG.attendanceCutoffTime||'09:00';
+      let lateReason=null;
+      if(nowTime()>cutoff){
+        lateReason=await promptLateReason();
+        if(lateReason===null) return;
+      }
+      btn.disabled=true; btn.querySelector('.lbl').textContent='Locating…';
+      try{
+        const loc=await getCurrentLocation();
+        const rec=await apiSignIn(loc.lat,loc.lng,lateReason);
+        ATTENDANCE_TODAY=rec; ATTENDANCE_HISTORY=[rec,...ATTENDANCE_HISTORY.filter(a=>a.workDate!==rec.workDate)];
+        toast('Signed in'); paintAttendanceBody();
+      }catch(e){ toast('Could not sign in: '+(e.message||e)); btn.disabled=false; btn.querySelector('.lbl').textContent='Sign In'; }
+    }else{
+      btn.disabled=true; btn.querySelector('.lbl').textContent='Locating…';
+      try{
+        const loc=await getCurrentLocation();
+        const rec=await apiSignOut(loc.lat,loc.lng);
+        ATTENDANCE_TODAY=rec; ATTENDANCE_HISTORY=[rec,...ATTENDANCE_HISTORY.filter(a=>a.workDate!==rec.workDate)];
+        toast('Signed out'); paintAttendanceBody();
+      }catch(e){ toast('Could not sign out: '+(e.message||e)); btn.disabled=false; btn.querySelector('.lbl').textContent='Sign Out'; }
+    }
   };
 }
 /* ---- duties / tasks (operations, non-sales work: assigned by management OR self/peer-assigned) ----
