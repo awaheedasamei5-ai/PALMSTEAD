@@ -12074,6 +12074,9 @@ function mgrOverview(){ let tot={leads:0,val:0,coll:0,out:0,sv:0,hi:0};
   <div class="insightCarousel">${renderExpectedRevenueCard()}${renderPipelineHealthCard(allLeads)}</div>
   <div class="kpis">${kpi('Total leads',tot.leads,'','pipeline')}${kpi('Outstanding',ghs(tot.out),'gold','owed')}${kpi('Fully paid',fullyPaid.length,'','donepaying')}${kpi('Open complaints',DB.complaints.filter(c=>c.status!=='Resolved').length)}${kpi('Escalated',escalated,escalated?'gold':'')}</div>
 
+  <div class="sectitle"><h3>Ops today</h3><span class="cnt">who's free, who's busy · tap to open Operations Tracker</span></div>
+  <div id="mgrOpsToday"><div class="skel" style="height:120px;border-radius:16px;margin-bottom:16px"></div></div>
+
   <div class="sectitle"><h3>By agent</h3><span class="cnt">tap an agent for their full client breakdown</span></div><div class="formwrap" style="padding:6px 15px">${rows||'<div class="empty">No agent profiles yet</div>'}</div>
 
   <div class="sectitle"><h3>Pipeline by stage</h3><span class="cnt">${allLeads.length} leads company-wide · tap a stage</span></div>
@@ -12086,6 +12089,25 @@ function bindOverviewCtrls(){
   V.querySelectorAll('[data-stage]').forEach(b=>b.onclick=()=>route('stageList',b.dataset.stage));
   const insightsTeaser=document.getElementById('mgrInsightsTeaser'); if(insightsTeaser) insightsTeaser.onclick=()=>route('insights');
   const quoteBtn=document.getElementById('heroQuoteChipMgr'); if(quoteBtn) quoteBtn.onclick=openQuotationRequest;
+  paintMgrOpsToday();
+}
+// mgrOverview() itself is synchronous (its HTML is assigned directly to
+// body.innerHTML by the caller), so the team day-grid -- which needs a real
+// fetch -- renders as a skeleton first and gets patched in here, same
+// loading-skeleton-then-async-paint shape used by every other app in this
+// codebase (paintTodoTab, paintExpensesApp, etc.) rather than restructuring
+// managerView()'s synchronous render call.
+async function paintMgrOpsToday(){
+  const body=document.getElementById('mgrOpsToday'); if(!body) return;
+  const date=today();
+  const staffKeys=STAFF_LIST.map(s=>s.key);
+  const {blocks}=await apiLoadDayAgenda(date,staffKeys);
+  const byStaff=groupItemsByStaff(blocks,STAFF_LIST);
+  const teamSummary=computeDutiesSummary(DB.tasks||[]);
+  body.innerHTML=`<div class="kpis" style="margin-bottom:12px">${kpi('Open',teamSummary.openCount)}${kpi('Overdue',teamSummary.overdueCount)}${kpi('Completed',teamSummary.doneCount)}</div>
+  ${renderDayGrid(STAFF_LIST,byStaff,true)}`;
+  document.querySelectorAll('#mgrOpsToday [data-daygridopen]').forEach(el=>el.onclick=()=>route('duties'));
+  const grid=document.getElementById('mgrOpsToday'); if(grid) grid.querySelector('.dayGridWrap')?.addEventListener('click',e=>{ if(!e.target.closest('[data-daygridopen]')) route('duties'); });
 }
 function viewStageList(stage){
   const homeRoute=PROFILE.role==='manager'?'mgr':'home';
