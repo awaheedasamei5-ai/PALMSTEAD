@@ -3311,6 +3311,29 @@ async function apiDeleteBanner(id){
   if(DEMO_MODE){ const d=await demoLoad(); d.banners=(d.banners||[]).filter(x=>x.id!==id); await demoSave(); return; }
   const {error}=await sb.from('banners').delete().eq('id',id); if(error) throw error;
 }
+const mapBannerLog=r=>({id:r.id,bannerId:r.banner_id,status:r.status,note:r.note,images:r.images||[],changedBy:r.changed_by,changedByName:r.changed_by_name,createdAt:r.created_at});
+async function apiLoadBannerStatusLog(bannerId){
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.bannerStatusLog||[]).filter(x=>x.bannerId===bannerId).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')); }
+  try{ const {data,error}=await sb.from('banner_status_log').select('*').eq('banner_id',bannerId).order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapBannerLog); }
+  catch(e){ return []; }
+}
+// Immutable audit trail (insert-only RLS, same pattern as pricing_history) -- every
+// status change gets its own permanent row with whatever photos supported it, while
+// banners.status/image stay as a denormalized "current state" cache so every existing
+// read path (list, dashboard, map pins) keeps working unmodified.
+async function apiLogBannerStatusUpdate(bannerId,{status,note,images}){
+  const logRow={bannerId,status,note:note||null,images:images||[],changedBy:PROFILE.key,changedByName:PROFILE.name,createdAt:new Date().toISOString()};
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),...logRow};
+    d.bannerStatusLog=d.bannerStatusLog||[]; d.bannerStatusLog.unshift(rec);
+    const b=(d.banners||[]).find(x=>x.id===bannerId); if(b){ b.status=status; if(images&&images.length) b.image=images[0]; b.updatedAt=logRow.createdAt; }
+    await demoSave(); return mapBannerLog(rec); }
+  const {data,error}=await sb.from('banner_status_log').insert({banner_id:bannerId,status,note:note||null,images:images||[],changed_by:PROFILE.key,changed_by_name:PROFILE.name}).select().single();
+  if(error) throw error;
+  const patch={status}; if(images&&images.length) patch.image=images[0];
+  try{ await apiUpdateBanner(bannerId,patch); }catch(e){}
+  return mapBannerLog(data);
+}
 /* ---- download directory ---- */
 const mapDownload=r=>({id:r.id,userKey:r.user_key,userName:r.user_name,filename:r.filename,kind:r.kind,fileData:r.file_data,createdAt:r.created_at});
 async function apiLoadDownloads(){
@@ -4897,7 +4920,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,mgmtreports:viewManagementReportsApp,notifications:viewNotifications,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,bannerDetail:viewBannerDetail,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,mgmtreports:viewManagementReportsApp,notifications:viewNotifications,
     clientallocation:viewClientAllocation,clientreferrals:viewClientReferrals,referralsapp:()=>{ mgrTab='Referrals'; managerView(); }}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -4920,7 +4943,7 @@ function tabForRoute(name){
     return 'clienthome';
   }
   if(['salesdesk','mgrSalesDesk','mgrCrmTools','mgrPlotInv','crm','addlead','update','updateOne','myDataCheck','plots','pipeline','sitevisit','enquiry','complaint','plotrequests','clientdb','allocations'].includes(name)) return 'salesdesk';
-  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp'||name==='bannerapp'||name==='contractapp'||name==='sitevisitauth'||name==='logpayment'||name==='expenses'||name==='mgmtreports') return 'officedesk';
+  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp'||name==='bannerapp'||name==='bannerDetail'||name==='contractapp'||name==='sitevisitauth'||name==='logpayment'||name==='expenses'||name==='mgmtreports') return 'officedesk';
   if(name==='chat'||name==='chatThread') return 'chat';
   if(name==='home'||name==='mgr') return 'home';
   return 'more';
@@ -15563,7 +15586,8 @@ let LEAFLET_LOADING=null;
 const BANNER_STATUS={
   placed:{label:'Perfect condition',color:'#1E7A56',bg:'#DCEEE4'},
   needs_maintenance:{label:'Needs maintenance',color:'#8A6E12',bg:'#F6EBD3'},
-  location_only:{label:'Scouted location',color:'#2E6E8E',bg:'#DCEAF0'}
+  location_only:{label:'Scouted location',color:'#2E6E8E',bg:'#DCEAF0'},
+  being_replaced:{label:'Being replaced',color:'#B4472F',bg:'#F5DCD5'}
 };
 function ensureLeafletLoaded(){
   if(window.L) return Promise.resolve();
@@ -15631,7 +15655,7 @@ function bannerDashboardHtml(){
 }
 function bindBannerDashboardCtrls(){
   document.getElementById('bnQuickAdd').onclick=()=>openBannerModal(null);
-  document.querySelectorAll('[data-bnopen]').forEach(b=>b.onclick=()=>{ const rec=DB.banners.find(x=>x.id===b.dataset.bnopen); if(rec) openBannerModal(rec); });
+  document.querySelectorAll('[data-bnopen]').forEach(b=>b.onclick=()=>route('bannerDetail',b.dataset.bnopen));
 }
 function bannerListHtml(){
   const areas=[...new Set(DB.banners.map(b=>b.area).filter(Boolean))].sort();
@@ -15647,6 +15671,7 @@ function bannerListHtml(){
     <button class="chip ${bannerStatusFilter==='placed'?'on':''}" data-bnstatus="placed">Perfect</button>
     <button class="chip ${bannerStatusFilter==='needs_maintenance'?'on':''}" data-bnstatus="needs_maintenance">Needs maintenance</button>
     <button class="chip ${bannerStatusFilter==='location_only'?'on':''}" data-bnstatus="location_only">New locations</button>
+    <button class="chip ${bannerStatusFilter==='being_replaced'?'on':''}" data-bnstatus="being_replaced">Being replaced</button>
   </div>
   <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <button class="chip2 ${bannerAreaFilter===''?'on':''}" data-bnarea="">All areas (${DB.banners.length})</button>
@@ -15659,7 +15684,7 @@ function bindBannerListCtrls(){
   document.getElementById('bnAddBtn').onclick=()=>openBannerModal(null);
   document.querySelectorAll('[data-bnstatus]').forEach(b=>b.onclick=()=>{ bannerStatusFilter=b.dataset.bnstatus; paintBannerApp(); });
   document.querySelectorAll('[data-bnarea]').forEach(b=>b.onclick=()=>{ bannerAreaFilter=b.dataset.bnarea; paintBannerApp(); });
-  const rebindRows=(list)=>list.querySelectorAll('[data-bnopen]').forEach(b=>b.onclick=()=>{ const rec=DB.banners.find(x=>x.id===b.dataset.bnopen); if(rec) openBannerModal(rec); });
+  const rebindRows=(list)=>list.querySelectorAll('[data-bnopen]').forEach(b=>b.onclick=()=>route('bannerDetail',b.dataset.bnopen));
   const searchInput=document.getElementById('bnSearchInput');
   searchInput.oninput=debounce(()=>{
     const q=searchInput.value.toLowerCase();
@@ -15692,40 +15717,36 @@ function parseGoogleMapsLatLng(text){
   if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
   return null;
 }
-function openBannerModal(existing){
+// Create-only -- editing an existing banner's state now goes through
+// viewBannerDetail()'s "Log a status update" flow instead, which keeps a
+// permanent history rather than silently overwriting the current values.
+function openBannerModal(){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
   const areas=[...new Set(DB.banners.map(b=>b.area).filter(Boolean))].sort();
-  const curLabel=existing?(BANNER_STATUS[existing.status]||BANNER_STATUS.placed).label:'Perfect condition';
-  const leadCount=existing?(BANNER_LEAD_COUNTS[existing.id]||0):0;
   ov.innerHTML=`<div id="announceModal">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${existing?'Edit entry':'Add banner / location'}</div><button id="closeBannerModal" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
-    ${existing?`<div class="rowcard" style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-      <div><div style="font-size:20px;font-weight:800;font-family:'IBM Plex Mono',monospace">${leadCount}</div><div class="mini">lead${leadCount===1?'':'s'} attributed to this banner</div></div>
-      ${existing.lat!=null&&existing.lng!=null?`<a class="chip" href="https://www.google.com/maps/dir/?api=1&destination=${existing.lat},${existing.lng}" target="_blank" rel="noopener">📍 Directions</a>`:''}
-    </div>`:''}
-    ${fld('Name *','<input id="bn_name" placeholder="e.g. Spintex Road – near GOIL" value="'+esc(existing?existing.name:'')+'"/>')}
-    ${fld('Area *','<input id="bn_area" list="bnAreaList" placeholder="e.g. Spintex" value="'+esc(existing?existing.area:'')+'"/>')}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Add banner / location</div><button id="closeBannerModal" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Name *','<input id="bn_name" placeholder="e.g. Spintex Road – near GOIL"/>')}
+    ${fld('Area *','<input id="bn_area" list="bnAreaList" placeholder="e.g. Spintex"/>')}
     <datalist id="bnAreaList">${areas.map(a=>`<option value="${esc(a)}"></option>`).join('')}</datalist>
-    ${fld('Status',sel('bn_status',['Perfect condition','Needs maintenance','New location (no banner yet)'],curLabel))}
+    ${fld('Status',sel('bn_status',['Perfect condition','Needs maintenance','New location (no banner yet)'],'Perfect condition'))}
     ${fld('Banner photo',`<div style="display:flex;gap:8px">
       <button type="button" class="btn ghost" id="bn_takePhotoBtn" style="flex:1">📷 Take photo</button>
       <button type="button" class="btn ghost" id="bn_pickPhotoBtn" style="flex:1">🖼️ Choose from gallery</button>
     </div>
     <input id="bn_imageCapture" type="file" accept="image/*" capture="environment" class="hidden"/>
     <input id="bn_image" type="file" accept="image/*" class="hidden"/>`,'optional — skip for a scouted location with no banner yet')}
-    <div id="bn_imgPreview">${existing&&existing.image?`<img src="${existing.image}" style="max-width:140px;border-radius:10px;margin-top:6px"/>`:''}</div>
+    <div id="bn_imgPreview"></div>
     ${fld('Paste a Google Maps link','<input id="bn_mapsLink" placeholder="https://maps.google.com/…"/>','pulls the coordinates out automatically — use the full link from the address bar, not a shortened maps.app.goo.gl one')}
-    <div class="grid2">${fld('Latitude','<input id="bn_lat" type="number" step="any" value="'+(existing&&existing.lat!=null?existing.lat:'')+'"/>')}${fld('Longitude','<input id="bn_lng" type="number" step="any" value="'+(existing&&existing.lng!=null?existing.lng:'')+'"/>')}</div>
+    <div class="grid2">${fld('Latitude','<input id="bn_lat" type="number" step="any"/>')}${fld('Longitude','<input id="bn_lng" type="number" step="any"/>')}</div>
     <div class="formactions" style="margin:-6px 0 12px"><button class="btn ghost" id="bn_useLoc" style="width:100%" type="button">📍 Use my current location</button></div>
-    ${fld('Notes','<textarea id="bn_notes" rows="2">'+esc(existing?existing.notes||'':'')+'</textarea>','optional')}
-    <div class="formactions"><button class="btn primary" id="bnSaveBtn" style="width:100%">${existing?'Save changes':'Add entry'}</button></div>
-    ${existing?`<button class="btn ghost" id="bnDeleteBtn" style="width:100%;margin-top:8px;color:var(--danger)">Delete</button>`:''}
+    ${fld('Notes','<textarea id="bn_notes" rows="2"></textarea>','optional')}
+    <div class="formactions"><button class="btn primary" id="bnSaveBtn" style="width:100%">Add entry</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeBannerModal').onclick=()=>ov.remove();
-  let imageB64=existing?existing.image:null;
+  let imageB64=null;
   const bnHandlePhoto=async(e)=>{
     const file=e.target.files[0]; if(!file) return;
     try{ imageB64=await resizeImageToB64(file,900,900,0.8); document.getElementById('bn_imgPreview').innerHTML=`<img src="${imageB64}" style="max-width:140px;border-radius:10px;margin-top:6px"/>`; }
@@ -15768,23 +15789,85 @@ function openBannerModal(existing){
     const notes=val('bn_notes').trim();
     const btn=document.getElementById('bnSaveBtn'); btn.disabled=true; btn.textContent='Saving…';
     try{
-      if(existing){
-        const updated=await apiUpdateBanner(existing.id,{name,area,status,lat,lng,image:imageB64,notes});
-        Object.assign(existing,updated);
-      } else {
-        const rec=await apiInsertBanner({name,area,status,lat,lng,image:imageB64,notes});
-        DB.banners.unshift(rec);
-      }
+      const rec=await apiInsertBanner({name,area,status,lat,lng,image:imageB64,notes});
+      DB.banners.unshift(rec);
+      try{ await apiLogBannerStatusUpdate(rec.id,{status,note:'Initial entry',images:imageB64?[imageB64]:[]}); }catch(e){}
       toast('Saved'); ov.remove(); paintBannerApp();
-    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent=existing?'Save changes':'Add entry'; }
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Add entry'; }
   };
-  if(existing){
-    document.getElementById('bnDeleteBtn').onclick=async()=>{
-      if(!confirm('Delete this entry? This cannot be undone.')) return;
-      try{ await apiDeleteBanner(existing.id); DB.banners=DB.banners.filter(x=>x.id!==existing.id); toast('Deleted'); ov.remove(); paintBannerApp(); }
-      catch(e){ toast('Failed: '+(e.message||e)); }
-    };
-  }
+}
+// Modeled directly on the Task-detail audit-trail pattern (viewTaskDetail/
+// loadTaskTimeline) -- same rowcard-list-of-events shape, just banner-flavored.
+function viewBannerDetail(bannerId){
+  const b=(DB.banners||[]).find(x=>x.id===bannerId);
+  if(!b){ V.innerHTML=back('bannerapp')+emptyState(ic.grid,'Not found','This banner may have been deleted.'); renderBottomNavNow(); return; }
+  const st=BANNER_STATUS[b.status]||BANNER_STATUS.placed;
+  V.innerHTML=`${back('bannerapp')}
+  <div class="pagehead"><div><div class="eyebrow">${esc(b.area||'')}</div><h2>${esc(b.name)}</h2></div><span class="tag" style="background:${st.bg};color:${st.color};border-color:transparent;flex:0 0 auto">${st.label}</span></div>
+  <div class="formwrap" style="margin-bottom:16px">
+    ${b.image?`<img src="${b.image}" style="width:100%;max-height:220px;object-fit:cover;border-radius:14px;margin-bottom:12px"/>`:''}
+    ${b.lat!=null&&b.lng!=null?`<a class="chip" href="https://www.google.com/maps/dir/?api=1&destination=${b.lat},${b.lng}" target="_blank" rel="noopener">📍 Directions</a>`:''}
+    ${b.notes?`<div class="mini" style="margin-top:10px">${esc(b.notes)}</div>`:''}
+  </div>
+  <div class="sectitle" style="margin-top:0"><h3>Log a status update</h3></div>
+  <div class="formwrap" style="margin-bottom:16px">
+    ${fld('New status',sel('bd_status',Object.keys(BANNER_STATUS).map(k=>BANNER_STATUS[k].label),st.label))}
+    ${fld('Photos',`<div style="display:flex;gap:8px">
+      <button type="button" class="btn ghost" id="bd_takePhotoBtn" style="flex:1">📷 Take photo</button>
+      <button type="button" class="btn ghost" id="bd_pickPhotoBtn" style="flex:1">🖼️ Choose photos</button>
+    </div>
+    <input id="bd_imageCapture" type="file" accept="image/*" capture="environment" class="hidden"/>
+    <input id="bd_images" type="file" accept="image/*" multiple class="hidden"/>`,'add as many as support the current state')}
+    <div id="bd_imgPreview" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"></div>
+    ${fld('Note','<textarea id="bd_note" rows="2" placeholder="What changed, what you saw…"></textarea>','optional')}
+    <div class="formactions"><button class="btn primary" id="bdSaveBtn" style="width:100%">Log update</button></div>
+  </div>
+  <div class="sectitle"><h3>History</h3><span class="cnt" id="bdHistCount"></span></div>
+  <div class="list" id="bdTimeline"><div class="mini" style="padding:10px 0">Loading…</div></div>`;
+  bindBannerDetailCtrls(b);
+  loadBannerTimeline(b);
+  renderBottomNavNow();
+}
+function bindBannerDetailCtrls(b){
+  let images=[];
+  const preview=()=>{ document.getElementById('bd_imgPreview').innerHTML=images.map(src=>`<img src="${src}" style="width:64px;height:64px;object-fit:cover;border-radius:10px"/>`).join(''); };
+  const handlePhotos=async(e)=>{
+    const files=[...e.target.files]; if(!files.length) return;
+    try{ const added=await Promise.all(files.map(f=>resizeImageToB64(f,900,900,0.8))); images=images.concat(added); preview(); }
+    catch(err){ toast('Could not read one of those images'); }
+  };
+  document.getElementById('bd_images').onchange=handlePhotos;
+  document.getElementById('bd_imageCapture').onchange=handlePhotos;
+  document.getElementById('bd_takePhotoBtn').onclick=()=>document.getElementById('bd_imageCapture').click();
+  document.getElementById('bd_pickPhotoBtn').onclick=()=>document.getElementById('bd_images').click();
+  document.getElementById('bdSaveBtn').onclick=async()=>{
+    const labelToKey={}; Object.keys(BANNER_STATUS).forEach(k=>labelToKey[BANNER_STATUS[k].label]=k);
+    const status=labelToKey[val('bd_status')]||b.status;
+    const note=val('bd_note').trim();
+    const btn=document.getElementById('bdSaveBtn'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      await apiLogBannerStatusUpdate(b.id,{status,note,images});
+      b.status=status; if(images.length) b.image=images[0]; b.updatedAt=new Date().toISOString();
+      toast('Status update logged'); viewBannerDetail(b.id);
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Log update'; }
+  };
+}
+function bannerLogEntryHtml(entry){
+  const st=BANNER_STATUS[entry.status]||BANNER_STATUS.placed;
+  return `<div class="rowcard" style="border-left:4px solid ${st.color}">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div class="nm">${esc(st.label)}${entry.changedByName?' · '+esc(entry.changedByName):''}</div>
+      <div class="meta" style="white-space:nowrap">${esc((entry.createdAt||'').slice(0,16).replace('T',' '))}</div>
+    </div>
+    ${entry.note?`<div class="meta" style="margin-top:4px">${esc(entry.note)}</div>`:''}
+    ${entry.images&&entry.images.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${entry.images.map(src=>`<img src="${src}" loading="lazy" style="width:64px;height:64px;object-fit:cover;border-radius:8px"/>`).join('')}</div>`:''}
+  </div>`;
+}
+async function loadBannerTimeline(b){
+  const wrap=document.getElementById('bdTimeline'); if(!wrap) return;
+  const log=await apiLoadBannerStatusLog(b.id);
+  const cnt=document.getElementById('bdHistCount'); if(cnt) cnt.textContent=log.length;
+  wrap.innerHTML=log.length?log.map(bannerLogEntryHtml).join(''):emptyState(ic.grid,'No history yet','');
 }
 function bannerMapHtml(){
   const withCoords=DB.banners.filter(b=>b.lat!=null&&b.lng!=null);
