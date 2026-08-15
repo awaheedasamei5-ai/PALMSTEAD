@@ -713,6 +713,8 @@ input[type="file"]{max-width:100%;box-sizing:border-box}
 .dayGridLine:first-child{border-top:none}
 .dayGridBlock{position:absolute;left:2px;right:2px;border-radius:6px;padding:3px 6px;overflow:hidden;box-sizing:border-box;cursor:pointer;transition:.15s}
 .dayGridBlock:hover{filter:brightness(0.97)}
+.dayGridBlockDraggable{cursor:grab;touch-action:none}
+.dayGridBlockDraggable:active{cursor:grabbing}
 .dayGridBlockTime{font-size:9px;font-weight:700;color:var(--muted);line-height:1.2}
 .dayGridInviteeBadge{font-size:8.5px;font-weight:700;opacity:.85}
 .dayGridBlockTitle{font-size:11px;font-weight:700;color:var(--text);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -8115,6 +8117,7 @@ const DAYGRID_COLORS=['#0C7A93','#B8791E','#7C3AED','#16A34A','#B4472F','#0E7490
 function dayGridMinutes(hhmm){ const p=(hhmm||'0:0').split(':'); return (num(p[0])-DAYGRID_START_HOUR)*60+num(p[1]); }
 function dayGridTopPx(hhmm){ return Math.max(0,dayGridMinutes(hhmm))/60*DAYGRID_ROW_PX; }
 function dayGridHeightPx(start,end){ return Math.max(20,(dayGridMinutes(end)-dayGridMinutes(start))/60*DAYGRID_ROW_PX); }
+function dayGridMinutesToHHMM(mins){ const total=DAYGRID_START_HOUR*60+mins; const h=Math.floor(total/60), m=total%60; return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); }
 function dayGridHourRailHtml(){
   const out=[]; for(let h=DAYGRID_START_HOUR;h<DAYGRID_END_HOUR;h++) out.push(`<div class="dayGridHourLabel" style="height:${DAYGRID_ROW_PX}px">${h%12||12}${h<12?'am':'pm'}</div>`);
   return out.join('');
@@ -8123,7 +8126,7 @@ function dayGridLinesHtml(){
   const out=[]; for(let h=DAYGRID_START_HOUR;h<DAYGRID_END_HOUR;h++) out.push(`<div class="dayGridLine" style="height:${DAYGRID_ROW_PX}px"></div>`);
   return out.join('');
 }
-function scheduleBlockHtml(item,color,hasConflict){
+function scheduleBlockHtml(item,color,hasConflict,draggable){
   const top=dayGridTopPx(item.startTime), h=dayGridHeightPx(item.startTime,item.endTime);
   // Closed/cancelled items stay in place as a completed record instead of disappearing --
   // a muted, struck-through block reads as "done" without losing the paper trail.
@@ -8131,14 +8134,18 @@ function scheduleBlockHtml(item,color,hasConflict){
   const stateCls=isDone?' dayGridBlockDone':isCancelled?' dayGridBlockCancelled':'';
   const prefix=isDone?'✓ ':isCancelled?'✕ ':'';
   const inviteeCount=(item.inviteeKeys||[]).length;
-  return `<div class="dayGridBlock${hasConflict?' conflict':''}${stateCls}" data-daygridopen="${esc(item.id)}" style="top:${top}px;height:${h}px;background:${color}22;border-left:3px solid ${color}" title="${esc(item.title)} ${esc(item.startTime)}–${esc(item.endTime)}${inviteeCount?' · +'+inviteeCount+' invited':''}">
+  const canDrag=draggable&&item.status==='open';
+  return `<div class="dayGridBlock${hasConflict?' conflict':''}${stateCls}${canDrag?' dayGridBlockDraggable':''}" data-daygridopen="${esc(item.id)}" ${canDrag?`data-daygriddrag="${esc(item.id)}"`:''} style="top:${top}px;height:${h}px;background:${color}22;border-left:3px solid ${color}" title="${esc(item.title)} ${esc(item.startTime)}–${esc(item.endTime)}${inviteeCount?' · +'+inviteeCount+' invited':''}${canDrag?' · drag to move':''}">
     <div class="dayGridBlockTime">${esc(item.startTime)}–${esc(item.endTime)}${inviteeCount?` <span class="dayGridInviteeBadge">👥${inviteeCount}</span>`:''}</div>
     <div class="dayGridBlockTitle">${prefix}${esc(item.title)}</div>
   </div>`;
 }
 // staffList: [{key,name}]. itemsByStaffKey: {key:[todo,...]}. showHeader=false
-// skips the per-column name row for the single-person "My Day" case.
-function renderDayGrid(staffList,itemsByStaffKey,showHeader){
+// skips the per-column name row for the single-person "My Day" case. draggable
+// enables drag-to-reschedule on open items -- only turned on for My Day's single
+// own-items column, not Team (reassigning someone else's item by dragging it
+// into your own column is a different, bigger feature than this covers).
+function renderDayGrid(staffList,itemsByStaffKey,showHeader,draggable){
   const totalH=(DAYGRID_END_HOUR-DAYGRID_START_HOUR)*DAYGRID_ROW_PX;
   const cols=staffList.length||1;
   return `<div class="dayGridWrap"><div class="dayGrid" style="grid-template-columns:40px repeat(${cols},minmax(120px,1fr))">
@@ -8152,11 +8159,57 @@ function renderDayGrid(staffList,itemsByStaffKey,showHeader){
           // A finished or cancelled block shouldn't trip a conflict warning against
           // whatever's still live in that slot -- only compare against other open items.
           const conflict=it.status!=='closed'&&it.status!=='cancelled'&&items.some((o,k)=>k!==j&&o.status!=='closed'&&o.status!=='cancelled'&&it.startTime<o.endTime&&o.startTime<it.endTime);
-          return scheduleBlockHtml(it,DAYGRID_COLORS[i%DAYGRID_COLORS.length],conflict);
+          return scheduleBlockHtml(it,DAYGRID_COLORS[i%DAYGRID_COLORS.length],conflict,draggable);
         }).join('')}
       </div>`;
     }).join('')}
   </div></div>`;
+}
+// Pointer-based drag (not native HTML5 drag-and-drop, which has poor touch
+// support) -- vertical-only, within the single day column, snapped to 5-minute
+// increments (matching the New To-Do time inputs' own step). Reuses
+// apiRescheduleTodo -- the same function the existing Reschedule modal/button
+// already calls -- so dragging and using that button leave the exact same
+// audit trail (new occurrence, old one marked rescheduled) either way, and the
+// day/week/month agendas everywhere else in the app don't need to know drag
+// happened at all. Re-runs the conflict check on drop before committing, same
+// as every other reschedule path in this app.
+function bindDayGridDrag(container,items,date,onDone){
+  container.querySelectorAll('[data-daygriddrag]').forEach(el=>{
+    const id=el.dataset.daygriddrag;
+    const item=items.find(x=>x.id===id); if(!item) return;
+    const durationMin=dayGridMinutes(item.endTime)-dayGridMinutes(item.startTime);
+    let startY=0, startTop=0, dragging=false, moved=false;
+    el.addEventListener('pointerdown',e=>{
+      startY=e.clientY; startTop=parseFloat(el.style.top); dragging=true; moved=false;
+      try{ el.setPointerCapture(e.pointerId); }catch(err){}
+    });
+    el.addEventListener('pointermove',e=>{
+      if(!dragging) return;
+      const dy=e.clientY-startY;
+      if(Math.abs(dy)>6) moved=true;
+      if(!moved) return;
+      el.style.top=Math.max(0,startTop+dy)+'px';
+      el.style.zIndex='5'; el.style.opacity='.85';
+    });
+    el.addEventListener('pointerup',async e=>{
+      if(!dragging) return; dragging=false;
+      el.style.zIndex=''; el.style.opacity='';
+      if(!moved) return; // a plain click/tap -- data-daygridopen's own handler runs normally
+      el.dataset.justDragged='1';
+      const dy=e.clientY-startY;
+      const rawMinutes=dayGridMinutes(item.startTime)+Math.round((dy/DAYGRID_ROW_PX*60)/5)*5;
+      const cap=(DAYGRID_END_HOUR-DAYGRID_START_HOUR)*60-durationMin;
+      const clamped=Math.max(0,Math.min(rawMinutes,cap));
+      const newStart=dayGridMinutesToHHMM(clamped), newEnd=dayGridMinutesToHHMM(clamped+durationMin);
+      if(newStart===item.startTime){ el.style.top=dayGridTopPx(item.startTime)+'px'; return; }
+      const hits=await apiCheckScheduleConflicts(item.assignedTo||PROFILE.key,date,newStart,newEnd,item.id);
+      if(hits.length){ toast(scheduleConflictReasonText(hits)); el.style.top=dayGridTopPx(item.startTime)+'px'; return; }
+      try{ await apiRescheduleTodo(item.id,date,newStart,newEnd); toast('Moved to '+newStart+'–'+newEnd); if(onDone) onDone(); }
+      catch(err){ toast('Could not move: '+(err.message||err)); el.style.top=dayGridTopPx(item.startTime)+'px'; }
+    });
+    el.addEventListener('pointercancel',()=>{ dragging=false; el.style.top=dayGridTopPx(item.startTime)+'px'; });
+  });
 }
 // Loads everyone's time-blocked items (to-dos) plus due-today tasks for a
 // date, scoped to the given staff keys -- used by both "My Day" (one key,
@@ -8374,15 +8427,17 @@ async function paintMyDayTab(){
   body.innerHTML=`
   <div class="kpis">${kpi('Open',summary.openCount)}${kpi('Escalated',escalatedToMe)}${kpi('Overdue',summary.overdueCount)}${kpi('Completed',summary.doneCount)}</div>
   <div class="sectitle" style="margin-top:0"><h3>${isToday?'Today':esc(fmtLongDate(date))}</h3><span class="cnt">${isToday?esc(fmtLongDate(date)):`<button class="chip" id="mydayBackToday" style="padding:4px 10px;font-size:11px">Back to today</button>`}</span></div>
-  ${renderDayGrid([{key:PROFILE.key,name:'Today'}],{[PROFILE.key]:blocks},false)}
+  ${renderDayGrid([{key:PROFILE.key,name:'Today'}],{[PROFILE.key]:blocks},false,true)}
   ${dueTaskChipsHtml(dueTasks)}
   <div class="sectitle"><h3>Coming up this week</h3></div>
   ${weekListHtml(date,groupItemsByDate(weekItems))}`;
   const backBtn=document.getElementById('mydayBackToday');
   if(backBtn) backBtn.onclick=async()=>{ MYDAY_DATE=today(); await paintMyDayTab(); };
   document.querySelectorAll('[data-daygridopen]').forEach(el=>el.onclick=()=>{
+    if(el.dataset.justDragged){ delete el.dataset.justDragged; return; }
     const it=blocks.find(b=>b.id===el.dataset.daygridopen); if(it) toast(it.startTime+'–'+it.endTime+' · '+it.title);
   });
+  bindDayGridDrag(body,blocks,date,()=>paintMyDayTab());
   document.querySelectorAll('[data-taskopen]').forEach(el=>el.onclick=()=>route('taskDetail',el.dataset.taskopen));
 }
 // Team -- manager-only free/busy view across every staff member for the
