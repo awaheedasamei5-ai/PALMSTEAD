@@ -2994,17 +2994,23 @@ async function apiLoadAgentMonthStats(){
     return (data||[]).map(r=>({agentKey:r.agent_key,month:r.month,totalCollected:num(r.total_collected),newSalesCount:num(r.new_sales_count)})); }
   catch(e){ return []; }
 }
-/* ---- duties / tasks (operations, non-sales work: assigned by management OR self/peer-assigned) ---- */
+/* ---- duties / tasks (operations, non-sales work: assigned by management OR self/peer-assigned) ----
+   Backed by the unified schedule_items table (kind='task') since the Operations Tracker rebuild --
+   see schedule_items below for the to-do side, which shares the same table. mapTask/apiXxxTask keep
+   translating to/from schedule_items' lowercase status vocabulary so none of the existing Tasks UI
+   (which still thinks in 'Open'/'In Progress'/'Done'/'Cancelled') needs to change. */
+function scheduleStatusToTaskStatus(s){ return {open:'Open',in_progress:'In Progress',done:'Done',cancelled:'Cancelled',rescheduled:'Open'}[s]||'Open'; }
+function taskStatusToScheduleStatus(s){ return {'Open':'open','In Progress':'in_progress','Done':'done','Cancelled':'cancelled'}[s]||'open'; }
 const mapTask=r=>({id:r.id,title:r.title,description:r.description,category:r.category,priority:r.priority,
   assignedTo:r.assigned_to,assignedToName:r.assigned_to_name,assignedBy:r.assigned_by,assignedByName:r.assigned_by_name,
-  status:r.status,dueDate:r.due_date,createdAt:r.created_at,completedAt:r.completed_at,
+  status:scheduleStatusToTaskStatus(r.status),dueDate:r.due_date,createdAt:r.created_at,completedAt:r.completed_at,
   openedAt:r.opened_at,startedAt:r.started_at,cancelledAt:r.cancelled_at,
   escalatedTo:r.escalated_to,escalatedToName:r.escalated_to_name,escalatedBy:r.escalated_by,escalatedByName:r.escalated_by_name,escalatedAt:r.escalated_at,escalationNote:r.escalation_note});
 const mapTaskEvent=r=>({id:r.id,taskId:r.task_id,type:r.type,actorKey:r.actor_key,actorName:r.actor_name,
   fromKey:r.from_key,fromName:r.from_name,toKey:r.to_key,toName:r.to_name,note:r.note,createdAt:r.created_at});
 async function apiLoadTasks(){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.tasks||[]).slice(); }
-  try{ const {data,error}=await sb.from('tasks').select('*').order('created_at',{ascending:false}); if(error) throw error;
+  try{ const {data,error}=await sb.from('schedule_items').select('*').eq('kind','task').order('created_at',{ascending:false}); if(error) throw error;
     return (data||[]).map(mapTask); }
   catch(e){ return []; }
 }
@@ -3027,9 +3033,9 @@ async function apiInsertTask(t){
     d.tasks=d.tasks||[]; d.tasks.unshift(rec);
     await apiLogTaskEvent(rec.id,'assigned',{toKey:t.assignedTo,toName:t.assignedToName,note:t.description||null});
     await demoSave(); return rec; }
-  const row={title:t.title,description:t.description||null,category:t.category,priority:t.priority,
+  const row={kind:'task',owner_key:PROFILE.key,owner_name:PROFILE.name,title:t.title,description:t.description||null,category:t.category,priority:t.priority,
     assigned_to:t.assignedTo,assigned_to_name:t.assignedToName,assigned_by:PROFILE.key,assigned_by_name:PROFILE.name,due_date:t.dueDate||null};
-  const {data,error}=await sb.from('tasks').insert(row).select().single(); if(error) throw error;
+  const {data,error}=await sb.from('schedule_items').insert(row).select().single(); if(error) throw error;
   const rec=mapTask(data);
   try{ await apiLogTaskEvent(rec.id,'assigned',{toKey:t.assignedTo,toName:t.assignedToName,note:t.description||null}); }catch(e){}
   if(t.assignedTo!==PROFILE.key){ const phone=phoneForStaffKey(t.assignedTo); if(phone) apiSendSms(phone,`New task from ${PROFILE.name}: "${t.title}". Open Palmstead to view it.`,'task_assigned'); }
@@ -3037,7 +3043,7 @@ async function apiInsertTask(t){
 }
 async function apiUpdateTaskStatus(id,status,fromStatus){
   const now=new Date().toISOString();
-  const patch={status};
+  const patch={status:taskStatusToScheduleStatus(status)};
   let eventType='reopened';
   if(status==='In Progress' && fromStatus==='Open'){ patch.started_at=now; eventType='started'; }
   else if(status==='Done'){ patch.completed_at=now; eventType='done'; }
@@ -3046,12 +3052,12 @@ async function apiUpdateTaskStatus(id,status,fromStatus){
   if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id);
     if(t){ t.status=status; if('completed_at' in patch) t.completedAt=patch.completed_at; if('started_at' in patch) t.startedAt=patch.started_at; if('cancelled_at' in patch) t.cancelledAt=patch.cancelled_at; }
     await apiLogTaskEvent(id,eventType,{}); await demoSave(); return; }
-  const {error}=await sb.from('tasks').update(patch).eq('id',id); if(error) throw error;
+  const {error}=await sb.from('schedule_items').update(patch).eq('id',id); if(error) throw error;
   try{ await apiLogTaskEvent(id,eventType,{}); }catch(e){}
 }
 async function apiDeleteTask(id){
   if(DEMO_MODE){ const d=await demoLoad(); d.tasks=(d.tasks||[]).filter(x=>x.id!==id); d.taskEvents=(d.taskEvents||[]).filter(e=>e.taskId!==id); await demoSave(); return; }
-  const {error}=await sb.from('tasks').delete().eq('id',id); if(error) throw error;
+  const {error}=await sb.from('schedule_items').delete().eq('id',id); if(error) throw error;
 }
 async function apiEscalateTask(id,toKey,toName,note){
   const escalatedAt=new Date().toISOString();
@@ -3061,8 +3067,8 @@ async function apiEscalateTask(id,toKey,toName,note){
       t.openedAt=null; t.startedAt=null;
       await apiLogTaskEvent(id,'escalated',{fromKey,fromName,toKey,toName,note:note||null}); }
     await demoSave(); return; }
-  const {data:cur}=await sb.from('tasks').select('assigned_to,assigned_to_name').eq('id',id).single();
-  const {error}=await sb.from('tasks').update({assigned_to:toKey,assigned_to_name:toName,escalated_to:toKey,escalated_to_name:toName,
+  const {data:cur}=await sb.from('schedule_items').select('assigned_to,assigned_to_name').eq('id',id).single();
+  const {error}=await sb.from('schedule_items').update({assigned_to:toKey,assigned_to_name:toName,escalated_to:toKey,escalated_to_name:toName,
     escalated_by:PROFILE.key,escalated_by_name:PROFILE.name,escalated_at:escalatedAt,escalation_note:note||null,
     opened_at:null,started_at:null}).eq('id',id);
   if(error) throw error;
@@ -3073,7 +3079,7 @@ async function apiEditTaskContent(id,newTitle,newDescription){
   if(DEMO_MODE){ const d=await demoLoad(); const t=(d.tasks||[]).find(x=>x.id===id);
     if(t){ t.title=newTitle; t.description=newDescription; await apiLogTaskEvent(id,'edited',{note:'Content updated'}); }
     await demoSave(); return; }
-  const {error}=await sb.from('tasks').update({title:newTitle,description:newDescription}).eq('id',id); if(error) throw error;
+  const {error}=await sb.from('schedule_items').update({title:newTitle,description:newDescription}).eq('id',id); if(error) throw error;
   try{ await apiLogTaskEvent(id,'edited',{note:'Content updated'}); }catch(e){}
 }
 async function apiMarkTaskOpened(id){
@@ -3081,7 +3087,7 @@ async function apiMarkTaskOpened(id){
     if(t && !t.openedAt){ t.openedAt=new Date().toISOString(); await apiLogTaskEvent(id,'opened',{}); await demoSave(); return t.openedAt; }
     return t?t.openedAt:null; }
   const now=new Date().toISOString();
-  const {data,error}=await sb.from('tasks').update({opened_at:now}).eq('id',id).is('opened_at',null).select().maybeSingle();
+  const {data,error}=await sb.from('schedule_items').update({opened_at:now}).eq('id',id).is('opened_at',null).select().maybeSingle();
   if(!error && data){ try{ await apiLogTaskEvent(id,'opened',{}); }catch(e){} return now; }
   return null;
 }
@@ -4306,7 +4312,7 @@ async function fetchOpenTasksInsight(){
   const key=PROFILE.key;
   if(DEMO_MODE||!sb) return null;
   try{
-    const {count,error}=await sb.from('tasks').select('id',{count:'exact',head:true}).eq('assigned_to',key).in('status',['Open','In Progress']);
+    const {count,error}=await sb.from('schedule_items').select('id',{count:'exact',head:true}).eq('kind','task').eq('assigned_to',key).in('status',['open','in_progress']);
     if(error||!count) return null;
     return 'You have '+count+' open task'+(count===1?'':'s')+' on your Operations Tracker.';
   }catch(e){ return null; }
@@ -7339,32 +7345,37 @@ function computeDutiesSummary(tasks){
 let DUTIES_TAB='tasks';
 let TODO_LOADED=false, TODO_LIST=[], TODO_DATE='';
 let TODO_ALARM_TIMERS=[], TODO_ALARM_ARMED_IDS=new Set();
+// Backed by schedule_items (kind='todo') since the Operations Tracker rebuild -- see
+// mapTask above for the task side, which shares the same table. Stored status 'done'
+// translates to the UI's 'closed' so the existing To-Do UI needs no vocabulary change.
 function mapTodo(r){ return {id:r.id,ownerKey:r.owner_key,ownerName:r.owner_name,title:r.title,notes:r.notes,contact:r.contact,
-  date:r.item_date,startTime:(r.start_time||'').slice(0,5),endTime:(r.end_time||'').slice(0,5),status:r.status,
-  rescheduledToId:r.rescheduled_to_id,createdAt:r.created_at,closedAt:r.closed_at}; }
+  date:r.item_date,startTime:(r.start_time||'').slice(0,5),endTime:(r.end_time||'').slice(0,5),status:r.status==='done'?'closed':r.status,
+  rescheduledToId:r.rescheduled_to_id,createdAt:r.created_at,closedAt:r.status==='done'?r.completed_at:null}; }
 async function apiLoadTodos(fromDate,toDate){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.todos||[]).filter(t=>t.ownerKey===PROFILE.key&&t.date>=fromDate&&t.date<=toDate).slice().sort((a,b)=>a.date===b.date?a.startTime.localeCompare(b.startTime):a.date.localeCompare(b.date)); }
-  const {data,error}=await sb.from('todo_items').select('*').eq('owner_key',PROFILE.key).gte('item_date',fromDate).lte('item_date',toDate).order('item_date').order('start_time');
+  const {data,error}=await sb.from('schedule_items').select('*').eq('kind','todo').eq('owner_key',PROFILE.key).gte('item_date',fromDate).lte('item_date',toDate).order('item_date').order('start_time');
   if(error) throw error; return (data||[]).map(mapTodo);
 }
 async function apiInsertTodo(t){
   if(DEMO_MODE){ const d=await demoLoad(); d.todos=d.todos||[];
     const rec={id:uid(),ownerKey:PROFILE.key,ownerName:PROFILE.name,title:t.title,notes:t.notes,contact:t.contact,date:t.date,startTime:t.startTime,endTime:t.endTime,status:'open',createdAt:new Date().toISOString()};
     d.todos.push(rec); await demoSave(); return rec; }
-  const {data,error}=await sb.from('todo_items').insert({owner_key:PROFILE.key,owner_name:PROFILE.name,title:t.title,notes:t.notes||null,contact:t.contact||null,
+  const {data,error}=await sb.from('schedule_items').insert({kind:'todo',owner_key:PROFILE.key,owner_name:PROFILE.name,
+    assigned_to:PROFILE.key,assigned_to_name:PROFILE.name,assigned_by:PROFILE.key,assigned_by_name:PROFILE.name,
+    title:t.title,notes:t.notes||null,contact:t.contact||null,
     item_date:t.date,start_time:t.startTime,end_time:t.endTime}).select().single();
   if(error) throw error; return mapTodo(data);
 }
 async function apiUpdateTodoStatus(id,status){
   if(DEMO_MODE){ const d=await demoLoad(); const t=(d.todos||[]).find(x=>x.id===id); if(t){ t.status=status; if(status==='closed') t.closedAt=new Date().toISOString(); } await demoSave(); return; }
-  const patch={status}; if(status==='closed') patch.closed_at=new Date().toISOString();
-  const {error}=await sb.from('todo_items').update(patch).eq('id',id); if(error) throw error;
+  const patch={status:status==='closed'?'done':status}; if(status==='closed') patch.completed_at=new Date().toISOString();
+  const {error}=await sb.from('schedule_items').update(patch).eq('id',id); if(error) throw error;
 }
 async function apiRescheduleTodo(id,newDate,newStart,newEnd){
   const orig=TODO_LIST.find(x=>x.id===id); if(!orig) throw new Error('Task not found');
   const rec=await apiInsertTodo({title:orig.title,notes:orig.notes,contact:orig.contact,date:newDate,startTime:newStart,endTime:newEnd});
   if(DEMO_MODE){ const d=await demoLoad(); const t=(d.todos||[]).find(x=>x.id===id); if(t){ t.status='rescheduled'; t.rescheduledToId=rec.id; } await demoSave(); }
-  else{ const {error}=await sb.from('todo_items').update({status:'rescheduled',rescheduled_to_id:rec.id}).eq('id',id); if(error) throw error; }
+  else{ const {error}=await sb.from('schedule_items').update({status:'rescheduled',rescheduled_to_id:rec.id}).eq('id',id); if(error) throw error; }
   return rec;
 }
 function todoWorkHours(){ const h=[]; for(let i=8;i<=17;i++) h.push((i<10?'0':'')+i+':00'); return h; }
@@ -11912,7 +11923,7 @@ function agentPoints(r){
 let LEADERBOARD_TODOS_LOADED=false, LEADERBOARD_TODOS_LIST=[];
 async function apiLoadAllTodosForLeaderboard(fromDate,toDate){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.todos||[]).filter(t=>t.date>=fromDate&&t.date<=toDate); }
-  const {data,error}=await sb.from('todo_items').select('*').gte('item_date',fromDate).lte('item_date',toDate);
+  const {data,error}=await sb.from('schedule_items').select('*').eq('kind','todo').gte('item_date',fromDate).lte('item_date',toDate);
   if(error) throw error; return (data||[]).map(mapTodo);
 }
 function openLeaderboardWeightsModal(){
