@@ -757,9 +757,9 @@ input[type="file"]{max-width:100%;box-sizing:border-box}
 .dayGridBlock.dayGridBlockCancelled{opacity:.4}
 .dayGridBlock.dayGridBlockCancelled .dayGridBlockTitle{text-decoration:line-through}
 @media (max-width:640px){.dayGridStaffHead{font-size:10.5px;padding:6px 4px}}
-.monthGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:8px}
+.monthGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:8px;max-width:420px;margin-left:auto;margin-right:auto}
 .monthGridWeekday{text-align:center;font-size:10px;font-weight:800;color:var(--muted);padding:4px 0;text-transform:uppercase;letter-spacing:.04em}
-.monthGridCell{aspect-ratio:1;border-radius:10px;border:1px solid var(--line);background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;transition:.15s}
+.monthGridCell{height:42px;border-radius:10px;border:1px solid var(--line);background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;transition:.15s}
 .monthGridCell:hover{background:var(--paper);transform:translateY(-1px)}
 .monthGridCell.empty{border:none;background:none;cursor:default}
 .monthGridCell.empty:hover{transform:none}
