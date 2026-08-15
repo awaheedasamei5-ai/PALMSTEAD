@@ -5089,7 +5089,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
     clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,bannerDetail:viewBannerDetail,attendanceapp:viewAttendanceApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,mgmtreports:viewManagementReportsApp,notifications:viewNotifications,
-    clientallocation:viewClientAllocation,clientreferrals:viewClientReferrals,referralsapp:()=>{ mgrTab='Referrals'; managerView(); }}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
+    clientallocation:viewClientAllocation,clientreferrals:viewClientReferrals,clientcontractsale:viewClientContractSale,referralsapp:()=>{ mgrTab='Referrals'; managerView(); }}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -5106,7 +5106,7 @@ function tabForRoute(name){
     if(name==='clientvisit') return 'clientvisit';
     if(name==='clientfeedback') return 'clientfeedback';
     if(name==='clientsettings') return 'clientsettings';
-    if(name==='clientmore'||name==='clientcontact'||name==='clientreferrals') return 'clientmore';
+    if(name==='clientmore'||name==='clientcontact'||name==='clientreferrals'||name==='clientcontractsale') return 'clientmore';
     if(name==='clientallocation') return 'clienthome';
     return 'clienthome';
   }
@@ -10912,8 +10912,9 @@ function viewClientMore(){
   <div class="appGrid" id="clientMoreGrid">
     <button class="appGridIcon" data-clientmoreapp="contact"><span class="appGridGlyph">${fic('chat')}</span><span class="appGridLabel">Contact</span></button>
     <button class="appGridIcon" data-clientmoreapp="referrals"><span class="appGridGlyph">${fic('gift')}</span><span class="appGridLabel">Refer &amp; Earn</span></button>
+    <button class="appGridIcon" data-clientmoreapp="contractsale"><span class="appGridGlyph">${fic('contract')}</span><span class="appGridLabel">Contract of Sale</span></button>
   </div>`;
-  document.querySelectorAll('[data-clientmoreapp]').forEach(b=>b.onclick=()=>route(b.dataset.clientmoreapp==='contact'?'clientcontact':b.dataset.clientmoreapp==='referrals'?'clientreferrals':'clientmore'));
+  document.querySelectorAll('[data-clientmoreapp]').forEach(b=>b.onclick=()=>route(b.dataset.clientmoreapp==='contact'?'clientcontact':b.dataset.clientmoreapp==='referrals'?'clientreferrals':b.dataset.clientmoreapp==='contractsale'?'clientcontractsale':'clientmore'));
 }
 async function viewClientContact(){
   V.innerHTML=`${back('clientmore')}<div class="pagehead"><div><h2>Contact</h2><p>Reach your agent or PEP Landbank directly</p></div></div>
@@ -10924,6 +10925,64 @@ async function viewClientContact(){
     ${agent? renderContactCard({title:'Your agent',name:agent.name,avatar:agent.avatar,phone:agent.phone,whatsapp:agent.whatsapp,social:agent.social_handles}) : `<div class="formwrap"><div class="mini">Agent contact not available yet.</div></div>`}
     <div class="sectitle"><h3>PEP Landbank</h3></div>
     ${renderContactCard({title:'Company',phone:CONFIG.companyPhone,whatsapp:CONFIG.companyWhatsapp,email:CONFIG.companyEmail})}`;
+}
+/* Client self-serve Contract of Sale -- mirrors the same Know-Your-Customer fields
+   staff would otherwise prompt for (promptForLeadKyc), but generation itself stays
+   staff-gated: this only ever submits a contract_requests row for Elizabeth/
+   Management to review and release, the same human-in-the-loop principle as the
+   existing staff-side request flow. Never writes to the lead directly -- clients
+   have no RLS write access to leads, only to their own submission here. */
+let CLIENT_CONTRACT_LEAD_IDX=0;
+async function viewClientContractSale(){
+  CLIENT_CONTRACT_LEAD_IDX=0;
+  V.innerHTML=`${back('clientmore')}<div class="pagehead"><div><div class="eyebrow">Contract of Sale</div><h2>Your contract</h2><p>Fill in your details below — Management reviews and confirms before it's issued.</p></div></div>
+  <div id="clientContractBody"><div style="padding:40px 0"><div class="skel" style="height:200px;border-radius:16px"></div></div></div>`;
+  const leads=(CLIENT_DB&&CLIENT_DB.leads)||[];
+  if(!leads.length){ document.getElementById('clientContractBody').innerHTML=emptyState(ic.doc,'No purchase on file yet','Once your agent records your purchase, you can fill in your contract details here.'); return; }
+  let reqs=[]; try{ reqs=await withLoadTimeout(apiClientLoadMyContractRequests(leads.map(l=>l.id)),15000,'Contract status'); }catch(e){}
+  paintClientContractSale(leads,reqs);
+}
+function paintClientContractSale(leads,reqs){
+  const body=document.getElementById('clientContractBody'); if(!body) return;
+  const lead=leads[CLIENT_CONTRACT_LEAD_IDX]||leads[0];
+  const existing=reqs.filter(r=>r.leadId===lead.id).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
+  const k=(existing&&existing.clientKyc)||lead.kyc||{};
+  const address=(existing&&existing.clientAddress)||lead.address||'';
+  const statusBanner=!existing?'':existing.status==='pending'
+    ?`<div class="rowcard" style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#FDF6E3,#F4F6F5);border:1px solid var(--line)"><div class="mini" style="font-weight:700;color:#8A6E12">Submitted — awaiting review</div><div class="mini" style="margin-top:2px">Management is reviewing your details. You can still update and resubmit below if anything changes.</div></div>`
+    :`<div class="rowcard" style="margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#EAF6EC,#F4F6F5);border:1px solid var(--line)"><div class="mini" style="font-weight:700;color:#1E7A56">Reviewed and issued</div><div class="mini" style="margin-top:2px">Your agent will be in touch with the signed copy. You can still update your details below if anything's changed.</div></div>`;
+  body.innerHTML=`
+  ${leads.length>1?`<div class="chips" style="margin-bottom:16px">${leads.map((l,i)=>`<button type="button" class="chip2 ${i===CLIENT_CONTRACT_LEAD_IDX?'on':''}" data-ccleadpick="${i}">${esc(l.plotType||'Plot')} · ${l.noPlots||1} plot(s)</button>`).join('')}</div>`:''}
+  ${statusBanner}
+  <div class="formwrap">
+    ${fld('Address','<textarea id="cc_address" rows="2" placeholder="e.g. 15 Lyneham Walk, Hackney E5 0HX">'+esc(address)+'</textarea>')}
+    <div class="grid2">${fld('Nationality','<input id="cc_nat" value="'+esc(k.nationality||'')+'"/>')}${fld('Occupation','<input id="cc_occ" value="'+esc(k.occupation||'')+'"/>')}</div>
+    <div class="grid2">${fld('Date of birth','<input id="cc_dob" type="date" value="'+esc(k.dob||'')+'"/>')}${fld('ID type',sel('cc_idtype',KYC_ID_TYPES,k.idType))}</div>
+    ${fld('ID number','<input id="cc_idnum" value="'+esc(k.idNumber||'')+'"/>')}
+    <div class="grid2">${fld('Email','<input id="cc_email" type="email" value="'+esc(k.email||'')+'"/>')}${fld('Location','<input id="cc_loc" value="'+esc(k.location||'')+'"/>')}</div>
+    <div class="mini" style="font-weight:700;margin:14px 0 8px">Contact person</div>
+    ${fld('Name','<input id="cc_cname" value="'+esc(k.contactName||'')+'"/>')}
+    <div class="grid2">${fld('Phone','<input id="cc_cphone" value="'+esc(k.contactPhone||'')+'"/>')}${fld('Email','<input id="cc_cemail" type="email" value="'+esc(k.contactEmail||'')+'"/>')}</div>
+    ${fld('Address','<input id="cc_caddr" value="'+esc(k.contactAddress||'')+'"/>')}
+    ${fld('Relation to you','<input id="cc_crel" value="'+esc(k.contactRelation||'')+'"/>')}
+    <div class="mini" style="font-weight:700;margin:14px 0 8px">Land usage</div>
+    <div class="grid2">${fld('Usage',sel('cc_usage',['Residential','Commercial'],k.landUsage||'Residential'))}${fld('If commercial, exact usage','<input id="cc_usagedetail" value="'+esc(k.landUsageDetail||'')+'"/>')}</div>
+    <div class="formactions"><button class="btn gold" id="ccSubmitBtn" style="width:100%">${existing?'Update &amp; resubmit':'Submit for review'}</button></div>
+  </div>`;
+  body.querySelectorAll('[data-ccleadpick]').forEach(b=>b.onclick=()=>{ CLIENT_CONTRACT_LEAD_IDX=+b.dataset.ccleadpick; paintClientContractSale(leads,reqs); });
+  document.getElementById('ccSubmitBtn').onclick=async()=>{
+    const btn=document.getElementById('ccSubmitBtn'); btn.disabled=true; btn.textContent='Submitting…';
+    const address=val('cc_address').trim();
+    const kyc={nationality:val('cc_nat').trim(),occupation:val('cc_occ').trim(),dob:val('cc_dob'),idType:val('cc_idtype'),idNumber:val('cc_idnum').trim(),
+      email:val('cc_email').trim(),location:val('cc_loc').trim(),contactName:val('cc_cname').trim(),contactPhone:val('cc_cphone').trim(),
+      contactEmail:val('cc_cemail').trim(),contactAddress:val('cc_caddr').trim(),contactRelation:val('cc_crel').trim(),
+      landUsage:val('cc_usage'),landUsageDetail:val('cc_usagedetail').trim()};
+    try{
+      await apiClientSubmitContractRequest(lead.id,CLIENT_PROFILE.name,address,kyc,null);
+      route('clientmore');
+      await showClientSuccessModal('Details submitted!',"Thank you — Management will review your details and confirm your contract shortly.");
+    }catch(e){ toast('Could not submit: '+(e.message||e)); btn.disabled=false; btn.textContent=existing?'Update & resubmit':'Submit for review'; }
+  };
 }
 /* ================= REFERRALS (Client side) =================
    Points only ever move in one direction here: earned when Management clears a
@@ -11696,7 +11755,7 @@ async function apiInsertContract(leadId,clientName,agentKey){
   const {data,error}=await sb.from('contracts').insert({lead_id:leadId,client_name:clientName,agent_key:agentKey||'company',created_by:PROFILE.key,created_by_name:PROFILE.name}).select().single();
   if(error) throw error; return mapContract(data);
 }
-const mapContractRequest=r=>({id:r.id,leadId:r.lead_id,clientName:r.client_name,requestedBy:r.requested_by,requestedByName:r.requested_by_name,note:r.note,status:r.status,createdAt:r.created_at,fulfilledAt:r.fulfilled_at,read:r.read});
+const mapContractRequest=r=>({id:r.id,leadId:r.lead_id,clientName:r.client_name,requestedBy:r.requested_by,requestedByName:r.requested_by_name,note:r.note,status:r.status,createdAt:r.created_at,fulfilledAt:r.fulfilled_at,read:r.read,source:r.source||'staff',clientAddress:r.client_address,clientKyc:r.client_kyc});
 async function apiLoadContractRequests(){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.contractRequests||[]).slice(); }
   try{ const {data,error}=await sb.from('contract_requests').select('*').order('created_at',{ascending:false}); if(error) throw error;
@@ -11704,10 +11763,29 @@ async function apiLoadContractRequests(){
   catch(e){ return []; }
 }
 async function apiInsertContractRequest(leadId,clientName,note){
-  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),leadId,clientName,requestedBy:PROFILE.key,requestedByName:PROFILE.name,note,status:'pending',createdAt:new Date().toISOString(),fulfilledAt:null,read:false};
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),leadId,clientName,requestedBy:PROFILE.key,requestedByName:PROFILE.name,note,status:'pending',createdAt:new Date().toISOString(),fulfilledAt:null,read:false,source:'staff'};
     d.contractRequests=d.contractRequests||[]; d.contractRequests.unshift(rec); await demoSave(); return rec; }
-  const {data,error}=await sb.from('contract_requests').insert({lead_id:leadId,client_name:clientName,requested_by:PROFILE.key,requested_by_name:PROFILE.name,note:note||null}).select().single();
+  const {data,error}=await sb.from('contract_requests').insert({lead_id:leadId,client_name:clientName,requested_by:PROFILE.key,requested_by_name:PROFILE.name,note:note||null,source:'staff'}).select().single();
   if(error) throw error; return mapContractRequest(data);
+}
+// Client-side: the client fills in the same Know-Your-Customer fields staff would
+// otherwise have to prompt for, but generation itself stays gated behind Management/
+// Elizabeth reviewing and releasing it (same human-in-the-loop principle as the
+// existing staff request flow) -- this never writes to the lead directly, since a
+// client has no RLS write access to leads, only to their own submission here.
+async function apiClientSubmitContractRequest(leadId,clientName,address,kyc,note){
+  const dbrow={lead_id:leadId,client_name:clientName,requested_by:'client',requested_by_name:clientName,note:note||null,source:'client',client_address:address||null,client_kyc:kyc||null};
+  if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),leadId,clientName,requestedBy:'client',requestedByName:clientName,note,status:'pending',createdAt:new Date().toISOString(),fulfilledAt:null,read:false,source:'client',clientAddress:address,clientKyc:kyc};
+    d.contractRequests=d.contractRequests||[]; d.contractRequests.unshift(rec); await demoSave(); return rec; }
+  const {data,error}=await sb.from('contract_requests').insert(dbrow).select().single();
+  if(error) throw error; return mapContractRequest(data);
+}
+async function apiClientLoadMyContractRequests(leadIds){
+  if(!leadIds||!leadIds.length) return [];
+  if(DEMO_MODE){ const d=await demoLoad(); return (d.contractRequests||[]).filter(r=>leadIds.includes(r.leadId)); }
+  try{ const {data,error}=await sb.from('contract_requests').select('*').in('lead_id',leadIds).order('created_at',{ascending:false}); if(error) throw error;
+    return (data||[]).map(mapContractRequest); }
+  catch(e){ return []; }
 }
 async function apiFulfillContractRequest(id){
   if(DEMO_MODE){ const d=await demoLoad(); const r=(d.contractRequests||[]).find(x=>x.id===id); if(r){ r.status='fulfilled'; r.fulfilledAt=new Date().toISOString(); } await demoSave(); return; }
@@ -11730,9 +11808,10 @@ async function apiMarkContractRequestsRead(ids){
 // requiring the client to hand-write it after the fact. Pre-filled from
 // whatever's already saved (lead.address / lead.kyc), so it doubles as an
 // editor on repeat visits, not just a first-time blank prompt.
+const KYC_ID_TYPES=['Voters','Passport','Ghana Card',"Driver's License"];
 function promptForLeadKyc(lead){
   const k=lead.kyc||{};
-  const idTypes=['Voters','Passport','Ghana Card',"Driver's License"];
+  const idTypes=KYC_ID_TYPES;
   return new Promise(resolve=>{
     let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
     ov=document.createElement('div'); ov.id='announceOverlay';
@@ -11787,7 +11866,8 @@ async function generateAndRecordContract(lead){
     if(pendingReq){
       await apiFulfillContractRequest(pendingReq.id);
       pendingReq.status='fulfilled'; pendingReq.fulfilledAt=new Date().toISOString();
-      try{ await apiSendMessage(pendingReq.requestedBy,'The contract for '+lead.name+' is ready — you can download it from their pipeline page.'); }catch(e){}
+      if(pendingReq.source==='client'){ try{ await notifyClient(lead,'Contract ready','Your Contract of Sale has been reviewed and is ready — your agent will be in touch with the signed copy.'); }catch(e){} }
+      else{ try{ await apiSendMessage(pendingReq.requestedBy,'The contract for '+lead.name+' is ready — you can download it from their pipeline page.'); }catch(e){} }
     }
   }catch(e){} // the PDF already downloaded successfully -- don't block on bookkeeping failing
 }
@@ -11830,15 +11910,23 @@ function contractRequestsHtml(){
   const pending=(DB.contractRequests||[]).filter(r=>r.status==='pending').sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
   const fulfilled=(DB.contractRequests||[]).filter(r=>r.status==='fulfilled').sort((a,b)=>(b.fulfilledAt||'').localeCompare(a.fulfilledAt||'')).slice(0,15);
   return `<div class="sectitle" style="margin-top:0"><h3>Pending</h3><span class="cnt">${pending.length}</span></div>
-  <div class="list" style="margin-bottom:18px">${pending.length?pending.map(r=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.clientName)}</div><div class="meta">Requested by ${esc(r.requestedByName)} · ${esc((r.createdAt||'').slice(0,16).replace('T',' '))}${r.note?' · "'+esc(r.note)+'"':''}</div></div></div>
-  <div class="foot" style="margin-top:10px"><button class="chip" data-cropen="${esc(r.leadId)}">Open client &amp; generate →</button></div></div>`).join(''):emptyState(ic.doc,'Nothing pending','New contract requests will show up here.')}</div>
+  <div class="list" style="margin-bottom:18px">${pending.length?pending.map(r=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.clientName)}${r.source==='client'?' <span class="tag ok">Submitted by client</span>':''}</div><div class="meta">Requested by ${esc(r.requestedByName)} · ${esc((r.createdAt||'').slice(0,16).replace('T',' '))}${r.note?' · "'+esc(r.note)+'"':''}</div></div></div>
+  <div class="foot" style="margin-top:10px"><button class="chip" data-cropen="${esc(r.id)}" data-croleadid="${esc(r.leadId)}">Open client &amp; generate →</button></div></div>`).join(''):emptyState(ic.doc,'Nothing pending','New contract requests will show up here.')}</div>
   <div class="sectitle"><h3>Recently fulfilled</h3><span class="cnt">${fulfilled.length}</span></div>
   <div class="list">${fulfilled.length?fulfilled.map(r=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.clientName)}</div><div class="meta">Requested by ${esc(r.requestedByName)} · fulfilled ${esc((r.fulfilledAt||'').slice(0,16).replace('T',' '))}</div></div></div></div>`).join(''):emptyState(ic.doc,'Nothing yet','')}</div>`;
 }
 function bindContractRequestsCtrls(){
   document.querySelectorAll('[data-cropen]').forEach(b=>b.onclick=async()=>{
-    const lead=findLeadById(b.dataset.cropen);
+    const lead=findLeadById(b.dataset.croleadid);
     if(!lead){ toast('Could not find that client'); return; }
+    const req=(DB.contractRequests||[]).find(r=>r.id===b.dataset.cropen);
+    // A client-submitted request carries their own proposed KYC answers -- surface
+    // them as the lead's own kyc/address before the usual prompt opens, so staff
+    // reviews and confirms what the client already filled in instead of re-typing
+    // it blank, while still getting the same edit-before-generate checkpoint.
+    if(req&&req.source==='client'&&(req.clientKyc||req.clientAddress)){
+      lead.kyc=req.clientKyc||lead.kyc; lead.address=req.clientAddress||lead.address;
+    }
     b.disabled=true;
     try{ await generateAndRecordContract(lead); paintContractAppBody(); } catch(e){ toast('Could not generate: '+(e.message||e)); } finally { b.disabled=false; }
   });
