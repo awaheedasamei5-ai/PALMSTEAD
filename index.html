@@ -4446,6 +4446,7 @@ async function enterApp(){
   checkBirthdaysToday();
   checkMonthlyCommissionReport();
   checkPaymentDueReminders();
+  checkRecurringExpenseReminders();
   setupPushNotifications();
   route(PROFILE.role==='manager'?'mgr':'home');
 }
@@ -13745,7 +13746,7 @@ async function smsHandleSend(){
    balance logging. Live-mode only (real money, real receipts -- nothing to protect in
    demo mode), same restriction pattern as canManagePayments(). */
 function canManageExpenses(){ return PROFILE.role==='manager' || PROFILE.key==='elias'; }
-let EXP_TAB='log', EXP_LOADED=false, EXPENSES_LIST=[], FUND_REQUESTS_LIST=[], DAILY_BALANCES_LIST=[], EXP_CATEGORIES_LIST=[];
+let EXP_TAB='log', EXP_LOADED=false, EXPENSES_LIST=[], FUND_REQUESTS_LIST=[], DAILY_BALANCES_LIST=[], EXP_CATEGORIES_LIST=[], RECURRING_EXPENSES_LIST=[];
 function mapExpense(r){ return {id:r.id,category:r.category,amount:num(r.amount),method:r.payment_method,date:r.expense_date,description:r.description,
   receiptData:r.receipt_data,receiptName:r.receipt_name,loggedBy:r.logged_by,loggedByName:r.logged_by_name,status:r.status,
   decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedAt:r.decided_at,decisionNote:r.decision_note,fundRequestId:r.fund_request_id,createdAt:r.created_at}; }
@@ -13756,6 +13757,45 @@ function mapDailyBalance(r){ return {id:r.id,date:r.balance_date,cash:num(r.cash
 async function apiLoadExpenseCategories(){ const {data,error}=await sb.from('expense_categories').select('*').eq('active',true).order('name'); if(error) throw error; return data||[]; }
 async function apiAddExpenseCategory(name,monthlyBudget){ const {data,error}=await sb.from('expense_categories').insert({name,monthly_budget:monthlyBudget||null}).select().single(); if(error) throw error; return data; }
 async function apiUpdateExpenseCategoryBudget(id,monthlyBudget){ const {data,error}=await sb.from('expense_categories').update({monthly_budget:monthlyBudget||null}).eq('id',id).select().single(); if(error) throw error; return data; }
+/* ---- Recurring expense reminders -- reminder-only, never auto-posts an
+   expense. Modeled on checkMonthlyCommissionReport()'s auto-trigger-once-
+   per-period pattern, but per-row (last_reminded_period) since there can be
+   many templates instead of one report. ---- */
+function mapRecurringExpense(r){ return {id:r.id,category:r.category,amount:num(r.amount),method:r.method,description:r.description,
+  interval:r.interval,dayOfPeriod:r.day_of_period,active:r.active,createdBy:r.created_by,createdByName:r.created_by_name,
+  lastRemindedPeriod:r.last_reminded_period,createdAt:r.created_at}; }
+async function apiLoadRecurringExpenses(){ const {data,error}=await sb.from('recurring_expenses').select('*').order('created_at',{ascending:false}); if(error) throw error; return (data||[]).map(mapRecurringExpense); }
+async function apiInsertRecurringExpense(r){
+  const {data,error}=await sb.from('recurring_expenses').insert({category:r.category,amount:r.amount,method:r.method,description:r.description||null,
+    interval:r.interval,day_of_period:r.dayOfPeriod,created_by:PROFILE.key,created_by_name:PROFILE.name}).select().single();
+  if(error) throw error; return mapRecurringExpense(data);
+}
+async function apiSetRecurringExpenseActive(id,active){ const {error}=await sb.from('recurring_expenses').update({active}).eq('id',id); if(error) throw error; }
+async function apiMarkRecurringExpenseReminded(id,period){ const {error}=await sb.from('recurring_expenses').update({last_reminded_period:period}).eq('id',id); if(error) throw error; }
+function isoWeekKey(d){ const t=new Date(d); const day=(t.getDay()+6)%7; t.setDate(t.getDate()-day); return t.toISOString().slice(0,10); }
+async function checkRecurringExpenseReminders(){
+  if(!canManageExpenses() || DEMO_MODE) return;
+  try{
+    const list=await apiLoadRecurringExpenses();
+    const now=new Date(today()+'T00:00:00');
+    const curMonth=today().slice(0,7), curWeek=isoWeekKey(now);
+    const due=[];
+    for(const r of list){
+      if(!r.active) continue;
+      const period=r.interval==='monthly'?curMonth:curWeek;
+      if(r.lastRemindedPeriod===period) continue;
+      const isDue=r.interval==='monthly'?now.getDate()>=r.dayOfPeriod:now.getDay()===r.dayOfPeriod;
+      if(!isDue) continue;
+      due.push(r);
+      try{ await apiMarkRecurringExpenseReminded(r.id,period); }catch(e){}
+    }
+    if(due.length){
+      const body=due.map(r=>`${r.category} (${ghs(r.amount)})`).join(', ')+' — due to be logged this period. Open Expenses › Recurring to log it.';
+      const rec=await apiInsertAnnouncement(due.length+' recurring expense'+(due.length===1?'':'s')+' due',body,null);
+      if(rec){ DB.announcements.unshift(rec); refreshAnnounceBubble(); }
+    }
+  }catch(e){}
+}
 async function apiLoadExpenses(){ const {data,error}=await sb.from('expenses').select('*').order('created_at',{ascending:false}); if(error) throw error; return (data||[]).map(mapExpense); }
 async function apiInsertExpense(e){
   const {data,error}=await sb.from('expenses').insert({category:e.category,amount:e.amount,payment_method:e.method,expense_date:e.date,description:e.description,
@@ -13792,8 +13832,8 @@ async function viewExpensesApp(){
   <div id="expBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!EXP_LOADED){
     try{
-      [EXP_CATEGORIES_LIST,EXPENSES_LIST,FUND_REQUESTS_LIST,DAILY_BALANCES_LIST]=await withLoadTimeout(Promise.all([
-        apiLoadExpenseCategories(),apiLoadExpenses(),apiLoadFundRequests(),apiLoadDailyBalances()]),15000,'Expenses');
+      [EXP_CATEGORIES_LIST,EXPENSES_LIST,FUND_REQUESTS_LIST,DAILY_BALANCES_LIST,RECURRING_EXPENSES_LIST]=await withLoadTimeout(Promise.all([
+        apiLoadExpenseCategories(),apiLoadExpenses(),apiLoadFundRequests(),apiLoadDailyBalances(),apiLoadRecurringExpenses()]),15000,'Expenses');
       EXP_LOADED=true;
     }catch(e){ toast('Could not load expenses: '+(e.message||e)); }
   }
@@ -13812,7 +13852,7 @@ function paintExpensesApp(){
   const pc=expPendingCount();
   tabs.innerHTML=[
     ['log','Log Expense'],['funds','Fund Requests'],['balance','Daily Balance'],
-    ...(isMgr?[['approvals','Approvals'+(pc?' ('+pc+')':'')],['categories','Categories']]:[])
+    ...(isMgr?[['approvals','Approvals'+(pc?' ('+pc+')':'')],['categories','Categories'],['recurring','Recurring']]:[])
   ].map(([k,l])=>`<button class="chip ${EXP_TAB===k?'on':''}" data-exptab="${k}">${l}</button>`).join('');
   tabs.querySelectorAll('[data-exptab]').forEach(b=>b.onclick=()=>{ EXP_TAB=b.dataset.exptab; paintExpensesApp(); });
   const body=document.getElementById('expBody');
@@ -13821,6 +13861,7 @@ function paintExpensesApp(){
   else if(EXP_TAB==='balance') body.innerHTML=expBalanceTabHtml();
   else if(EXP_TAB==='approvals') body.innerHTML=expApprovalsTabHtml();
   else if(EXP_TAB==='categories') body.innerHTML=expCategoriesTabHtml();
+  else if(EXP_TAB==='recurring') body.innerHTML=expRecurringTabHtml();
   bindExpensesCtrls();
 }
 // Category budgets are optional (monthly_budget can be null -- "just a
@@ -13846,6 +13887,64 @@ function expCategoriesTabHtml(){
   <div class="sectitle"><h3>Categories</h3><span class="cnt">${EXP_CATEGORIES_LIST.length}</span></div>
   <div class="list">${EXP_CATEGORIES_LIST.map(c=>`<div class="rowcard"><div class="top"><div style="flex:1"><div class="nm">${esc(c.name)}</div>${expCategoryBurnHtml(c)}</div></div>
     <div class="foot" style="gap:8px;margin-top:10px"><input id="ecb_${esc(c.id)}" type="number" min="0" step="0.01" placeholder="Monthly budget" value="${c.monthly_budget!=null?c.monthly_budget:''}" style="flex:1;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;font-size:13px"/><button class="chip" data-savebudget="${esc(c.id)}">Save</button></div></div>`).join('')}</div>`;
+}
+const WEEKDAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function recurringDueLabel(r){ return r.interval==='monthly'?('Day '+r.dayOfPeriod+' of the month'):('Every '+WEEKDAY_NAMES[r.dayOfPeriod]); }
+// Reminder-only, same discipline as the fund-request-to-expense link and
+// everything else money-adjacent here -- a due recurring template never
+// creates the expense itself, it just surfaces a "Log now" shortcut that
+// pre-seeds the same form a human already fills in by hand.
+function expRecurringTabHtml(){
+  return `<div class="formwrap">
+  <div class="sectitle" style="margin-top:0"><h3>Add a recurring expense</h3></div>
+  ${fld('Category',sel('re_category',EXP_CATEGORIES_LIST.map(c=>c.name),EXP_CATEGORIES_LIST[0]?EXP_CATEGORIES_LIST[0].name:''))}
+  <div class="grid2">${fld('Amount (GHS)','<input id="re_amount" type="number" min="0" step="0.01" placeholder="0.00"/>')}${fld('Payment method',sel('re_method',['Cash','MoMo','Bank'],'Cash'))}</div>
+  <div class="grid2">${fld('Repeats',sel('re_interval',['Monthly','Weekly'],'Monthly'))}${fld('Day','<input id="re_day" type="number" min="0" max="28" value="1"/>','month: 1–28 · week: 0=Sun…6=Sat')}</div>
+  ${fld('Description','<textarea id="re_desc" placeholder="e.g. Office rent"></textarea>','optional')}
+  <div class="formactions"><button class="btn primary" id="reAddBtn" style="width:100%">Add recurring expense</button></div>
+  </div>
+  <div class="sectitle"><h3>Templates</h3><span class="cnt">${RECURRING_EXPENSES_LIST.length}</span></div>
+  <div class="list">${RECURRING_EXPENSES_LIST.length?RECURRING_EXPENSES_LIST.map(r=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.category)} · ${ghs(r.amount)}</div><div class="meta">${esc(recurringDueLabel(r))}${r.description?' · '+esc(r.description):''}</div></div><span class="tag ${r.active?'ok':'ghost'}">${r.active?'Active':'Paused'}</span></div>
+    <div class="foot" style="gap:8px;flex-wrap:wrap;margin-top:10px"><button class="chip" data-logrecurring="${esc(r.id)}">Log now</button><button class="chip" data-togglerecurring="${esc(r.id)}">${r.active?'Pause':'Resume'}</button></div></div>`).join(''):emptyState(ic.doc,'No recurring expenses yet','Rent, utilities, subscriptions — anything that repeats. Use the form above to add one.')}</div>`;
+}
+// Pre-seeded from the template but every field stays editable, same as
+// openLogSpendModal -- the reminder is a nudge, not a locked-in amount.
+function openLogRecurringModal(r){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Log recurring expense</div>
+    <div class="mini" style="margin-bottom:14px">${esc(r.category)} · ${esc(recurringDueLabel(r))}</div>
+    ${fld('Category',sel('lr_category',EXP_CATEGORIES_LIST.map(c=>c.name),r.category))}
+    <div class="grid2">${fld('Amount (GHS)','<input id="lr_amount" type="number" min="0" step="0.01" value="'+r.amount+'"/>')}${fld('Payment method',sel('lr_method',['Cash','MoMo','Bank'],r.method?r.method.charAt(0).toUpperCase()+r.method.slice(1):'Cash'))}</div>
+    ${fld('Date','<input id="lr_date" type="date" value="'+today()+'"/>')}
+    ${fld('Description','<textarea id="lr_desc">'+esc(r.description||'')+'</textarea>')}
+    ${fld('Receipt','<input id="lr_receipt" type="file" accept="image/*,.pdf"/>','optional — image or PDF')}
+    <div id="lr_receiptPreview"></div>
+    <div class="formactions"><button class="btn primary" id="lr_save" style="width:100%">Log expense</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  let receiptPending=null;
+  document.getElementById('lr_receipt').onchange=async()=>{
+    const file=document.getElementById('lr_receipt').files[0]; if(!file) return;
+    try{
+      const isImage=file.type.startsWith('image/');
+      const data=isImage?await resizeImageToB64(file,1200,1600,0.8):await readFileAsB64(file,4*1024*1024);
+      receiptPending={data,name:file.name};
+      document.getElementById('lr_receiptPreview').innerHTML=isImage?`<img src="${data}" style="max-width:140px;border-radius:10px;margin-top:6px"/>`:`<div class="mini" style="margin-top:6px">📎 ${esc(file.name)}</div>`;
+    }catch(e){ toast('Could not attach that file: '+(e.message||e)); }
+  };
+  document.getElementById('lr_save').onclick=async()=>{
+    const amount=num(val('lr_amount')); if(!amount||amount<=0){ toast('Enter an amount'); return; }
+    const btn=document.getElementById('lr_save'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const rec=await apiInsertExpense({category:val('lr_category'),amount,method:val('lr_method').toLowerCase(),date:val('lr_date')||today(),
+        description:val('lr_desc').trim(),receiptData:receiptPending?receiptPending.data:null,receiptName:receiptPending?receiptPending.name:null});
+      EXPENSES_LIST.unshift(rec);
+      toast('Expense logged — awaiting approval'); ov.remove(); paintExpensesApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Log expense'; }
+  };
 }
 function expStatusTag(s){
   if(s==='approved') return '<span class="tag ok">Approved</span>';
@@ -14062,6 +14161,27 @@ function bindExpensesCtrls(){
       toast('Category added'); paintExpensesApp();
     }catch(e){ toast('Failed: '+(e.message||e)); ecAddBtn.disabled=false; ecAddBtn.textContent='Add category'; }
   };
+  const reAddBtn=document.getElementById('reAddBtn');
+  if(reAddBtn) reAddBtn.onclick=async()=>{
+    const amount=num(val('re_amount')); if(!amount||amount<=0){ toast('Enter an amount'); return; }
+    const day=num(val('re_day'));
+    reAddBtn.disabled=true; reAddBtn.textContent='Adding…';
+    try{
+      const rec=await apiInsertRecurringExpense({category:val('re_category'),amount,method:val('re_method').toLowerCase(),
+        description:val('re_desc').trim(),interval:val('re_interval').toLowerCase(),dayOfPeriod:day});
+      RECURRING_EXPENSES_LIST.unshift(rec);
+      toast('Recurring expense added'); paintExpensesApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); reAddBtn.disabled=false; reAddBtn.textContent='Add recurring expense'; }
+  };
+  document.querySelectorAll('[data-logrecurring]').forEach(b=>b.onclick=()=>{
+    const r=RECURRING_EXPENSES_LIST.find(x=>x.id===b.dataset.logrecurring); if(r) openLogRecurringModal(r);
+  });
+  document.querySelectorAll('[data-togglerecurring]').forEach(b=>b.onclick=async()=>{
+    const r=RECURRING_EXPENSES_LIST.find(x=>x.id===b.dataset.togglerecurring); if(!r) return;
+    b.disabled=true;
+    try{ await apiSetRecurringExpenseActive(r.id,!r.active); r.active=!r.active; toast(r.active?'Resumed':'Paused'); paintExpensesApp(); }
+    catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
+  });
   document.querySelectorAll('[data-savebudget]').forEach(b=>b.onclick=async()=>{
     const id=b.dataset.savebudget; const input=document.getElementById('ecb_'+id); const budget=num(input.value)||null;
     b.disabled=true; b.textContent='Saving…';
