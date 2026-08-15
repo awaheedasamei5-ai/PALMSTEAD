@@ -5147,6 +5147,14 @@ const KPI_STYLE={
 function kpi(k,v,cls='',routeTo=''){ const st=KPI_STYLE[k]||{icon:'grid',color:'blue'};
   return `<div class="kpi ${cls}${routeTo?' kpi-click':''}" ${routeTo?`data-r="${routeTo}"`:''}><span class="kpi-ic ${st.color}">${kpiIc[st.icon]}</span><div class="k">${k}</div><div class="v">${v}</div></div>`;}
 
+// The exact same "current month back 5" window was duplicated in agentDetailView
+// and mgrLeaderboard -- one shared helper so every "last 6 months" chart in the
+// app buckets by the same calendar boundaries.
+function last6MonthKeys(){
+  const months=[]; const now=new Date();
+  for(let i=5;i>=0;i--){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')); }
+  return months;
+}
 /* ---- lightweight dependency-free charts ---- */
 function svgLineChart(values,labels,opts={}){
   const w=opts.width||600,h=opts.height||170,pad=30;
@@ -6455,8 +6463,7 @@ function agentDetailView(agentKey){
   const STAGE_COLORS2={'1':'#94A3B8','2A':'#64748B','2B':'#3B82F6','3':'#F59E0B','4':'#16A34A',Lost:'#EF4444'};
   const stageSegs=STAGES.map(s=>({label:s,value:list.filter(l=>l.stage===s).length,color:STAGE_COLORS2[s]||'#94A3B8'}));
 
-  const months=[]; const now=new Date();
-  for(let i=5;i>=0;i--){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')); }
+  const months=last6MonthKeys();
   const monthVals=months.map(mk=>(DB.payments||[]).filter(p=>p.agentKey===agentKey && (p.date||'').slice(0,7)===mk).reduce((s,p)=>s+num(p.amount),0));
   const monthLbls=months.map(mk=>monthLabel2(mk).split(' ')[0]);
 
@@ -9230,6 +9237,7 @@ async function viewLogPaymentApp(){
   ${isMgr?`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <button class="chip ${logPayTab==='search'?'on':''}" data-logpaytab="search">Log Payment</button>
     <button class="chip ${logPayTab==='pending'?'on':''}" data-logpaytab="pending">Pending Approvals${pendingCount?' ('+pendingCount+')':''}</button>
+    <button class="chip ${logPayTab==='dashboard'?'on':''}" data-logpaytab="dashboard">Dashboard</button>
   </div>`:''}
   <div id="logpayBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!CLIENTDB_LOADED){ try{ await withLoadTimeout(apiLoadClientDatabase(),15000,'Client list'); }catch(e){ toast('Could not load clients: '+(e.message||e)); } }
@@ -9293,11 +9301,46 @@ function logPaymentSearchResultsHtml(q){
       <div style="text-align:right"><div class="amt">${bal>0?ghs(bal):'Paid'}</div><div class="meta">${bal>0?'balance':'in full'}</div></div></div></button>`;
   }).join('');
 }
+// Reuses the existing scheduling math (computeMonthlySchedule/PLAN_MONTHS/isFullyPaid --
+// the same engine checkPaymentDueReminders() already relies on) rather than inventing a
+// second definition of "arrears". CLIENTDB_LIST/DB.payments are already company-wide by
+// the time this app is open (canManagePayments() loads them at boot), so no extra fetch.
+function computeLogPaymentDashboardData(){
+  const allLeads=CLIENTDB_LIST||[];
+  const thisMonth=today().slice(0,7);
+  const thisMonthCollected=(DB.payments||[]).filter(p=>(p.date||'').slice(0,7)===thisMonth).reduce((s,p)=>s+num(p.amount),0);
+  const todayDate=new Date(today()+'T00:00:00');
+  let totalArrears=0, clientsInArrears=0, upcomingDueCount=0;
+  allLeads.forEach(l=>{
+    if(!PLAN_MONTHS[l.paymentPlan] || isFullyPaid(l)) return;
+    const myPayments=(DB.payments||[]).filter(p=>p.leadId===l.id);
+    const sched=computeMonthlySchedule(l,myPayments);
+    if(!sched) return;
+    if(sched.arrears>0.5){ totalArrears+=sched.arrears; clientsInArrears++; }
+    const dueDate=new Date(sched.nextDueDate+'T00:00:00');
+    const daysDiff=Math.round((todayDate-dueDate)/86400000);
+    if(daysDiff>=-7 && daysDiff<0 && sched.expectedThisMonth>0) upcomingDueCount++;
+  });
+  const months=last6MonthKeys();
+  const monthVals=months.map(mk=>(DB.payments||[]).filter(p=>(p.date||'').slice(0,7)===mk).reduce((s,p)=>s+num(p.amount),0));
+  const monthLbls=months.map(mk=>monthLabel2(mk).split(' ')[0]);
+  return {thisMonthCollected,totalArrears,clientsInArrears,upcomingDueCount,monthVals,monthLbls};
+}
+function logPayDashboardHtml(d){
+  return `<div class="kpis">${kpi('Collected this month',ghs(d.thisMonthCollected))}${kpi('Total in arrears',ghs(d.totalArrears),'gold')}${kpi('Clients in arrears',d.clientsInArrears)}${kpi('Due in next 7 days',d.upcomingDueCount)}</div>
+  <div class="sectitle" style="margin-top:0"><h3>Collected — last 6 months</h3><span class="cnt">whole company</span></div>
+  <div class="formwrap">${svgLineChart(d.monthVals,d.monthLbls)}</div>
+  <p class="mini" style="margin-top:12px">Arrears is money behind schedule on an active installment plan, not total remaining balance — the same figure the monthly payment reminders are built on.</p>`;
+}
 function paintLogPayBody(){
   const body=document.getElementById('logpayBody'); if(!body) return;
   if(logPayTab==='pending'&&PROFILE.role==='manager'){
     body.innerHTML=pendingPaymentsHtml();
     bindPendingPaymentsCtrls();
+    return;
+  }
+  if(logPayTab==='dashboard'&&PROFILE.role==='manager'){
+    body.innerHTML=logPayDashboardHtml(computeLogPaymentDashboardData());
     return;
   }
   if(!LOGPAY_SELECTED_LEAD){
@@ -12445,8 +12488,7 @@ function mgrLeaderboard(){
   agents.forEach(a=>a.list.forEach(l=>{ const mk=monthKey(l.date); if(mk) years.add(+mk.slice(0,4)); }));
   const yearList=[...years].sort((a,b)=>b-a);
 
-  const months=[]; const now=new Date();
-  for(let i=5;i>=0;i--){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')); }
+  const months=last6MonthKeys();
 
   const rows=agents.map(a=>{
     const wonYear=a.list.filter(l=>isFullyPaid(l) && monthKey(l.date) && monthKey(l.date).startsWith(String(slYear)));
