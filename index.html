@@ -13753,7 +13753,8 @@ function mapFundReq(r){ return {id:r.id,type:r.req_type,amount:num(r.amount),pur
   status:r.status,decidedBy:r.decided_by,decidedByName:r.decided_by_name,decidedAt:r.decided_at,decisionNote:r.decision_note,approvalSignature:r.approval_signature,createdAt:r.created_at}; }
 function mapDailyBalance(r){ return {id:r.id,date:r.balance_date,cash:num(r.cash),momo:num(r.momo),bank:num(r.bank),loggedByName:r.logged_by_name,updatedAt:r.updated_at}; }
 async function apiLoadExpenseCategories(){ const {data,error}=await sb.from('expense_categories').select('*').eq('active',true).order('name'); if(error) throw error; return data||[]; }
-async function apiAddExpenseCategory(name){ const {data,error}=await sb.from('expense_categories').insert({name}).select().single(); if(error) throw error; return data; }
+async function apiAddExpenseCategory(name,monthlyBudget){ const {data,error}=await sb.from('expense_categories').insert({name,monthly_budget:monthlyBudget||null}).select().single(); if(error) throw error; return data; }
+async function apiUpdateExpenseCategoryBudget(id,monthlyBudget){ const {data,error}=await sb.from('expense_categories').update({monthly_budget:monthlyBudget||null}).eq('id',id).select().single(); if(error) throw error; return data; }
 async function apiLoadExpenses(){ const {data,error}=await sb.from('expenses').select('*').order('created_at',{ascending:false}); if(error) throw error; return (data||[]).map(mapExpense); }
 async function apiInsertExpense(e){
   const {data,error}=await sb.from('expenses').insert({category:e.category,amount:e.amount,payment_method:e.method,expense_date:e.date,description:e.description,
@@ -13809,7 +13810,7 @@ function paintExpensesApp(){
   const pc=expPendingCount();
   tabs.innerHTML=[
     ['log','Log Expense'],['funds','Fund Requests'],['balance','Daily Balance'],
-    ...(isMgr?[['approvals','Approvals'+(pc?' ('+pc+')':'')]]:[])
+    ...(isMgr?[['approvals','Approvals'+(pc?' ('+pc+')':'')],['categories','Categories']]:[])
   ].map(([k,l])=>`<button class="chip ${EXP_TAB===k?'on':''}" data-exptab="${k}">${l}</button>`).join('');
   tabs.querySelectorAll('[data-exptab]').forEach(b=>b.onclick=()=>{ EXP_TAB=b.dataset.exptab; paintExpensesApp(); });
   const body=document.getElementById('expBody');
@@ -13817,7 +13818,32 @@ function paintExpensesApp(){
   else if(EXP_TAB==='funds') body.innerHTML=expFundsTabHtml();
   else if(EXP_TAB==='balance') body.innerHTML=expBalanceTabHtml();
   else if(EXP_TAB==='approvals') body.innerHTML=expApprovalsTabHtml();
+  else if(EXP_TAB==='categories') body.innerHTML=expCategoriesTabHtml();
   bindExpensesCtrls();
+}
+// Category budgets are optional (monthly_budget can be null -- "just a
+// category, no cap") and purely informational: going over one doesn't block
+// logging an expense, it's a burn-down visual, not an enforcement gate.
+function expCategoryBurnHtml(c){
+  const thisMonth=today().slice(0,7);
+  const spent=EXPENSES_LIST.filter(e=>e.status==='approved'&&e.category===c.name&&(e.date||'').slice(0,7)===thisMonth).reduce((s,e)=>s+num(e.amount),0);
+  const budget=num(c.monthly_budget);
+  if(!budget) return `<div class="mini" style="margin-top:4px">${ghs(spent)} spent this month · no budget set</div>`;
+  const pct=Math.min(100,Math.round(spent/budget*100));
+  const over=spent>budget;
+  return `<div class="mini" style="margin-top:4px">${ghs(spent)} of ${ghs(budget)} this month (${pct}%)</div>
+  <div style="height:6px;background:#EEF1F6;border-radius:4px;overflow:hidden;margin-top:4px"><div style="height:100%;width:${pct}%;background:${over?'var(--danger)':'var(--green)'};border-radius:4px"></div></div>`;
+}
+function expCategoriesTabHtml(){
+  return `<div class="formwrap">
+  <div class="sectitle" style="margin-top:0"><h3>Add a category</h3></div>
+  ${fld('Name','<input id="ec_name" placeholder="e.g. Fuel"/>')}
+  ${fld('Monthly budget (GHS)','<input id="ec_budget" type="number" min="0" step="0.01" placeholder="optional"/>','leave blank for no cap')}
+  <div class="formactions"><button class="btn primary" id="ecAddBtn" style="width:100%">Add category</button></div>
+  </div>
+  <div class="sectitle"><h3>Categories</h3><span class="cnt">${EXP_CATEGORIES_LIST.length}</span></div>
+  <div class="list">${EXP_CATEGORIES_LIST.map(c=>`<div class="rowcard"><div class="top"><div style="flex:1"><div class="nm">${esc(c.name)}</div>${expCategoryBurnHtml(c)}</div></div>
+    <div class="foot" style="gap:8px;margin-top:10px"><input id="ecb_${esc(c.id)}" type="number" min="0" step="0.01" placeholder="Monthly budget" value="${c.monthly_budget!=null?c.monthly_budget:''}" style="flex:1;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;font-size:13px"/><button class="chip" data-savebudget="${esc(c.id)}">Save</button></div></div>`).join('')}</div>`;
 }
 function expStatusTag(s){
   if(s==='approved') return '<span class="tag ok">Approved</span>';
@@ -14006,6 +14032,26 @@ function bindExpensesCtrls(){
   });
   document.querySelectorAll('[data-logspend]').forEach(b=>b.onclick=()=>{
     const f=FUND_REQUESTS_LIST.find(x=>x.id===b.dataset.logspend); if(f) openLogSpendModal(f);
+  });
+  const ecAddBtn=document.getElementById('ecAddBtn');
+  if(ecAddBtn) ecAddBtn.onclick=async()=>{
+    const name=val('ec_name').trim(); if(!name){ toast('Enter a category name'); return; }
+    const budget=num(val('ec_budget'))||null;
+    ecAddBtn.disabled=true; ecAddBtn.textContent='Adding…';
+    try{
+      const rec=await apiAddExpenseCategory(name,budget);
+      EXP_CATEGORIES_LIST.push(rec); EXP_CATEGORIES_LIST.sort((a,b)=>a.name.localeCompare(b.name));
+      toast('Category added'); paintExpensesApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); ecAddBtn.disabled=false; ecAddBtn.textContent='Add category'; }
+  };
+  document.querySelectorAll('[data-savebudget]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.savebudget; const input=document.getElementById('ecb_'+id); const budget=num(input.value)||null;
+    b.disabled=true; b.textContent='Saving…';
+    try{
+      await apiUpdateExpenseCategoryBudget(id,budget);
+      const c=EXP_CATEGORIES_LIST.find(x=>x.id===id); if(c) c.monthly_budget=budget;
+      toast('Budget saved'); paintExpensesApp();
+    }catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; b.textContent='Save'; }
   });
   const dbBtn=document.getElementById('dbSaveBtn');
   if(dbBtn) dbBtn.onclick=async()=>{
