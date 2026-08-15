@@ -684,6 +684,17 @@ body.dark .themeSwatchAuto.on{border-color:#fff}
 .starBtn.on{color:#C9A227}
 .starBtn:hover{transform:scale(1.15)}
 body.dark .starBtn{color:#3A4048}
+.achGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px}
+.achTile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 10px;text-align:center;opacity:.55;filter:grayscale(.6)}
+.achTile.won{opacity:1;filter:none;border-color:#C9A227;background:linear-gradient(180deg,#FDF6E3,var(--card) 60%);box-shadow:0 6px 16px -8px rgba(201,162,39,.4)}
+.achIcon{font-size:28px;line-height:1;margin-bottom:6px}
+.achLabel{font-size:11px;font-weight:700;color:var(--text);line-height:1.3;margin-bottom:6px}
+.achEarned{font-size:9.5px;color:#8A6E12;font-weight:700}
+.achProgressTrack{height:5px;border-radius:6px;background:#EEF1F6;overflow:hidden;margin-bottom:4px}
+.achProgressBar{height:100%;background:var(--leaf)}
+.achProgressText{font-size:9.5px;color:var(--muted);font-weight:700}
+body.dark .achTile{background:var(--card)}
+body.dark .achTile.won{background:linear-gradient(180deg,rgba(201,162,39,.15),var(--card) 60%)}
 .settingsSectitle .ssTitleRow{display:flex;align-items:center;gap:10px}
 .settingsSectitle .ssTitleRow h3{flex:1;min-width:0;overflow-wrap:break-word}
 .settingsSectitle .ssIcon{width:32px;height:32px;border-radius:10px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
@@ -4870,6 +4881,7 @@ async function enterApp(){
   ensureScheduleLiveSubscribed();
   ensureLeaveLiveSubscribed();
   ensureAttendanceLiveSubscribed();
+  if(PROFILE.role!=='manager') evaluateMyAchievements();
   startInactivityTimer();
   startMonthRolloverWatchdog();
   checkClockSanity();
@@ -8097,7 +8109,7 @@ function bindTodoCtrls(){
   const addBtn=document.getElementById('todoAddBtn'); if(addBtn) addBtn.onclick=openTodoNewModal;
   document.querySelectorAll('[data-todoclose]').forEach(b=>b.onclick=async()=>{
     b.disabled=true;
-    try{ await apiUpdateTodoStatus(b.dataset.todoclose,'closed'); const t=TODO_LIST.find(x=>x.id===b.dataset.todoclose); if(t){ t.status='closed'; t.closedAt=new Date().toISOString(); } toast('Marked closed'); paintTodoTab(); }
+    try{ await apiUpdateTodoStatus(b.dataset.todoclose,'closed'); const t=TODO_LIST.find(x=>x.id===b.dataset.todoclose); if(t){ t.status='closed'; t.closedAt=new Date().toISOString(); } toast('Marked closed'); paintTodoTab(); evaluateMyAchievements(); }
     catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
   });
   document.querySelectorAll('[data-todoreschedule]').forEach(b=>b.onclick=()=>{
@@ -8850,6 +8862,7 @@ async function changeTaskStatus(t,status){
     if(status==='Cancelled') t.cancelledAt=now;
     if(status==='In Progress'&&fromStatus==='Open') t.startedAt=now;
     if((status==='Open'||status==='In Progress')&&(fromStatus==='Done'||fromStatus==='Cancelled')){ t.completedAt=null; t.cancelledAt=null; }
+    if(status==='Done') evaluateMyAchievements();
     toast('Task updated'); route('taskDetail',t.id);
   }catch(e){ toast('Failed: '+(e.message||e)); }
 }
@@ -11062,8 +11075,41 @@ async function viewPortfolioApp(){
   if(PROFILE.role==='manager'){ V.innerHTML=back('more')+emptyState(ic.grid,'See the Leaderboard instead','Portfolio is for individual staff tracking — as Management you already see everyone on the Leaderboard.'); return; }
   V.innerHTML=`${back('more')}<div class="pagehead"><div><h2>Portfolio</h2><p>Your rank, your progress, and what you've earned</p></div></div>
   ${settingsSectionHead('pulse','Performance','how you compare across the team')}
-  <div class="formwrap" id="perfSectionBody"><div class="skel" style="height:110px;border-radius:16px"></div></div>`;
+  <div class="formwrap" id="perfSectionBody"><div class="skel" style="height:110px;border-radius:16px"></div></div>
+  ${settingsSectionHead('leaderboard','Achievements','earned automatically as you hit each milestone')}
+  <div id="achGridBody"><div class="skel" style="height:140px;border-radius:16px"></div></div>`;
   paintPerformanceSection();
+  evaluateMyAchievements().then(paintAchievementGrid);
+}
+// Badge grid -- Facebook/Instagram-style: earned badges shown solid with the date,
+// still-locked ones shown muted with a progress bar toward the threshold, so there's
+// always something visible to work toward, not just what's already been won.
+async function paintAchievementGrid(){
+  const body=document.getElementById('achGridBody'); if(!body) return;
+  try{
+    const yr=new Date().getFullYear();
+    const [defs,earned,rows]=await Promise.all([
+      apiListAchievementDefs(),
+      apiLoadStaffAchievements([PROFILE.key]),
+      apiLoadLeaderboardRows(yr+'-01-01',yr+'-12-31')
+    ]);
+    const myRow=rows.find(r=>r.staffKey===PROFILE.key)||{};
+    const earnedByDefId={}; earned.forEach(e=>{ earnedByDefId[e.achievementId]=e; });
+    const active=defs.filter(d=>d.active);
+    if(!active.length){ body.innerHTML=emptyState(ic.grid,'No achievements yet','Management hasn\'t set any up yet — check back soon.'); return; }
+    body.innerHTML=`<div class="achGrid">${active.map(d=>{
+      const won=earnedByDefId[d.id];
+      const val=num(myRow[d.criteriaType])||0;
+      const threshold=(d.criteriaConfig&&d.criteriaConfig.threshold)||1;
+      const pct=Math.max(0,Math.min(100,Math.round(val/threshold*100)));
+      return `<div class="achTile${won?' won':''}">
+        <div class="achIcon">${esc(d.icon||'🏅')}</div>
+        <div class="achLabel">${esc(d.label)}</div>
+        ${won?`<div class="achEarned">Earned ${esc((won.earnedAt||'').slice(0,10))}</div>`
+          :`<div class="achProgressTrack"><div class="achProgressBar" style="width:${pct}%"></div></div><div class="achProgressText">${val}/${threshold}</div>`}
+      </div>`;
+    }).join('')}</div>`;
+  }catch(e){ body.innerHTML=emptyState(ic.alertTri,'Could not load achievements',''); }
 }
 // Agent-only. formAccount() itself stays synchronous (same skeleton-then-async-paint
 // pattern as paintMgrOpsToday() in mgrOverview()) -- reads the exact same leaderboard_rows
@@ -13463,6 +13509,38 @@ async function apiAwardAchievement(achievementId,progress){
   const row={staff_key:PROFILE.key,staff_name:PROFILE.name,achievement_id:achievementId,progress:progress||null};
   const {data,error}=await sb.from('staff_achievements').upsert(row,{onConflict:'staff_key,achievement_id',ignoreDuplicates:true}).select().maybeSingle();
   if(error) throw error; return data?mapStaffAchievement(data):null;
+}
+// Evaluation engine -- runs at the natural checkpoints (sign-in, marking a to-do
+// closed, opening Portfolio itself) rather than on a timer, checking the caller's
+// OWN leaderboard_rows totals against every active achievement's threshold.
+// Deliberately re-evaluates from scratch each time instead of tracking deltas --
+// team is small and this is cheap, and apiAwardAchievement's unique constraint
+// (ignoreDuplicates) makes re-awarding an already-earned one a silent no-op, so
+// there's no risk of double-toasting on repeated checks within one criteria pass.
+async function evaluateMyAchievements(){
+  if(DEMO_MODE || IS_CLIENT || !PROFILE) return;
+  try{
+    const yr=new Date().getFullYear();
+    const [defs,rows,earned]=await Promise.all([
+      apiListAchievementDefs(),
+      apiLoadLeaderboardRows(yr+'-01-01',yr+'-12-31'),
+      apiLoadStaffAchievements([PROFILE.key])
+    ]);
+    const myRow=rows.find(r=>r.staffKey===PROFILE.key); if(!myRow) return;
+    const earnedIds=new Set(earned.map(e=>e.achievementId));
+    for(const def of defs){
+      if(!def.active || earnedIds.has(def.id)) continue;
+      const val=myRow[def.criteriaType];
+      const threshold=def.criteriaConfig&&def.criteriaConfig.threshold;
+      if(val==null || threshold==null || val<threshold) continue;
+      try{
+        const rec=await apiAwardAchievement(def.id,{value:val,threshold});
+        if(!rec) continue; // already earned -- the upsert's ignoreDuplicates silently no-op'd
+        toast('🏆 Achievement unlocked: '+def.label);
+        apiSendPush({ownerKind:'staff',ownerId:PROFILE.key,title:'Achievement unlocked',body:def.label+(def.points?' · +'+def.points+' points':''),url:'./index.html',tag:'achievement'}).catch(()=>{});
+      }catch(e){}
+    }
+  }catch(e){}
 }
 function openLeaderboardWeightsModal(){
   const w=CONFIG.leaderboardWeights||defaultConfig().leaderboardWeights;
