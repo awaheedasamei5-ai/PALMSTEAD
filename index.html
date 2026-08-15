@@ -662,6 +662,11 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .themeSwatchAuto.on{border-style:solid;border-color:var(--ink)}
 body.dark .themeSwatch.on{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.2)}
 body.dark .themeSwatchAuto.on{border-color:#fff}
+.starRating{display:flex;gap:4px}
+.starBtn{background:none;border:none;cursor:pointer;padding:0;font-size:26px;line-height:1;color:#E1E4E8;transition:transform .1s}
+.starBtn.on{color:#C9A227}
+.starBtn:hover{transform:scale(1.15)}
+body.dark .starBtn{color:#3A4048}
 .settingsSectitle .ssTitleRow{display:flex;align-items:center;gap:10px}
 .settingsSectitle .ssTitleRow h3{flex:1;min-width:0;overflow-wrap:break-word}
 .settingsSectitle .ssIcon{width:32px;height:32px;border-radius:10px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
@@ -2650,6 +2655,28 @@ async function apiClientInsertSiteVisit(row){
     accompanied:row.accompanied,agent_key:agentKey,agent_name:agentName,source:'Client portal'};
   const {data,error}=await sb.from('site_visits').insert(dbrow).select().single(); if(error) throw error;
   return mapSV(data);
+}
+/* Site Visit Experience -- separate from the booking flow above. A visit is eligible
+   for feedback once staff has confirmed it and the date has passed (there's no
+   dedicated "completed" status on site_visits today, so a confirmed past-dated visit
+   is the closest honest signal that it actually happened). One rating per visit --
+   site_visit_id is unique, so submitting again updates the same row instead of
+   creating a duplicate. */
+const mapSiteVisitFeedback=r=>({id:r.id,siteVisitId:r.site_visit_id,clientName:r.client_name,clientContact:r.client_contact,
+  ratingCleanliness:r.rating_cleanliness,ratingStaffHelpfulness:r.rating_staff_helpfulness,ratingOverall:r.rating_overall,
+  comments:r.comments,createdAt:r.created_at,updatedAt:r.updated_at});
+async function apiClientLoadSiteVisitFeedback(siteVisitIds){
+  if(!siteVisitIds||!siteVisitIds.length) return [];
+  try{ const {data,error}=await sb.from('site_visit_feedback').select('*').in('site_visit_id',siteVisitIds); if(error) throw error;
+    return (data||[]).map(mapSiteVisitFeedback); }
+  catch(e){ return []; }
+}
+async function apiClientSubmitSiteVisitFeedback(siteVisitId,ratings,comments){
+  const dbrow={site_visit_id:siteVisitId,client_name:CLIENT_PROFILE.name,client_contact:CLIENT_PROFILE.contact,
+    rating_cleanliness:ratings.cleanliness,rating_staff_helpfulness:ratings.staffHelpfulness,rating_overall:ratings.overall,
+    comments:comments||null,updated_at:new Date().toISOString()};
+  const {data,error}=await sb.from('site_visit_feedback').upsert(dbrow,{onConflict:'site_visit_id'}).select().single();
+  if(error) throw error; return mapSiteVisitFeedback(data);
 }
 async function apiClientInsertEnquiry(row){
   const {key:agentKey,name:agentName}=await apiClientAgentKeyName();
@@ -5089,7 +5116,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
     clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,bannerDetail:viewBannerDetail,attendanceapp:viewAttendanceApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,mgmtreports:viewManagementReportsApp,notifications:viewNotifications,
-    clientallocation:viewClientAllocation,clientreferrals:viewClientReferrals,clientcontractsale:viewClientContractSale,referralsapp:()=>{ mgrTab='Referrals'; managerView(); }}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
+    clientallocation:viewClientAllocation,clientreferrals:viewClientReferrals,clientcontractsale:viewClientContractSale,clientvisitexperience:viewClientSiteVisitExperience,referralsapp:()=>{ mgrTab='Referrals'; managerView(); }}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
   }
@@ -5106,7 +5133,7 @@ function tabForRoute(name){
     if(name==='clientvisit') return 'clientvisit';
     if(name==='clientfeedback') return 'clientfeedback';
     if(name==='clientsettings') return 'clientsettings';
-    if(name==='clientmore'||name==='clientcontact'||name==='clientreferrals'||name==='clientcontractsale') return 'clientmore';
+    if(name==='clientmore'||name==='clientcontact'||name==='clientreferrals'||name==='clientcontractsale'||name==='clientvisitexperience') return 'clientmore';
     if(name==='clientallocation') return 'clienthome';
     return 'clienthome';
   }
@@ -10913,8 +10940,10 @@ function viewClientMore(){
     <button class="appGridIcon" data-clientmoreapp="contact"><span class="appGridGlyph">${fic('chat')}</span><span class="appGridLabel">Contact</span></button>
     <button class="appGridIcon" data-clientmoreapp="referrals"><span class="appGridGlyph">${fic('gift')}</span><span class="appGridLabel">Refer &amp; Earn</span></button>
     <button class="appGridIcon" data-clientmoreapp="contractsale"><span class="appGridGlyph">${fic('contract')}</span><span class="appGridLabel">Contract of Sale</span></button>
+    <button class="appGridIcon" data-clientmoreapp="visitexperience"><span class="appGridGlyph">${fic('location')}</span><span class="appGridLabel">Site Visit Experience</span></button>
   </div>`;
-  document.querySelectorAll('[data-clientmoreapp]').forEach(b=>b.onclick=()=>route(b.dataset.clientmoreapp==='contact'?'clientcontact':b.dataset.clientmoreapp==='referrals'?'clientreferrals':b.dataset.clientmoreapp==='contractsale'?'clientcontractsale':'clientmore'));
+  const clientMoreRoutes={contact:'clientcontact',referrals:'clientreferrals',contractsale:'clientcontractsale',visitexperience:'clientvisitexperience'};
+  document.querySelectorAll('[data-clientmoreapp]').forEach(b=>b.onclick=()=>route(clientMoreRoutes[b.dataset.clientmoreapp]||'clientmore'));
 }
 async function viewClientContact(){
   V.innerHTML=`${back('clientmore')}<div class="pagehead"><div><h2>Contact</h2><p>Reach your agent or PEP Landbank directly</p></div></div>
@@ -12300,6 +12329,60 @@ async function saveClientVisit(){
     route('clienthome');
     await showClientSuccessModal('Visit request sent!',"Thank you for booking a site visit — we'll confirm the date and time with you shortly.");
   }catch(e){ toast('Could not send request: '+(e.message||e)); btn.disabled=false; btn.textContent='Submit request'; }
+}
+function starRatingHtml(field,current){
+  return `<div class="starRating" data-starfield="${esc(field)}" data-value="${current||0}">${[1,2,3,4,5].map(n=>`<button type="button" class="starBtn ${n<=(current||0)?'on':''}" data-star="${n}">★</button>`).join('')}</div>`;
+}
+function bindStarRatings(container){
+  container.querySelectorAll('[data-starfield]').forEach(row=>{
+    row.querySelectorAll('[data-star]').forEach(btn=>btn.onclick=()=>{
+      const v=+btn.dataset.star; row.dataset.value=v;
+      row.querySelectorAll('[data-star]').forEach(b=>b.classList.toggle('on',+b.dataset.star<=v));
+    });
+  });
+}
+async function viewClientSiteVisitExperience(){
+  V.innerHTML=`${back('clientmore')}<div class="pagehead"><div><div class="eyebrow">Site Visit Experience</div><h2>Rate your visit</h2><p>Tell us how your site visit went — it helps us improve.</p></div></div>
+  <div id="csveBody"><div style="padding:40px 0"><div class="skel" style="height:160px;border-radius:16px"></div></div></div>`;
+  const eligible=((CLIENT_DB&&CLIENT_DB.sitevisits)||[]).filter(v=>v.status==='Confirmed'&&v.date&&v.date<=today());
+  const body=document.getElementById('csveBody');
+  if(!eligible.length){ body.innerHTML=emptyState(ic.visit,'No visits to rate yet','Once a booked site visit is confirmed and the date has passed, you can rate it here.'); return; }
+  let feedback=[]; try{ feedback=await withLoadTimeout(apiClientLoadSiteVisitFeedback(eligible.map(v=>v.id)),15000,'Feedback'); }catch(e){}
+  paintClientSiteVisitExperience(eligible,feedback);
+}
+function paintClientSiteVisitExperience(eligible,feedback){
+  const body=document.getElementById('csveBody'); if(!body) return;
+  body.innerHTML=eligible.map(v=>{
+    const existing=feedback.find(f=>f.siteVisitId===v.id);
+    return `<div class="rowcard" style="padding:16px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:13.5px">${esc(v.plot||'Site visit')}</div>
+      <div class="mini" style="margin-top:2px">${esc(new Date(v.date+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}))}${v.time?' · '+esc(v.time):''}</div>
+      ${existing?`<div class="tag ok" style="margin-top:10px">Thanks — you rated this visit</div>`:''}
+      <div style="margin-top:14px">${fld('Cleanliness & upkeep',starRatingHtml('csve_clean_'+v.id,existing?existing.ratingCleanliness:0))}</div>
+      <div>${fld('Staff helpfulness',starRatingHtml('csve_staff_'+v.id,existing?existing.ratingStaffHelpfulness:0))}</div>
+      <div>${fld('Overall experience',starRatingHtml('csve_overall_'+v.id,existing?existing.ratingOverall:0))}</div>
+      ${fld('Anything else you\'d like to share?','<textarea id="csve_comments_'+esc(v.id)+'" rows="2" placeholder="Optional">'+esc(existing?existing.comments||'':'')+'</textarea>')}
+      <div class="formactions"><button class="btn gold" data-csvesubmit="${esc(v.id)}" style="width:100%">${existing?'Update rating':'Submit rating'}</button></div>
+    </div>`;
+  }).join('');
+  bindStarRatings(body);
+  body.querySelectorAll('[data-csvesubmit]').forEach(btn=>btn.onclick=async()=>{
+    const vid=btn.dataset.csvesubmit;
+    const cleanRow=body.querySelector(`[data-starfield="csve_clean_${vid}"]`);
+    const staffRow=body.querySelector(`[data-starfield="csve_staff_${vid}"]`);
+    const overallRow=body.querySelector(`[data-starfield="csve_overall_${vid}"]`);
+    const cleanliness=+cleanRow.dataset.value, staffHelpfulness=+staffRow.dataset.value, overall=+overallRow.dataset.value;
+    if(!cleanliness||!staffHelpfulness||!overall){ toast('Please rate all three before submitting'); return; }
+    const comments=val('csve_comments_'+vid).trim();
+    btn.disabled=true; btn.textContent='Submitting…';
+    try{
+      const rec=await apiClientSubmitSiteVisitFeedback(vid,{cleanliness,staffHelpfulness,overall},comments);
+      const idx=feedback.findIndex(f=>f.siteVisitId===vid);
+      if(idx>=0) feedback[idx]=rec; else feedback.push(rec);
+      toast('Thank you for your feedback');
+      paintClientSiteVisitExperience(eligible,feedback);
+    }catch(e){ toast('Could not submit: '+(e.message||e)); btn.disabled=false; btn.textContent='Submit rating'; }
+  });
 }
 function formClientFeedback(){
   V.innerHTML=`<div class="pagehead"><div><div class="eyebrow">We're listening</div><h2>Feedback &amp; enquiries</h2><p>Ask a question or tell us how we're doing — good or bad.</p></div></div>
