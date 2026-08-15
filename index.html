@@ -2483,12 +2483,40 @@ async function apiInsertReferral({referrerLeadId,referrerName,referrerContact,re
 const mapReferral=r=>({id:r.id,referrerLeadId:r.referrer_lead_id,referrerName:r.referrer_name,referrerContact:r.referrer_contact,
   referredName:r.referred_name,referredContact:r.referred_contact,referredLocation:r.referred_location,referredNoPlots:r.referred_no_plots,
   referredLeadId:r.referred_lead_id,status:r.status,pointsAwarded:r.points_awarded,source:r.source,
-  createdAt:(r.created_at||'').slice(0,16).replace('T',' '),clearedAt:r.cleared_at});
+  createdAt:(r.created_at||'').slice(0,16).replace('T',' '),clearedAt:r.cleared_at,archived:!!r.archived});
 async function apiLoadReferrals(){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.referrals||[]).slice(); }
   try{ const {data,error}=await sb.from('referrals').select('*').order('created_at',{ascending:false}); if(error) throw error;
     return (data||[]).map(mapReferral); }
   catch(e){ return []; }
+}
+// Edit is limited to the raw intake fields (who/what was referred), and only while
+// still Pending or Not interested -- once Cleared, the row is a payout/audit record
+// and shouldn't be silently rewritten after the fact.
+async function apiEditReferral(id,patch){
+  const dbPatch={referrer_name:patch.referrerName,referrer_contact:patch.referrerContact,referred_name:patch.referredName,
+    referred_contact:patch.referredContact,referred_location:patch.referredLocation||null,referred_no_plots:patch.referredNoPlots||1};
+  if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.referrals||[]).find(x=>x.id===id); if(rec) Object.assign(rec,patch); await demoSave(); return; }
+  const {error}=await sb.from('referrals').update(dbPatch).eq('id',id); if(error) throw error;
+}
+// Real delete only succeeds for non-Cleared referrals (enforced by referrals_del_staff
+// RLS, not just here) -- a Cleared referral is a payout/audit record, use archive
+// instead so the row (and its points/cleared_at trail) is never actually lost.
+async function apiDeleteReferral(id){
+  if(DEMO_MODE){ const d=await demoLoad(); d.referrals=(d.referrals||[]).filter(x=>x.id!==id); await demoSave(); return; }
+  const {error}=await sb.from('referrals').delete().eq('id',id); if(error) throw error;
+}
+async function apiArchiveReferral(id){
+  if(DEMO_MODE){ const d=await demoLoad(); const rec=(d.referrals||[]).find(x=>x.id===id); if(rec) rec.archived=true; await demoSave(); return; }
+  const {error}=await sb.from('referrals').update({archived:true}).eq('id',id); if(error) throw error;
+}
+// "Clear referral history" bulk action -- archives every already-decided (non-
+// Pending) referral in one go. Archiving, not deleting, so Cleared rows' payout
+// trail is preserved.
+async function apiArchiveDecidedReferrals(ids){
+  if(!ids.length) return;
+  if(DEMO_MODE){ const d=await demoLoad(); (d.referrals||[]).forEach(r=>{ if(ids.includes(r.id)) r.archived=true; }); await demoSave(); return; }
+  const {error}=await sb.from('referrals').update({archived:true}).in('id',ids); if(error) throw error;
 }
 async function apiClientLoadMyReferrals(){
   if(DEMO_MODE){ const d=await demoLoad(); return (d.referrals||[]).filter(r=>r.referrerContact===CLIENT_PROFILE.contact); }
@@ -8283,6 +8311,25 @@ async function apiRescheduleTodo(id,newDate,newStart,newEnd){
   else{ const {error}=await sb.from('schedule_items').update({status:'rescheduled',rescheduled_to_id:rec.id}).eq('id',id); if(error) throw error; }
   return rec;
 }
+// True in-place edit -- unlike apiRescheduleTodo (which deliberately inserts a new
+// row + marks the old one 'rescheduled' so the date/time move is auditable), this
+// just updates the same row's content fields directly. Date/time stay editable
+// here too since not every edit is a "reschedule" in the conflict-checked sense.
+async function apiUpdateTodo(id,patch){
+  const dbPatch={};
+  if('title' in patch) dbPatch.title=patch.title;
+  if('notes' in patch) dbPatch.notes=patch.notes||null;
+  if('contact' in patch) dbPatch.contact=patch.contact||null;
+  if('date' in patch) dbPatch.item_date=patch.date;
+  if('startTime' in patch) dbPatch.start_time=patch.startTime;
+  if('endTime' in patch) dbPatch.end_time=patch.endTime;
+  if(DEMO_MODE){ const d=await demoLoad(); const t=(d.todos||[]).find(x=>x.id===id); if(t) Object.assign(t,patch); await demoSave(); return; }
+  const {error}=await sb.from('schedule_items').update(dbPatch).eq('id',id); if(error) throw error;
+}
+async function apiDeleteTodo(id){
+  if(DEMO_MODE){ const d=await demoLoad(); d.todos=(d.todos||[]).filter(x=>x.id!==id); await demoSave(); return; }
+  const {error}=await sb.from('schedule_items').delete().eq('id',id); if(error) throw error;
+}
 /* Time-range conflict detection -- generalizes the Leave Schedules pattern
    (leaveConflictDatesFromOthers/leaveDatesConflictReason) from whole-date
    blocking to [start,end) time-range overlap. Queried live rather than off
@@ -8380,14 +8427,48 @@ function todoRowHtml(t){
   const isRecurring=!!(t.recursFreq||t.recursParentId);
   return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(t.startTime)}–${esc(t.endTime)} · ${esc(t.title)}${isRecurring?' <span title="Part of a repeating series">🔁</span>':''}</div>${notMine?`<div class="meta">Escalated from ${esc(t.ownerName||t.ownerKey)}${t.escalationNote?': "'+esc(t.escalationNote)+'"':''}</div>`:''}${t.notes?`<div class="meta">${esc(t.notes)}</div>`:''}</div>${todoStatusTag(t.status)}</div>
   ${t.contact?`<div style="margin-top:8px">${contactLinks(t.contact)}</div>`:''}
-  ${t.status==='open'?`<div class="foot" style="gap:7px;flex-wrap:wrap;margin-top:10px"><button class="chip" data-todoreschedule="${esc(t.id)}">Reschedule</button><button class="chip" data-todoescalate="${esc(t.id)}">Escalate</button>${isRecurring?`<button class="chip" data-todostoprepeat="${esc(t.id)}">Stop repeating</button>`:''}<button class="btn primary" data-todoclose="${esc(t.id)}" style="padding:8px 18px;font-size:12.5px">Mark closed</button></div>`:''}
+  ${t.status==='open'?`<div class="foot" style="gap:7px;flex-wrap:wrap;margin-top:10px"><button class="chip" data-todoedit="${esc(t.id)}">Edit</button><button class="chip" data-todoreschedule="${esc(t.id)}">Reschedule</button><button class="chip" data-todoescalate="${esc(t.id)}">Escalate</button>${isRecurring?`<button class="chip" data-todostoprepeat="${esc(t.id)}">Stop repeating</button>`:''}<button class="chip" data-tododelete="${esc(t.id)}" style="color:#B91C1C">Delete</button><button class="btn primary" data-todoclose="${esc(t.id)}" style="padding:8px 18px;font-size:12.5px">Mark closed</button></div>`:''}
   ${t.status==='rescheduled'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Moved to a new time</div>`:''}
   ${t.status==='cancelled'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Series stopped</div>`:''}</div>`;
+}
+function openTodoEditModal(t){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Edit to-do</div><button id="tde_close" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${fld('Title *','<input id="tde_title" value="'+esc(t.title||'')+'"/>')}
+    ${fld('Date','<input id="tde_date" type="date" value="'+esc(t.date||'')+'"/>')}
+    <div class="grid2">${fld('Start time',timeInputHtml('tde_start',t.startTime||'09:00'))}${fld('End time',timeInputHtml('tde_end',t.endTime||'10:00'))}</div>
+    ${fld('Contact number','<input id="tde_contact" value="'+esc(t.contact||'')+'"/>','optional — enables Call/WhatsApp quick actions')}
+    ${fld('Notes','<textarea id="tde_notes">'+esc(t.notes||'')+'</textarea>','optional')}
+    <div class="formactions"><button class="btn primary" id="tde_save" style="width:100%">Save changes</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('tde_close').onclick=()=>ov.remove();
+  document.getElementById('tde_save').onclick=async()=>{
+    const title=val('tde_title').trim(); if(!title){ toast('Add a title'); return; }
+    const btn=document.getElementById('tde_save'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const patch={title,date:val('tde_date'),startTime:val('tde_start'),endTime:val('tde_end'),contact:val('tde_contact').trim(),notes:val('tde_notes').trim()};
+      await apiUpdateTodo(t.id,patch); Object.assign(t,patch);
+      toast('To-do updated'); ov.remove(); paintTodoTab();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save changes'; }
+  };
 }
 function bindTodoCtrls(){
   const dateNav=document.getElementById('todo_dateNav');
   if(dateNav) dateNav.onchange=async()=>{ TODO_DATE=dateNav.value; await todoEnsureRangeLoaded(); paintTodoTab(); };
   const addBtn=document.getElementById('todoAddBtn'); if(addBtn) addBtn.onclick=openTodoNewModal;
+  document.querySelectorAll('[data-todoedit]').forEach(b=>b.onclick=()=>{
+    const t=TODO_LIST.find(x=>x.id===b.dataset.todoedit); if(t) openTodoEditModal(t);
+  });
+  document.querySelectorAll('[data-tododelete]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Delete this to-do permanently? This cannot be undone.')) return;
+    b.disabled=true;
+    try{ await apiDeleteTodo(b.dataset.tododelete); TODO_LIST=TODO_LIST.filter(x=>x.id!==b.dataset.tododelete); toast('To-do deleted'); paintTodoTab(); }
+    catch(e){ toast('Failed: '+(e.message||e)); b.disabled=false; }
+  });
   document.querySelectorAll('[data-todoclose]').forEach(b=>b.onclick=async()=>{
     b.disabled=true;
     try{ await apiUpdateTodoStatus(b.dataset.todoclose,'closed'); const t=TODO_LIST.find(x=>x.id===b.dataset.todoclose); if(t){ t.status='closed'; t.closedAt=new Date().toISOString(); } toast('Marked closed'); paintTodoTab(); evaluateMyAchievements(); }
@@ -14887,20 +14968,50 @@ function referralStatusTag(status){
 }
 function mgrReferralsHtml(){
   const canClear=canClearReferrals();
-  const pending=REFERRALS_LIST.filter(r=>r.status==='Pending').sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
-  const decided=REFERRALS_LIST.filter(r=>r.status!=='Pending').sort((a,b)=>(b.clearedAt||b.createdAt||'').localeCompare(a.clearedAt||a.createdAt||'')).slice(0,30);
+  const visible=REFERRALS_LIST.filter(r=>!r.archived);
+  const pending=visible.filter(r=>r.status==='Pending').sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  const decided=visible.filter(r=>r.status!=='Pending').sort((a,b)=>(b.clearedAt||b.createdAt||'').localeCompare(a.clearedAt||a.createdAt||'')).slice(0,30);
   const pendingActionsHtml=r=>canClear
     ?`<div class="foot" style="gap:8px;flex-wrap:wrap"><button class="chip" data-refclear="${r.id}">Mark cleared — awarded points</button><button class="chip" data-refdismiss="${r.id}" style="color:#B91C1C">Not interested</button></div>`
     :(r.referredLeadId
       ?`<div class="foot"><span class="tag ok">✓ In the pipeline — waiting on Management to clear</span></div>`
       :`<div class="foot"><button class="chip" data-refconvert="${r.id}">Contact &amp; add to my pipeline</button></div>`);
+  const mgmtActionsHtml=r=>canClear?`<div class="foot" style="gap:8px;flex-wrap:wrap">
+      ${r.status!=='Cleared'?`<button class="chip" data-refedit="${r.id}">Edit</button>`:''}
+      ${r.status!=='Cleared'?`<button class="chip" data-refdelete="${r.id}" style="color:#B91C1C">Delete</button>`:`<button class="chip" data-refarchive="${r.id}">Remove from list</button>`}
+    </div>`:'';
   const rowOf=r=>`<div class="rowcard"><div class="top"><div><div class="nm">${esc(r.referredName)} <span class="mini">referred by ${esc(r.referrerName)}</span></div><div class="meta">${esc(r.referredContact)}${r.referredLocation?' · '+esc(r.referredLocation):''} · ${r.referredNoPlots||1} plot(s)${r.source==='client'?' · via client portal':''}</div></div>${referralStatusTag(r.status)}</div>
     ${r.status==='Cleared'?`<div class="mini" style="margin-top:6px">🎉 ${r.pointsAwarded||0} points awarded${r.clearedAt?' · '+esc((r.clearedAt||'').slice(0,10)):''}</div>`:''}
-    ${r.status==='Pending'?pendingActionsHtml(r):''}</div>`;
+    ${r.status==='Pending'?pendingActionsHtml(r):''}
+    ${mgmtActionsHtml(r)}</div>`;
   return `<div class="sectitle" style="margin-top:0"><h3>Pending</h3><span class="cnt">${pending.length}</span></div>
   <div class="list">${pending.length?pending.map(rowOf).join(''):emptyState(ic.gift||ic.doc,'Nothing pending','New referrals — from staff tagging a lead as referred, or clients submitting via their own portal — show up here.')}</div>
-  <div class="sectitle"><h3>Recently decided</h3><span class="cnt">${decided.length}</span></div>
+  <div class="sectitle"><h3>Recently decided</h3><span style="display:flex;align-items:center;gap:8px"><span class="cnt">${decided.length}</span>${canClear&&decided.length?'<button class="chip" id="refClearHistoryBtn">Clear referral history</button>':''}</span></div>
   <div class="list">${decided.length?decided.map(rowOf).join(''):emptyState(ic.doc,'Nothing yet','')}</div>`;
+}
+function openReferralEditModal(r){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  ov.innerHTML=`<div id="announceModal" style="max-width:480px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Edit referral</div><button id="refe_close" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    <div class="grid2">${fld('Referrer name','<input id="refe_rname" value="'+esc(r.referrerName||'')+'"/>')}${fld('Referrer contact','<input id="refe_rcontact" value="'+esc(r.referrerContact||'')+'"/>')}</div>
+    <div class="grid2">${fld('Referred name','<input id="refe_dname" value="'+esc(r.referredName||'')+'"/>')}${fld('Referred contact','<input id="refe_dcontact" value="'+esc(r.referredContact||'')+'"/>')}</div>
+    <div class="grid2">${fld('Location','<input id="refe_location" value="'+esc(r.referredLocation||'')+'"/>')}${fld('No. of plots','<input id="refe_noplots" type="number" min="1" value="'+(r.referredNoPlots||1)+'"/>')}</div>
+    <div class="formactions"><button class="btn primary" id="refe_save" style="width:100%">Save changes</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('refe_close').onclick=()=>ov.remove();
+  document.getElementById('refe_save').onclick=async()=>{
+    const btn=document.getElementById('refe_save'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const patch={referrerName:val('refe_rname').trim(),referrerContact:val('refe_rcontact').trim(),
+        referredName:val('refe_dname').trim(),referredContact:val('refe_dcontact').trim(),
+        referredLocation:val('refe_location').trim(),referredNoPlots:num(val('refe_noplots'))||1};
+      await apiEditReferral(r.id,patch); Object.assign(r,patch);
+      toast('Referral updated'); ov.remove(); managerView();
+    }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save changes'; }
+  };
 }
 function bindReferralsCtrls(){
   document.querySelectorAll('[data-refclear]').forEach(b=>b.onclick=()=>{
@@ -14916,6 +15027,28 @@ function bindReferralsCtrls(){
     route('addlead',{referralId:r.id,name:r.referredName,contact:r.referredContact,location:r.referredLocation,
       referrerLeadId:r.referrerLeadId,referrerName:r.referrerName,referrerContact:r.referrerContact});
   });
+  document.querySelectorAll('[data-refedit]').forEach(b=>b.onclick=()=>{
+    const r=REFERRALS_LIST.find(x=>x.id===b.dataset.refedit); if(r) openReferralEditModal(r);
+  });
+  document.querySelectorAll('[data-refdelete]').forEach(b=>b.onclick=async()=>{
+    const r=REFERRALS_LIST.find(x=>x.id===b.dataset.refdelete); if(!r) return;
+    if(!confirm('Delete this referral permanently? This cannot be undone.')) return;
+    try{ await apiDeleteReferral(r.id); REFERRALS_LIST=REFERRALS_LIST.filter(x=>x.id!==r.id); toast('Referral deleted'); managerView(); }
+    catch(e){ toast('Failed: '+(e.message||e)); }
+  });
+  document.querySelectorAll('[data-refarchive]').forEach(b=>b.onclick=async()=>{
+    const r=REFERRALS_LIST.find(x=>x.id===b.dataset.refarchive); if(!r) return;
+    try{ await apiArchiveReferral(r.id); r.archived=true; toast('Removed from list'); managerView(); }
+    catch(e){ toast('Failed: '+(e.message||e)); }
+  });
+  const clearHistBtn=document.getElementById('refClearHistoryBtn');
+  if(clearHistBtn) clearHistBtn.onclick=async()=>{
+    const decided=REFERRALS_LIST.filter(r=>!r.archived&&r.status!=='Pending');
+    if(!decided.length) return;
+    if(!confirm('Clear referral history? This removes '+decided.length+' decided referral(s) from this list — cleared points already awarded are unaffected.')) return;
+    try{ await apiArchiveDecidedReferrals(decided.map(r=>r.id)); decided.forEach(r=>r.archived=true); toast('Referral history cleared'); managerView(); }
+    catch(e){ toast('Failed: '+(e.message||e)); }
+  };
 }
 // A referral can only be cleared once it's linked to the referred person's real
 // lead AND that lead has paid >=30% of the plot price -- clear_referral() enforces
