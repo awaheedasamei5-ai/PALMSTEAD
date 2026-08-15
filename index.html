@@ -1260,9 +1260,12 @@ function contactLinks(contact){
 }
 /* A richer "call this person/company" card -- one branded icon tile per channel, only
    the channels that have a value show up, used for agent + company contact cards in
-   the client portal and staff dashboards. Each tile is a real functioning tel:/wa.me/
-   mailto: link -- one tap opens the client's own phone/WhatsApp/mail app directly,
-   nothing in-page intercepts the click. */
+   the client portal. Each tile is a real functioning tel:/wa.me/mailto: link -- one
+   tap opens the client's own phone/WhatsApp/mail app directly, nothing in-page
+   intercepts the click. Styled as a .profileHero (dark gradient, matches the staff
+   Settings identity card and the app-wide theme picker) instead of a plain white
+   rowcard, so the client's contact screen carries the same premium anchor as every
+   other dashboard header. */
 function renderContactCard(opts){
   const items=[];
   if(opts.phone) items.push({kind:'call',label:'Call',href:telHrefFromPhone(opts.phone)});
@@ -1273,16 +1276,21 @@ function renderContactCard(opts){
   if(social.instagram) items.push({kind:'instagram',label:'Instagram',href:'https://instagram.com/'+social.instagram.replace(/^@/,''),external:true});
   if(social.facebook) items.push({kind:'facebook',label:'Facebook',href:'https://facebook.com/'+social.facebook,external:true});
   if(social.tiktok) items.push({kind:'tiktok',label:'TikTok',href:'https://tiktok.com/@'+social.tiktok.replace(/^@/,''),external:true});
-  if(!items.length) return '';
-  return `<div class="rowcard" style="padding:16px">
-    ${opts.title?`<div style="font-weight:700;font-size:13px;margin-bottom:10px">${esc(opts.title)}</div>`:''}
-    ${opts.name?`<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><div class="leaderAvatar" style="width:38px;height:38px;font-size:14px">${opts.avatar?`<img src="${opts.avatar}"/>`:esc((opts.name||'?')[0])}</div><div><div style="font-weight:700;font-size:13.5px">${esc(opts.name)}</div>${opts.role?`<div class="mini">${esc(opts.role)}</div>`:''}</div></div>`:''}
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(62px,1fr));gap:10px">
-      ${items.map(it=>{ const b=CONTACT_BADGE[it.kind]; return `<a href="${esc(it.href)}" ${it.external?'target="_blank" rel="noopener"':''} style="display:flex;flex-direction:column;align-items:center;gap:6px;text-decoration:none;color:var(--text)">
+  if(!items.length && !opts.name && !opts.title) return '';
+  const headerRow = opts.name
+    ? `<div style="display:flex;align-items:center;gap:15px;position:relative;z-index:1">
+        <div class="avatar">${opts.avatar?`<img src="${opts.avatar}"/>`:esc((opts.name||'?')[0])}</div>
+        <div class="info"><div class="name">${esc(opts.name)}</div>${opts.role?`<div class="role">${esc(opts.role)}</div>`:opts.title?`<div class="role">${esc(opts.title)}</div>`:''}</div>
+      </div>`
+    : `<div class="info" style="position:relative;z-index:1"><div class="name">${esc(opts.title||'')}</div></div>`;
+  return `<div class="profileHero" style="flex-direction:column;align-items:stretch;gap:16px">
+    ${headerRow}
+    ${items.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(62px,1fr));gap:10px;position:relative;z-index:1">
+      ${items.map(it=>{ const b=CONTACT_BADGE[it.kind]; return `<a href="${esc(it.href)}" ${it.external?'target="_blank" rel="noopener"':''} style="display:flex;flex-direction:column;align-items:center;gap:6px;text-decoration:none;color:#fff">
         <span class="contactTileIcon" style="background:${b.bg}">${b.svg}</span>
-        <span style="font-size:10px;font-weight:600;text-align:center">${esc(it.label)}</span>
+        <span style="font-size:10px;font-weight:600;text-align:center;color:rgba(255,255,255,.85)">${esc(it.label)}</span>
       </a>`; }).join('')}
-    </div>
+    </div>`:`<div class="mini" style="position:relative;z-index:1;color:rgba(255,255,255,.7)">No contact details added yet.</div>`}
   </div>`;
 }
 
@@ -10812,7 +10820,12 @@ async function clientHome(){
       <div class="heroSecondary">
         <div class="heroChip"><div class="l">Balance</div><div class="v">${ghs(totalBal)}</div></div>
         <div class="heroChip"><div class="l">Overall progress</div><div class="v">${overallPct}%</div></div>
-      </div>`:`<div class="heroStat"><div class="heroStatLabel">Your account</div><div class="heroStatValue" style="font-size:20px">No purchases yet</div></div>`}
+      </div>
+      ${furthestStageIdx>=0?`<div style="margin-top:16px;position:relative;z-index:1">
+        <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.6);font-weight:700;margin-bottom:6px">Documentation progress</div>
+        <div style="display:flex;gap:3px">${DOC_STAGES.map((d,i)=>`<div style="flex:1;height:5px;border-radius:4px;background:${i<=furthestStageIdx?'#fff':'rgba(255,255,255,.2)'}" title="${esc(d.label)}"></div>`).join('')}</div>
+        <div style="font-size:12px;font-weight:700;color:#fff;margin-top:6px">${esc(DOC_STAGES[furthestStageIdx].label)}</div>
+      </div>`:''}`:`<div class="heroStat"><div class="heroStatLabel">Your account</div><div class="heroStatValue" style="font-size:20px">No purchases yet</div></div>`}
     </div>
     ${leads.length?`<div class="kpis" style="grid-template-columns:repeat(2,1fr)">
       ${kpi('Total plots',totalPlots)}
@@ -10908,9 +10921,9 @@ async function viewClientContact(){
   let agent=null; try{ agent=await apiClientAgentContact(); }catch(e){}
   document.getElementById('clientContactBody').innerHTML=`
     <div class="sectitle" style="margin-top:0"><h3>Your agent</h3></div>
-    ${agent? (renderContactCard({title:'Your agent',name:agent.name,avatar:agent.avatar,phone:agent.phone,whatsapp:agent.whatsapp,social:agent.social_handles})||`<div class="formwrap"><div class="mini">Your agent hasn't added contact details yet.</div></div>`) : `<div class="formwrap"><div class="mini">Agent contact not available yet.</div></div>`}
+    ${agent? renderContactCard({title:'Your agent',name:agent.name,avatar:agent.avatar,phone:agent.phone,whatsapp:agent.whatsapp,social:agent.social_handles}) : `<div class="formwrap"><div class="mini">Agent contact not available yet.</div></div>`}
     <div class="sectitle"><h3>PEP Landbank</h3></div>
-    ${renderContactCard({title:'Company',phone:CONFIG.companyPhone,whatsapp:CONFIG.companyWhatsapp,email:CONFIG.companyEmail})||`<div class="formwrap"><div class="mini">Company contact not set up yet.</div></div>`}`;
+    ${renderContactCard({title:'Company',phone:CONFIG.companyPhone,whatsapp:CONFIG.companyWhatsapp,email:CONFIG.companyEmail})}`;
 }
 /* ================= REFERRALS (Client side) =================
    Points only ever move in one direction here: earned when Management clears a
