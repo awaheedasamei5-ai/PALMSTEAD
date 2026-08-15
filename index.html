@@ -680,6 +680,20 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 @media (max-width:430px){.grid2{grid-template-columns:1fr}}
 .acctMediaRow{display:flex;align-items:center;gap:16px}
 @media (max-width:430px){.acctMediaRow{flex-direction:column;align-items:flex-start}}
+.dayGridWrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card);margin-bottom:16px}
+.dayGrid{display:grid;min-width:100%}
+.dayGridStaffHead{padding:8px 10px;font-size:11.5px;font-weight:800;color:var(--text);text-align:center;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:var(--card)}
+.dayGridHourCol{border-bottom:1px solid var(--line)}
+.dayGridHourLabel{font-size:9.5px;color:var(--muted);text-align:right;padding:2px 6px 0 0;box-sizing:border-box;border-top:1px solid var(--line)}
+.dayGridHourLabel:first-child{border-top:none}
+.dayGridLine{border-top:1px solid var(--line);box-sizing:border-box}
+.dayGridLine:first-child{border-top:none}
+.dayGridBlock{position:absolute;left:2px;right:2px;border-radius:6px;padding:3px 6px;overflow:hidden;box-sizing:border-box;cursor:pointer;transition:.15s}
+.dayGridBlock:hover{filter:brightness(0.97)}
+.dayGridBlockTime{font-size:9px;font-weight:700;color:var(--muted);line-height:1.2}
+.dayGridBlockTitle{font-size:11px;font-weight:700;color:var(--text);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dayGridBlock.conflict{outline:2px solid var(--danger);outline-offset:-2px}
+@media (max-width:640px){.dayGridStaffHead{font-size:10.5px;padding:6px 4px}}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip2{border:1.5px solid var(--line);background:var(--card);border-radius:100px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--text);transition:.15s}
 .lvCalNav{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
@@ -7352,7 +7366,7 @@ function computeDutiesSummary(tasks){
   return {openCount:open.length,overdueCount:overdue.length,doneCount:done.length,avgDaysToClose:avgDays};
 }
 /* ================= TO-DO LIST (time-boxed personal planner, w/ alarms) ================= */
-let DUTIES_TAB='tasks';
+let DUTIES_TAB='myday';
 let TODO_LOADED=false, TODO_LIST=[], TODO_DATE='';
 let TODO_ALARM_TIMERS=[], TODO_ALARM_ARMED_IDS=new Set();
 // Backed by schedule_items (kind='todo') since the Operations Tracker rebuild -- see
@@ -7607,6 +7621,105 @@ function todoFireAlarm(t){
   }catch(e){}
   toast('⏰ '+t.title);
 }
+/* ================= DAY/WEEK CALENDAR VIEW ("My Day" / Team) =================
+   A CSS Grid time-axis with absolute-positioned blocks per staff column --
+   the Google-Calendar-style free/busy view. Only time-blocked items (to-dos)
+   render as positioned blocks since tasks have no start/end time in this
+   model; due-today tasks are listed separately underneath instead of forced
+   onto an axis they were never given a position on. */
+const DAYGRID_START_HOUR=7, DAYGRID_END_HOUR=19, DAYGRID_ROW_PX=48;
+const DAYGRID_COLORS=['#0C7A93','#B8791E','#7C3AED','#16A34A','#B4472F','#0E7490'];
+function dayGridMinutes(hhmm){ const p=(hhmm||'0:0').split(':'); return (num(p[0])-DAYGRID_START_HOUR)*60+num(p[1]); }
+function dayGridTopPx(hhmm){ return Math.max(0,dayGridMinutes(hhmm))/60*DAYGRID_ROW_PX; }
+function dayGridHeightPx(start,end){ return Math.max(20,(dayGridMinutes(end)-dayGridMinutes(start))/60*DAYGRID_ROW_PX); }
+function dayGridHourRailHtml(){
+  const out=[]; for(let h=DAYGRID_START_HOUR;h<DAYGRID_END_HOUR;h++) out.push(`<div class="dayGridHourLabel" style="height:${DAYGRID_ROW_PX}px">${h%12||12}${h<12?'am':'pm'}</div>`);
+  return out.join('');
+}
+function dayGridLinesHtml(){
+  const out=[]; for(let h=DAYGRID_START_HOUR;h<DAYGRID_END_HOUR;h++) out.push(`<div class="dayGridLine" style="height:${DAYGRID_ROW_PX}px"></div>`);
+  return out.join('');
+}
+function scheduleBlockHtml(item,color,hasConflict){
+  const top=dayGridTopPx(item.startTime), h=dayGridHeightPx(item.startTime,item.endTime);
+  return `<div class="dayGridBlock${hasConflict?' conflict':''}" data-daygridopen="${esc(item.id)}" style="top:${top}px;height:${h}px;background:${color}22;border-left:3px solid ${color}" title="${esc(item.title)} ${esc(item.startTime)}–${esc(item.endTime)}">
+    <div class="dayGridBlockTime">${esc(item.startTime)}–${esc(item.endTime)}</div>
+    <div class="dayGridBlockTitle">${esc(item.title)}</div>
+  </div>`;
+}
+// staffList: [{key,name}]. itemsByStaffKey: {key:[todo,...]}. showHeader=false
+// skips the per-column name row for the single-person "My Day" case.
+function renderDayGrid(staffList,itemsByStaffKey,showHeader){
+  const totalH=(DAYGRID_END_HOUR-DAYGRID_START_HOUR)*DAYGRID_ROW_PX;
+  const cols=staffList.length||1;
+  return `<div class="dayGridWrap"><div class="dayGrid" style="grid-template-columns:40px repeat(${cols},minmax(120px,1fr))">
+    ${showHeader?`<div class="dayGridStaffHead"></div>${staffList.map(s=>`<div class="dayGridStaffHead">${esc(s.name)}</div>`).join('')}`:''}
+    <div class="dayGridHourCol">${dayGridHourRailHtml()}</div>
+    ${staffList.map((s,i)=>{
+      const items=itemsByStaffKey[s.key]||[];
+      return `<div style="position:relative;height:${totalH}px;border-left:1px solid var(--line)">
+        ${dayGridLinesHtml()}
+        ${items.map((it,j)=>{
+          const conflict=items.some((o,k)=>k!==j&&it.startTime<o.endTime&&o.startTime<it.endTime);
+          return scheduleBlockHtml(it,DAYGRID_COLORS[i%DAYGRID_COLORS.length],conflict);
+        }).join('')}
+      </div>`;
+    }).join('')}
+  </div></div>`;
+}
+// Loads everyone's time-blocked items (to-dos) plus due-today tasks for a
+// date, scoped to the given staff keys -- used by both "My Day" (one key,
+// yourself) and the manager's "Team" view (every staff key). Queried live
+// rather than off whatever's already loaded locally, since TODO_LIST/DB.tasks
+// only ever cover the signed-in user's own scope.
+async function apiLoadDayAgenda(date,staffKeys){
+  if(DEMO_MODE){
+    const d=await demoLoad();
+    const blocks=(d.todos||[]).filter(t=>t.date===date&&staffKeys.includes(t.assignedTo)&&t.status!=='closed'&&t.status!=='rescheduled');
+    const dueTasks=(d.tasks||[]).filter(t=>t.dueDate===date&&staffKeys.includes(t.assignedTo)&&t.status!=='Done'&&t.status!=='Cancelled');
+    return {blocks,dueTasks};
+  }
+  try{
+    const [blockRes,taskRes]=await Promise.all([
+      sb.from('schedule_items').select('*').eq('kind','todo').eq('item_date',date).in('assigned_to',staffKeys).not('status','in','(done,cancelled,rescheduled)'),
+      sb.from('schedule_items').select('*').eq('kind','task').eq('due_date',date).in('assigned_to',staffKeys).not('status','in','(done,cancelled)')
+    ]);
+    return {blocks:(blockRes.data||[]).map(mapTodo), dueTasks:(taskRes.data||[]).map(mapTask)};
+  }catch(e){ return {blocks:[],dueTasks:[]}; }
+}
+function groupItemsByStaff(items,staffList){
+  const byKey={}; staffList.forEach(s=>byKey[s.key]=[]);
+  items.forEach(it=>{ const k=it.assignedTo; if(byKey[k]) byKey[k].push(it); else byKey[k]=[it]; });
+  Object.values(byKey).forEach(arr=>arr.sort((a,b)=>a.startTime.localeCompare(b.startTime)));
+  return byKey;
+}
+function dueTaskChipsHtml(dueTasks){
+  if(!dueTasks.length) return '';
+  return `<div class="sectitle" style="margin-top:0"><h3>Due today (no fixed time)</h3></div>
+  <div class="list" style="margin-bottom:16px">${dueTasks.map(t=>`<div class="rowcard" data-taskopen="${esc(t.id)}" style="cursor:pointer"><div class="top"><div><div class="nm">${esc(t.title)}</div><div class="meta">${esc(t.assignedToName||t.assignedTo)}</div></div><span class="tag ${t.status==='In Progress'?'warnt':'ghost'}">${esc(t.status)}</span></div></div>`).join('')}</div>`;
+}
+function weekListHtml(startDate,itemsByDate){
+  const days=[]; for(let i=0;i<7;i++) days.push(isoPlusDays(startDate,i));
+  return days.map(d=>{
+    const items=(itemsByDate[d]||[]).slice().sort((a,b)=>a.startTime.localeCompare(b.startTime));
+    return `<div class="rowcard" style="margin-bottom:8px"><div class="mini" style="font-weight:800;margin-bottom:6px">${esc(fmtLongDate(d))}</div>
+      ${items.length?items.map(it=>`<div class="mini" style="padding:3px 0">${esc(it.startTime)}–${esc(it.endTime)} · ${esc(it.title)}</div>`).join(''):'<div class="mini" style="color:var(--muted)">Nothing scheduled</div>'}</div>`;
+  }).join('');
+}
+async function apiLoadWeekAgenda(startDate,staffKeys){
+  const endDate=isoPlusDays(startDate,6);
+  if(DEMO_MODE){
+    const d=await demoLoad();
+    return (d.todos||[]).filter(t=>t.date>=startDate&&t.date<=endDate&&staffKeys.includes(t.assignedTo)&&t.status!=='closed'&&t.status!=='rescheduled');
+  }
+  try{
+    const {data}=await sb.from('schedule_items').select('*').eq('kind','todo').gte('item_date',startDate).lte('item_date',endDate).in('assigned_to',staffKeys).not('status','in','(done,cancelled,rescheduled)');
+    return (data||[]).map(mapTodo);
+  }catch(e){ return []; }
+}
+function groupItemsByDate(items){
+  const byDate={}; items.forEach(it=>{ (byDate[it.date]=byDate[it.date]||[]).push(it); }); return byDate;
+}
 async function viewDuties(){
   const all=DB.tasks||[];
   const mine=all.filter(t=>t.assignedTo===PROFILE.key);
@@ -7614,7 +7727,13 @@ async function viewDuties(){
   const isMgr=PROFILE.role==='manager';
   const teamSummary=computeDutiesSummary(isMgr?all:mine);
   V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Operations Tracker</h2><p>${isMgr?'Every task, who owns it, and how long it’s been open':'Your tasks, and anything you’ve assigned or been escalated'}</p></div></div>
-  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"><button class="chip ${DUTIES_TAB==='tasks'?'on':''}" data-dutiestab="tasks">Tasks</button><button class="chip ${DUTIES_TAB==='todo'?'on':''}" data-dutiestab="todo">To-Do List</button></div>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <button class="chip ${DUTIES_TAB==='myday'?'on':''}" data-dutiestab="myday">My Day</button>
+    <button class="chip ${DUTIES_TAB==='tasks'?'on':''}" data-dutiestab="tasks">Tasks</button>
+    <button class="chip ${DUTIES_TAB==='todo'?'on':''}" data-dutiestab="todo">To-Do List</button>
+    ${isMgr?`<button class="chip ${DUTIES_TAB==='team'?'on':''}" data-dutiestab="team">Team</button>`:''}
+  </div>
+  <div id="dutiesMyDayBody" class="${DUTIES_TAB==='myday'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>
   <div id="dutiesTasksBody" class="${DUTIES_TAB==='tasks'?'':'hidden'}">
   <div class="kpis">${kpi('Open',teamSummary.openCount)}${kpi('Overdue',teamSummary.overdueCount)}${kpi('Completed',teamSummary.doneCount)}${kpi('Avg days to close',teamSummary.avgDaysToClose!=null?teamSummary.avgDaysToClose:'—')}</div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><button class="chip ${dutiesFilter==='mine'?'on':''}" data-dutiesfilter="mine">Mine (${mine.length})</button><button class="chip ${dutiesFilter==='byme'?'on':''}" data-dutiesfilter="byme">Assigned by me (${byMe.length})</button>${isMgr?`<button class="chip ${dutiesFilter==='all'?'on':''}" data-dutiesfilter="all">Team (${all.length})</button>`:''}</div>
@@ -7624,15 +7743,60 @@ async function viewDuties(){
   <div style="margin-bottom:16px"><button class="btn primary" id="newTaskBtn" style="width:100%">+ New task</button></div>
   <div class="list" id="dutiesList"></div>
   </div>
-  <div id="dutiesTodoBody" class="${DUTIES_TAB==='todo'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>`;
+  <div id="dutiesTodoBody" class="${DUTIES_TAB==='todo'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>
+  ${isMgr?`<div id="dutiesTeamBody" class="${DUTIES_TAB==='team'?'':'hidden'}"><div class="skel" style="height:80px;border-radius:16px"></div></div>`:''}`;
   document.querySelectorAll('[data-dutiestab]').forEach(b=>b.onclick=async()=>{ DUTIES_TAB=b.dataset.dutiestab; await viewDuties(); });
   if(DUTIES_TAB==='tasks'){ bindDutiesCtrls(); paintDuties(); }
-  else{
+  else if(DUTIES_TAB==='todo'){
     if(!TODO_DATE) TODO_DATE=today();
     await todoEnsureRangeLoaded();
     paintTodoTab();
   }
+  else if(DUTIES_TAB==='myday'){ await paintMyDayTab(); }
+  else if(DUTIES_TAB==='team'){ await paintTeamTab(); }
   renderBottomNavNow();
+}
+// "My Day" -- a single-column time-axis of today's to-dos, due-today tasks
+// listed underneath (no fixed time to position them by), and a condensed
+// week-ahead preview. The personal counterpart to the manager's Team tab.
+async function paintMyDayTab(){
+  const body=document.getElementById('dutiesMyDayBody'); if(!body) return;
+  const date=today();
+  const [{blocks,dueTasks},weekItems]=await Promise.all([apiLoadDayAgenda(date,[PROFILE.key]),apiLoadWeekAgenda(date,[PROFILE.key])]);
+  const mine=(DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key);
+  const summary=computeDutiesSummary(mine);
+  const escalatedToMe=mine.filter(t=>t.escalatedTo===PROFILE.key).length;
+  body.innerHTML=`
+  <div class="kpis">${kpi('Open',summary.openCount)}${kpi('Escalated',escalatedToMe)}${kpi('Overdue',summary.overdueCount)}${kpi('Completed',summary.doneCount)}</div>
+  <div class="sectitle" style="margin-top:0"><h3>Today</h3><span class="cnt">${esc(fmtLongDate(date))}</span></div>
+  ${renderDayGrid([{key:PROFILE.key,name:'Today'}],{[PROFILE.key]:blocks},false)}
+  ${dueTaskChipsHtml(dueTasks)}
+  <div class="sectitle"><h3>Coming up this week</h3></div>
+  ${weekListHtml(date,groupItemsByDate(weekItems))}`;
+  document.querySelectorAll('[data-daygridopen]').forEach(el=>el.onclick=()=>{
+    const it=blocks.find(b=>b.id===el.dataset.daygridopen); if(it) toast(it.startTime+'–'+it.endTime+' · '+it.title);
+  });
+  document.querySelectorAll('[data-taskopen]').forEach(el=>el.onclick=()=>route('taskDetail',el.dataset.taskopen));
+}
+// Team -- manager-only free/busy view across every staff member for the
+// current day, the "tells anyone in your shared space when you are not
+// available or which of your time is occupied or free" ask.
+async function paintTeamTab(){
+  const body=document.getElementById('dutiesTeamBody'); if(!body) return;
+  const date=today();
+  const staffKeys=STAFF_LIST.map(s=>s.key);
+  const {blocks,dueTasks}=await apiLoadDayAgenda(date,staffKeys);
+  const byStaff=groupItemsByStaff(blocks,STAFF_LIST);
+  const teamSummary=computeDutiesSummary(DB.tasks||[]);
+  body.innerHTML=`
+  <div class="kpis">${kpi('Open',teamSummary.openCount)}${kpi('Overdue',teamSummary.overdueCount)}${kpi('Completed',teamSummary.doneCount)}${kpi('Avg days to close',teamSummary.avgDaysToClose!=null?teamSummary.avgDaysToClose:'—')}</div>
+  <div class="sectitle" style="margin-top:0"><h3>Team</h3><span class="cnt">${esc(fmtLongDate(date))} · who's free, who's busy</span></div>
+  ${renderDayGrid(STAFF_LIST,byStaff,true)}
+  ${dueTaskChipsHtml(dueTasks)}`;
+  document.querySelectorAll('[data-daygridopen]').forEach(el=>el.onclick=()=>{
+    const it=blocks.find(b=>b.id===el.dataset.daygridopen); if(it) toast((it.assignedToName||'')+' · '+it.startTime+'–'+it.endTime+' · '+it.title);
+  });
+  document.querySelectorAll('[data-taskopen]').forEach(el=>el.onclick=()=>route('taskDetail',el.dataset.taskopen));
 }
 function paintDuties(){
   const all=DB.tasks||[];
