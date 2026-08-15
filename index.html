@@ -2246,7 +2246,7 @@ async function apiLoadAll(){
 // Contract of Sale and Expenses/Fund Requests can show up on the dashboard itself,
 // without pulling every memo body or contract note just to size a badge.
 async function apiLoadBadgeCounts(){
-  const counts={memo:0,contractRequest:0,approvals:0,sitevisit:0,complaint:0,plotrequest:0};
+  const counts={memo:0,contractRequest:0,approvals:0,sitevisit:0,complaint:0,plotrequest:0,opsAssigned:0,opsOverdueTeam:0};
   if(DEMO_MODE){
     try{ const d=await demoLoad();
       const toUnread=(d.memos||[]).filter(m=>m.toKey===PROFILE.key&&!m.read).length;
@@ -2259,6 +2259,9 @@ async function apiLoadBadgeCounts(){
         counts.complaint=(d.complaints||[]).filter(c=>c.status!=='Resolved').length;
       }catch(e){}
     }
+    try{ const d=await demoLoad();
+      counts.opsAssigned=(d.tasks||[]).concat(d.todos||[]).filter(t=>t.assignedTo===PROFILE.key&&!t.openedAt&&!['Done','Cancelled','closed','rescheduled'].includes(t.status)).length;
+    }catch(e){}
     return counts;
   }
   // These groups don't depend on each other -- run them as one wave instead of
@@ -2266,8 +2269,10 @@ async function apiLoadBadgeCounts(){
   // sitevisit/complaint/plotrequest are manager-only: those tiles are review queues on
   // the manager side (staff visits/feedback/requests awaiting a decision), not something
   // an individual agent has a "pending count" of -- their own tiles are creation forms.
+  // opsAssigned (mine, unopened) is everyone's; opsOverdueTeam is the manager-only
+  // company-wide view, following the same split.
   const canContracts=canManageContracts(), isManager=PROFILE.role==='manager';
-  const [memoRes,contractRes,approvalsRes,queueRes]=await Promise.all([
+  const [memoRes,contractRes,approvalsRes,queueRes,opsRes]=await Promise.all([
     Promise.all([
       sb.from('memos').select('id',{count:'exact',head:true}).eq('to_key',PROFILE.agent_key).eq('read',false),
       sb.from('memo_recipients').select('id',{count:'exact',head:true}).eq('staff_key',PROFILE.agent_key).eq('read',false)
@@ -2281,12 +2286,17 @@ async function apiLoadBadgeCounts(){
       sb.from('site_visits').select('id',{count:'exact',head:true}).eq('status','Pending'),
       sb.from('complaints').select('id',{count:'exact',head:true}).neq('status','Resolved'),
       sb.from('plot_requests').select('id',{count:'exact',head:true}).eq('status','Pending')
-    ]).catch(()=>null):Promise.resolve(null)
+    ]).catch(()=>null):Promise.resolve(null),
+    Promise.all([
+      sb.from('schedule_items').select('id',{count:'exact',head:true}).eq('assigned_to',PROFILE.agent_key).is('opened_at',null).not('status','in','(done,cancelled,rescheduled)'),
+      isManager?sb.from('schedule_items').select('id',{count:'exact',head:true}).eq('kind','task').lt('due_date',today()).not('status','in','(done,cancelled)'):Promise.resolve({count:0})
+    ]).catch(()=>null)
   ]);
   if(memoRes){ const [{count:toCount},{count:ccCount}]=memoRes; counts.memo=(toCount||0)+(ccCount||0); }
   if(contractRes) counts.contractRequest=contractRes.count||0;
   if(queueRes){ const [{count:svCount},{count:cmCount},{count:prCount}]=queueRes; counts.sitevisit=svCount||0; counts.complaint=cmCount||0; counts.plotrequest=prCount||0; }
   if(approvalsRes){ const [{count:expCount},{count:fundCount}]=approvalsRes; counts.approvals=(expCount||0)+(fundCount||0); }
+  if(opsRes){ const [{count:assignedCount},{count:overdueCount}]=opsRes; counts.opsAssigned=assignedCount||0; counts.opsOverdueTeam=overdueCount||0; }
   return counts;
 }
 async function apiInsertLead(l,c,agentKeyOverride){
@@ -5221,7 +5231,7 @@ function viewOfficeDesk(){
       ...(canManageContracts()?[{key:'Contract of Sale',fic:'contract',label:'Contract of Sale',badgeCountKey:'contractRequest'}]:[])
     ]},
     {title:'Operations',items:[
-      {key:'Duties',fic:'clipboard',label:'Operations Tracker'},
+      {key:'Duties',fic:'clipboard',label:'Operations Tracker',badgeCountKey:PROFILE.role==='manager'?'opsOverdueTeam':'opsAssigned'},
       {key:'Feedback',fic:'feedback',label:'Team Feedback'},
       {key:'Leave Schedules',fic:'calendar',label:'Leave Schedules'},
       ...(showCompanyLeads?[{key:'Site Visit Auth',fic:'sitevisitauth',label:'Site Visit Auth'}]:[]),
@@ -11693,7 +11703,7 @@ const MGR_APPS=[
   {key:'Log Payment',fic:'payment',label:'Log Payment',section:'officedesk'},
   {key:'News',fic:'announce',label:'News & Announcements'},
   {key:'Commission',fic:'commission',label:'Commission',section:'officedesk'},
-  {key:'Duties',fic:'clipboard',label:'Operations Tracker',section:'officedesk'},
+  {key:'Duties',fic:'clipboard',label:'Operations Tracker',badgeCountKey:'opsOverdueTeam',section:'officedesk'},
   {key:'Feedback',fic:'feedback',label:'Team Feedback',section:'officedesk'},
   {key:'Insights',fic:'target',label:'Smart Insights'},
   {key:'Settings',fic:'settings',label:'Settings'},
