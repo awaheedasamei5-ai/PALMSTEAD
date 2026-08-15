@@ -7378,7 +7378,10 @@ async function apiRescheduleTodo(id,newDate,newStart,newEnd){
   else{ const {error}=await sb.from('schedule_items').update({status:'rescheduled',rescheduled_to_id:rec.id}).eq('id',id); if(error) throw error; }
   return rec;
 }
-function todoWorkHours(){ const h=[]; for(let i=8;i<=17;i++) h.push((i<10?'0':'')+i+':00'); return h; }
+// Real start/end time inputs instead of a fixed whole-hour dropdown -- native time
+// picker on every device, 5-minute increments, no artificial "every to-do is exactly
+// an hour" constraint.
+function timeInputHtml(id,cur){ return `<input id="${id}" type="time" step="300" value="${esc(cur||'')}"/>`; }
 function todoStatusTag(s){
   if(s==='closed') return '<span class="tag ok">Closed</span>';
   if(s==='rescheduled') return '<span class="tag warnt">Rescheduled</span>';
@@ -7427,7 +7430,7 @@ function openTodoNewModal(){
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">New to-do</div><button id="closeTodoNew" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     ${fld('Title *','<input id="td_title" placeholder="e.g. Call Mr. Antwi about deposit"/>')}
     ${fld('Date','<input id="td_date" type="date" value="'+TODO_DATE+'"/>')}
-    <div class="grid2">${fld('Start time',sel('td_start',todoWorkHours(),'09:00'))}${fld('End time',sel('td_end',todoWorkHours(),'10:00'))}</div>
+    <div class="grid2">${fld('Start time',timeInputHtml('td_start','09:00'))}${fld('End time',timeInputHtml('td_end','10:00'))}</div>
     ${fld('Contact number','<input id="td_contact" placeholder="0244…"/>','optional — enables Call/WhatsApp quick actions')}
     ${fld('Notes','<textarea id="td_notes" placeholder="Any detail to remember"></textarea>','optional')}
     <div class="formactions"><button class="btn primary" id="td_save" style="width:100%">Save to-do</button></div>
@@ -7453,7 +7456,7 @@ function openTodoRescheduleModal(t){
   ov.innerHTML=`<div id="announceModal">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">Reschedule "${esc(t.title)}"</div><button id="closeTodoResched" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     ${fld('New date','<input id="tr_date" type="date" value="'+t.date+'"/>')}
-    <div class="grid2">${fld('Start time',sel('tr_start',todoWorkHours(),t.startTime))}${fld('End time',sel('tr_end',todoWorkHours(),t.endTime))}</div>
+    <div class="grid2">${fld('Start time',timeInputHtml('tr_start',t.startTime))}${fld('End time',timeInputHtml('tr_end',t.endTime))}</div>
     <div class="formactions"><button class="btn primary" id="tr_save" style="width:100%">Reschedule</button></div>
   </div>`;
   document.body.appendChild(ov);
