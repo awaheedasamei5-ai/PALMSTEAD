@@ -14969,6 +14969,24 @@ function bindBannerListCtrls(){
   });
   rebindRows(document);
 }
+// Pulls lat/lng out of whatever Google Maps URL format someone pastes. Tries the
+// !3d..!4d.. pair first -- that's the actual pinned place on a /maps/place/ link,
+// which can differ slightly from the @lat,lng viewport-center coords that follow it --
+// then falls back to @lat,lng and ?q=lat,lng for simpler share-link formats. Shortened
+// maps.app.goo.gl links can't be resolved client-side (no server to follow the
+// redirect), so those correctly fall through to null and the caller explains why.
+function parseGoogleMapsLatLng(text){
+  const s=String(text||'');
+  let m=s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  m=s.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  m=s.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  m=s.match(/^\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*$/);
+  if(m) return {lat:parseFloat(m[1]),lng:parseFloat(m[2])};
+  return null;
+}
 function openBannerModal(existing){
   let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='announceOverlay';
@@ -14992,6 +15010,7 @@ function openBannerModal(existing){
     <input id="bn_imageCapture" type="file" accept="image/*" capture="environment" class="hidden"/>
     <input id="bn_image" type="file" accept="image/*" class="hidden"/>`,'optional — skip for a scouted location with no banner yet')}
     <div id="bn_imgPreview">${existing&&existing.image?`<img src="${existing.image}" style="max-width:140px;border-radius:10px;margin-top:6px"/>`:''}</div>
+    ${fld('Paste a Google Maps link','<input id="bn_mapsLink" placeholder="https://maps.google.com/…"/>','pulls the coordinates out automatically — use the full link from the address bar, not a shortened maps.app.goo.gl one')}
     <div class="grid2">${fld('Latitude','<input id="bn_lat" type="number" step="any" value="'+(existing&&existing.lat!=null?existing.lat:'')+'"/>')}${fld('Longitude','<input id="bn_lng" type="number" step="any" value="'+(existing&&existing.lng!=null?existing.lng:'')+'"/>')}</div>
     <div class="formactions" style="margin:-6px 0 12px"><button class="btn ghost" id="bn_useLoc" style="width:100%" type="button">📍 Use my current location</button></div>
     ${fld('Notes','<textarea id="bn_notes" rows="2">'+esc(existing?existing.notes||'':'')+'</textarea>','optional')}
@@ -15011,6 +15030,20 @@ function openBannerModal(existing){
   document.getElementById('bn_imageCapture').onchange=bnHandlePhoto;
   document.getElementById('bn_takePhotoBtn').onclick=()=>document.getElementById('bn_imageCapture').click();
   document.getElementById('bn_pickPhotoBtn').onclick=()=>document.getElementById('bn_image').click();
+  document.getElementById('bn_mapsLink').addEventListener('paste',()=>setTimeout(bnParseMapsLink,0));
+  document.getElementById('bn_mapsLink').addEventListener('change',bnParseMapsLink);
+  function bnParseMapsLink(){
+    const link=document.getElementById('bn_mapsLink').value.trim();
+    if(!link) return;
+    const coords=parseGoogleMapsLatLng(link);
+    if(!coords){
+      toast(/goo\.gl|maps\.app/i.test(link)?"That's a shortened link — open it and paste the full address bar URL instead":"Couldn't find coordinates in that link");
+      return;
+    }
+    document.getElementById('bn_lat').value=coords.lat.toFixed(6);
+    document.getElementById('bn_lng').value=coords.lng.toFixed(6);
+    toast('Coordinates filled in');
+  }
   document.getElementById('bn_useLoc').onclick=()=>{
     if(!navigator.geolocation){ toast('Geolocation not available on this device'); return; }
     const btn=document.getElementById('bn_useLoc'); btn.disabled=true; btn.textContent='Locating…';
