@@ -614,6 +614,10 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
    interactivity, just laid out as a swipeable row of fixed-width panels instead. */
 .insightCarousel{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;margin-bottom:18px;scroll-snap-type:x proximity}
 .insightCarousel>.rowcard{flex:0 0 280px;margin-bottom:0!important;scroll-snap-align:start}
+/* Fixed-width swipeable cards are the right call on a phone, but on desktop the same
+   280px cards just left a growing dead zone to the right as the viewport widened --
+   the KPI grid below already solves this with a min-width breakpoint, so match it. */
+@media(min-width:640px){.insightCarousel{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));overflow-x:visible}}
 /* Home screen hero: replaces a plain black-on-white <h2> + a separate pale-blue
    commission rowcard with one cohesive premium header, in the same navy->teal
    family as sign-in rather than a plain white card like every other screen. */
@@ -16073,13 +16077,13 @@ function bannerDashboardHtml(){
   const all=DB.banners;
   const placed=all.filter(b=>b.status==='placed').length;
   const maint=all.filter(b=>b.status==='needs_maintenance').length;
+  const replacing=all.filter(b=>b.status==='being_replaced').length;
   const newLoc=all.filter(b=>b.status==='location_only').length;
   const areas=new Set(all.map(b=>b.area).filter(Boolean));
   const totalLeadsFromBanners=Object.values(BANNER_LEAD_COUNTS).reduce((s,n)=>s+n,0);
   const recent=all.slice().sort((a,b)=>(b.updatedAt||b.createdAt||'').localeCompare(a.updatedAt||a.createdAt||'')).slice(0,8);
   return `
-  <div class="kpis">${kpi('Total banners',placed+maint)}${kpi('Perfect condition',placed)}${kpi('Needs maintenance',maint)}${kpi('New locations',newLoc)}</div>
-  <div class="kpis">${kpi('Total areas',areas.size)}${kpi('Leads from banners',totalLeadsFromBanners)}</div>
+  <div class="kpis">${kpi('Total banners',placed+maint)}${kpi('Perfect condition',placed)}${kpi('Needs maintenance',maint)}${kpi('Being replaced',replacing)}${kpi('New locations',newLoc)}${kpi('Total areas',areas.size)}${kpi('Leads from banners',totalLeadsFromBanners)}</div>
   <div class="formactions" style="margin:4px 0 16px"><button class="btn primary" id="bnQuickAdd" style="width:100%">+ Add banner / location</button></div>
   <div class="sectitle" style="margin-top:0"><h3>Recent activity</h3><span class="cnt">${recent.length}</span></div>
   <div class="list">${recent.length?recent.map(bannerRowHtml).join(''):emptyState(ic.grid,'Nothing logged yet','Add your first banner or scouted location.')}</div>`;
