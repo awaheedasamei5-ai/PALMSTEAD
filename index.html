@@ -1455,6 +1455,7 @@ function defaultConfig(){ return {
   referralRewards:[{label:'Free Documentation',points:50},{label:'10% Cash Discount',points:150},{label:'Half Plot',points:500},{label:'Full Plot',points:1000}],
   contractCeoName:'FRANK ADU PEPRAH',
   contractCoverImage:'', contractWordmarkImage:'', receiptLogoImage:'',
+  attendanceCutoffTime:'09:00',
   contractPreamble:[
     'i. WHEREAS the Vendor is the beneficial owner of ALL THAT piece or parcel of land, containing an approximate area of {ACRES} acre more or less, situate at Royal Palm Enclave Tsopoli, Accra in the Greater Accra Region of the Republic of Ghana.',
     'ii. The Land was leased by the Dorsi Animle Family represented by the its Head and Lawful representative Numo Napoleon Tawiah Animle of the Shai Osudoku District of the Greater Accra with consent and concurrence of principal members of the family (here-in the Head Lessors) to TRULANDER JSF LIMITED represented by its CEO, Mr. FRANK ADU PEPRAH for a total land area measuring approximately 72.30 Acres (29.27 Hect) by a lease an Indenture dated 1st February, 2025 for a term of 80 years with an option to renew for a further term of 45 years with effect from 1st February, 2025.',
@@ -2862,6 +2863,7 @@ async function apiLoadConfig(){
       contractCoverImage:data.contract_cover_image||'',
       contractWordmarkImage:data.contract_wordmark_image||'',
       receiptLogoImage:data.receipt_logo_image||'',
+      attendanceCutoffTime:data.attendance_cutoff_time||defaultConfig().attendanceCutoffTime,
       leaderboardWeights:data.leaderboard_weights||defaultConfig().leaderboardWeights,
       referralPointsPerReferral:data.referral_points_per_referral!=null?num(data.referral_points_per_referral):50,
       referralRewards:(data.referral_rewards&&data.referral_rewards.length)?data.referral_rewards:defaultConfig().referralRewards}; }
@@ -2886,6 +2888,7 @@ async function apiSaveConfig(patch){
     contract_ceo_name:CONFIG.contractCeoName||'',contract_preamble:CONFIG.contractPreamble||'',contract_definitions:CONFIG.contractDefinitions||'',contract_terms:CONFIG.contractTerms||'',
     contract_cover_image:CONFIG.contractCoverImage||null,contract_wordmark_image:CONFIG.contractWordmarkImage||null,
     receipt_logo_image:CONFIG.receiptLogoImage||null,
+    attendance_cutoff_time:CONFIG.attendanceCutoffTime||'09:00',
     leaderboard_weights:CONFIG.leaderboardWeights||defaultConfig().leaderboardWeights,
     referral_points_per_referral:num(CONFIG.referralPointsPerReferral)||50,
     referral_rewards:CONFIG.referralRewards||defaultConfig().referralRewards};
@@ -3033,6 +3036,116 @@ async function apiLoadAgentMonthStats(){
   try{ const {data,error}=await sb.from('agent_month_stats').select('*'); if(error) throw error;
     return (data||[]).map(r=>({agentKey:r.agent_key,month:r.month,totalCollected:num(r.total_collected),newSalesCount:num(r.new_sales_count)})); }
   catch(e){ return []; }
+}
+/* ---- attendance (daily sign-in/out with location) ----
+   One row per staff per day (unique staff_key+work_date) -- sign-in and sign-out are
+   both partial upserts against that same row, on conflict updating only the columns
+   sent, so signing out never clobbers the sign-in timestamp already recorded. */
+const mapAttendance=r=>({id:r.id,staffKey:r.staff_key,staffName:r.staff_name,workDate:r.work_date,
+  signInAt:r.sign_in_at,signInLat:r.sign_in_lat,signInLng:r.sign_in_lng,
+  signOutAt:r.sign_out_at,signOutLat:r.sign_out_lat,signOutLng:r.sign_out_lng,notes:r.notes});
+async function apiLoadMyAttendance(fromDate,toDate){
+  if(DEMO_MODE){ return []; }
+  const {data,error}=await sb.from('attendance_log').select('*').eq('staff_key',PROFILE.key)
+    .gte('work_date',fromDate).lte('work_date',toDate).order('work_date',{ascending:false});
+  if(error) throw error; return (data||[]).map(mapAttendance);
+}
+async function apiLoadTeamAttendanceToday(){
+  if(DEMO_MODE){ return []; }
+  const {data,error}=await sb.from('attendance_log').select('*').eq('work_date',today());
+  if(error) throw error; return (data||[]).map(mapAttendance);
+}
+async function apiSignIn(lat,lng){
+  if(DEMO_MODE){ return {id:uid(),staffKey:PROFILE.key,staffName:PROFILE.name,workDate:today(),signInAt:new Date().toISOString(),signInLat:lat,signInLng:lng,signOutAt:null}; }
+  const row={staff_key:PROFILE.key,staff_name:PROFILE.name,work_date:today(),sign_in_at:new Date().toISOString(),sign_in_lat:lat,sign_in_lng:lng};
+  const {data,error}=await sb.from('attendance_log').upsert(row,{onConflict:'staff_key,work_date'}).select().single();
+  if(error) throw error; return mapAttendance(data);
+}
+async function apiSignOut(lat,lng){
+  if(DEMO_MODE){ return {id:uid(),staffKey:PROFILE.key,staffName:PROFILE.name,workDate:today(),signOutAt:new Date().toISOString(),signOutLat:lat,signOutLng:lng}; }
+  const row={staff_key:PROFILE.key,staff_name:PROFILE.name,work_date:today(),sign_out_at:new Date().toISOString(),sign_out_lat:lat,sign_out_lng:lng};
+  const {data,error}=await sb.from('attendance_log').upsert(row,{onConflict:'staff_key,work_date'}).select().single();
+  if(error) throw error; return mapAttendance(data);
+}
+// Promise wrapper around the same navigator.geolocation.getCurrentPosition call
+// already proven in the banner tracker's "Use my current location" button.
+function getCurrentLocation(){
+  return new Promise((resolve,reject)=>{
+    if(!navigator.geolocation){ reject(new Error('Geolocation not available on this device')); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos=>resolve({lat:pos.coords.latitude,lng:pos.coords.longitude}),
+      err=>reject(new Error(err.message)),
+      {enableHighAccuracy:true,timeout:10000}
+    );
+  });
+}
+let ATTENDANCE_HISTORY=[], ATTENDANCE_TODAY=null, ATTENDANCE_TEAM_TODAY=[];
+async function viewAttendanceApp(){
+  V.innerHTML=`${back('officedesk')}<div class="pagehead"><div><h2>Attendance</h2><p>Sign in when you arrive, sign out when you leave — your location is captured automatically.</p></div></div>
+  <div id="attBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
+  try{
+    const from=isoPlusDays(today(),-13);
+    const isMgr=PROFILE.role==='manager';
+    const [hist,team]=await Promise.all([apiLoadMyAttendance(from,today()),isMgr?apiLoadTeamAttendanceToday():Promise.resolve([])]);
+    ATTENDANCE_HISTORY=hist;
+    ATTENDANCE_TODAY=hist.find(a=>a.workDate===today())||null;
+    ATTENDANCE_TEAM_TODAY=team;
+  }catch(e){ toast('Could not load attendance: '+(e.message||e)); }
+  paintAttendanceBody();
+}
+function paintAttendanceBody(){
+  const body=document.getElementById('attBody'); if(!body) return;
+  const isMgr=PROFILE.role==='manager';
+  const t=ATTENDANCE_TODAY;
+  const signedIn=t&&t.signInAt;
+  const signedOut=t&&t.signOutAt;
+  body.innerHTML=`
+  <div class="rowcard" style="margin-bottom:18px;padding:18px">
+    <div style="font-weight:700;font-size:14.5px;margin-bottom:4px">Today · ${esc(fmtLongDate(today()))}</div>
+    <div class="mini" style="margin-bottom:14px">${signedIn?('Signed in at '+esc(t.signInAt.slice(11,16))):'Not signed in yet'}${signedOut?(' · Signed out at '+esc(t.signOutAt.slice(11,16))):''}</div>
+    ${!signedIn?`<button class="btn primary" id="attSignInBtn" style="width:100%">📍 Sign in</button>`
+      :!signedOut?`<button class="btn primary" id="attSignOutBtn" style="width:100%">📍 Sign out</button>`
+      :`<span class="tag ok" style="display:inline-flex">Day complete</span>`}
+  </div>
+  ${isMgr?`<div class="sectitle" style="margin-top:0"><h3>Team today</h3><span class="cnt">${ATTENDANCE_TEAM_TODAY.filter(a=>a.signInAt).length} of ${STAFF_LIST.length} signed in</span></div>
+  <div class="list" style="margin-bottom:18px">${teamAttendanceTodayHtml()}</div>`:''}
+  <div class="sectitle" style="margin-top:0"><h3>Your recent history</h3></div>
+  <div class="list">${ATTENDANCE_HISTORY.length?ATTENDANCE_HISTORY.map(attendanceHistoryRowHtml).join(''):emptyState(ic.grid,'No history yet','')}</div>`;
+  bindAttendanceCtrls();
+}
+function teamAttendanceTodayHtml(){
+  const cutoff=CONFIG.attendanceCutoffTime||'09:00';
+  return STAFF_LIST.map(s=>{
+    const rec=ATTENDANCE_TEAM_TODAY.find(a=>a.staffKey===s.key);
+    const late=rec&&rec.signInAt&&rec.signInAt.slice(11,16)>cutoff;
+    return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(s.name)}</div><div class="meta">${rec&&rec.signInAt?('In '+esc(rec.signInAt.slice(11,16))+(rec.signOutAt?(' · Out '+esc(rec.signOutAt.slice(11,16))):'')):'Not signed in'}</div></div>
+    ${rec&&rec.signInAt?(late?`<span class="tag warnt">Late</span>`:`<span class="tag ok">On time</span>`):`<span class="tag ghost">Absent</span>`}</div></div>`;
+  }).join('');
+}
+function attendanceHistoryRowHtml(a){
+  return `<div class="rowcard"><div class="top"><div><div class="nm">${esc(fmtLongDate(a.workDate))}</div><div class="meta">${a.signInAt?('In '+esc(a.signInAt.slice(11,16))):'—'}${a.signOutAt?(' · Out '+esc(a.signOutAt.slice(11,16))):''}</div></div></div></div>`;
+}
+function bindAttendanceCtrls(){
+  const inBtn=document.getElementById('attSignInBtn');
+  if(inBtn) inBtn.onclick=async()=>{
+    inBtn.disabled=true; inBtn.textContent='Locating…';
+    try{
+      const loc=await getCurrentLocation();
+      const rec=await apiSignIn(loc.lat,loc.lng);
+      ATTENDANCE_TODAY=rec; ATTENDANCE_HISTORY=[rec,...ATTENDANCE_HISTORY.filter(a=>a.workDate!==rec.workDate)];
+      toast('Signed in'); paintAttendanceBody();
+    }catch(e){ toast('Could not sign in: '+(e.message||e)); inBtn.disabled=false; inBtn.textContent='📍 Sign in'; }
+  };
+  const outBtn=document.getElementById('attSignOutBtn');
+  if(outBtn) outBtn.onclick=async()=>{
+    outBtn.disabled=true; outBtn.textContent='Locating…';
+    try{
+      const loc=await getCurrentLocation();
+      const rec=await apiSignOut(loc.lat,loc.lng);
+      ATTENDANCE_TODAY=rec; ATTENDANCE_HISTORY=[rec,...ATTENDANCE_HISTORY.filter(a=>a.workDate!==rec.workDate)];
+      toast('Signed out'); paintAttendanceBody();
+    }catch(e){ toast('Could not sign out: '+(e.message||e)); outBtn.disabled=false; outBtn.textContent='📍 Sign out'; }
+  };
 }
 /* ---- duties / tasks (operations, non-sales work: assigned by management OR self/peer-assigned) ----
    Backed by the unified schedule_items table (kind='task') since the Operations Tracker rebuild --
@@ -4922,7 +5035,7 @@ function route(name,arg,skipPush){ window.scrollTo({top:0,behavior:'smooth'});
     monthlyclosed:()=>{ monthlyClosedCursor=today().slice(0,7); viewMonthlyClosed(); },
     agentDetail:agentDetailView,stageList:viewStageList,allocations:viewAllocations,chat:viewChat,chatThread:viewChatThread,myDataCheck:viewMyDataCheck,insightList:viewInsightList,monthlyPlanClients:viewMonthlyPlanClients,pipelineHealth:viewPipelineHealth,expectedRevenue:viewExpectedRevenue,paymentSchedule:viewPaymentSchedule,duties:viewDuties,taskDetail:viewTaskDetail,feedback:viewFeedback,insights:viewSmartInsights,salesdesk:viewSalesDesk,crm:viewSalesDesk,more:viewMore,downloads:viewDownloads,mgrTabView:key=>{ mgrTab=key||'overview'; managerView(); },mgrSettingsHub:()=>{ mgrTab='Settings'; managerView(); },myCommission:viewMyCommission,
     clienthome:clientHome,clientvisit:formClientSiteVisit,clientfeedback:formClientFeedback,clientsettings:formClientSettings,
-    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,bannerDetail:viewBannerDetail,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,mgmtreports:viewManagementReportsApp,notifications:viewNotifications,
+    clientdb:viewClientDatabase,companyleads:viewCompanyPipeline,logpayment:viewLogPaymentApp,sitevisitauth:viewSiteVisitAuth,contractapp:viewContractApp,mgrSalesDesk:viewMgrSalesDesk,mgrCrmTools:viewMgrSalesDesk,mgrPlotInv:viewMgrSalesDesk,officedesk:viewOfficeDesk,leaveapp:viewLeaveApp,memoapp:viewMemoApp,bannerapp:viewBannerApp,bannerDetail:viewBannerDetail,attendanceapp:viewAttendanceApp,plotrequests:viewPlotRequests,clientmore:viewClientMore,clientcontact:viewClientContact,notes:viewNotesApp,sms:viewSmsApp,expenses:viewExpensesApp,mgmtreports:viewManagementReportsApp,notifications:viewNotifications,
     clientallocation:viewClientAllocation,clientreferrals:viewClientReferrals,referralsapp:()=>{ mgrTab='Referrals'; managerView(); }}[name]||(IS_CLIENT?clientHome:agentHome))(arg);
   if(!skipPush && !ROUTE_NAV_LOCK && typeof PROFILE!=='undefined' && (PROFILE||IS_CLIENT)){
     try{ history.pushState({routeName:name,routeArg:arg}, '', '#'+name); }catch(e){}
@@ -4945,7 +5058,7 @@ function tabForRoute(name){
     return 'clienthome';
   }
   if(['salesdesk','mgrSalesDesk','mgrCrmTools','mgrPlotInv','crm','addlead','update','updateOne','myDataCheck','plots','pipeline','sitevisit','enquiry','complaint','plotrequests','clientdb','allocations'].includes(name)) return 'salesdesk';
-  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp'||name==='bannerapp'||name==='bannerDetail'||name==='contractapp'||name==='sitevisitauth'||name==='logpayment'||name==='expenses'||name==='mgmtreports') return 'officedesk';
+  if(name==='officedesk'||name==='duties'||name==='taskDetail'||name==='feedback'||name==='companyleads'||name==='leaveapp'||name==='memoapp'||name==='bannerapp'||name==='bannerDetail'||name==='attendanceapp'||name==='contractapp'||name==='sitevisitauth'||name==='logpayment'||name==='expenses'||name==='mgmtreports') return 'officedesk';
   if(name==='chat'||name==='chatThread') return 'chat';
   if(name==='home'||name==='mgr') return 'home';
   return 'more';
@@ -5127,6 +5240,7 @@ const FIC_GLYPHS={
  building:{g:'gBlue',p:'<rect x="18" y="16" width="20" height="24" rx="1.5" fill="#fff"/><rect x="22" y="20" width="3.5" height="3.5" fill="var(--green)"/><rect x="29" y="20" width="3.5" height="3.5" fill="var(--green)"/><rect x="22" y="27" width="3.5" height="3.5" fill="var(--green)"/><rect x="29" y="27" width="3.5" height="3.5" fill="var(--green)"/><rect x="24.5" y="34" width="7" height="6" fill="var(--green)"/>'},
  serverconfig:{g:'gSlate',p:'<rect x="17" y="16" width="22" height="8" rx="2" fill="#fff"/><rect x="17" y="26" width="22" height="8" rx="2" fill="#fff" fill-opacity=".8"/><circle cx="22" cy="20" r="1.4" fill="var(--green2)"/><circle cx="22" cy="30" r="1.4" fill="var(--green2)"/><circle cx="34" cy="38" r="5" fill="var(--green2)" stroke="#fff" stroke-width="1.6"/><path d="M34 35.5v1.2M34 39.3v1.2M31.5 38h1.2M35.3 38h1.2" stroke="#0B1E3D" stroke-width="1.1" stroke-linecap="round"/>'},
  pulse:{g:'gGold',p:'<circle cx="28" cy="27" r="12" fill="none" stroke="#fff" stroke-width="2.4"/><path d="M18 27h4l2.5-6 3.5 11 3-8 2 3h5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'},
+ attendance:{g:'gGold',p:'<circle cx="28" cy="27" r="12" fill="none" stroke="#fff" stroke-width="2.6"/><path d="M28 20v7l5 3" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'},
  companyleads:{g:'gSlate',p:'<rect x="19" y="20" width="18" height="20" rx="1.5" fill="#fff"/><rect x="24" y="30" width="8" height="10" fill="var(--ink)"/><rect x="23" y="24" width="3" height="3" fill="var(--green2)"/><rect x="30" y="24" width="3" height="3" fill="var(--green2)"/><path d="M15 22l6-6 6 6" fill="none" stroke="var(--green2)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 16v7" stroke="var(--green2)" stroke-width="2.4" stroke-linecap="round"/>'},
  reportdoc:{g:'gBlue',p:'<path d="M20 16h10l6 6v16a1.5 1.5 0 01-1.5 1.5h-14.5A1.5 1.5 0 0118.5 38V17.5A1.5 1.5 0 0120 16z" fill="#fff"/><rect x="22" y="28" width="3" height="6" fill="var(--green)"/><rect x="26.5" y="24" width="3" height="10" fill="var(--green)"/><rect x="31" y="30" width="3" height="4" fill="var(--green)"/>'},
  pricetag:{g:'gGold',p:'<path d="M18 18h10l12 12-10 10-12-12V18z" fill="#fff"/><circle cx="23" cy="23" r="2.2" fill="#B8860B"/><path d="M25 30.5l6-6" stroke="#B8860B" stroke-width="1.6" stroke-linecap="round"/>'}
@@ -5289,6 +5403,7 @@ function mgrAppRoute(key){
   else if(key==='Site Visit Auth') route('sitevisitauth');
   else if(key==='Contract of Sale') route('contractapp');
   else if(key==='Notes') route('notes');
+  else if(key==='Attendance') route('attendanceapp');
   else if(key==='SMS') route('sms');
   else if(key==='Quotation') openQuotationRequest();
   else route('mgrTabView',key);
@@ -5359,7 +5474,8 @@ function viewOfficeDesk(){
     {title:'Operations',items:[
       {key:'Duties',fic:'clipboard',label:'Operations Tracker',badgeCountKey:PROFILE.role==='manager'?'opsOverdueTeam':'opsAssigned'},
       {key:'Feedback',fic:'feedback',label:'Team Feedback'},
-      {key:'Banner Tracking',fic:'billboard',label:'Banner Tracking'}
+      {key:'Banner Tracking',fic:'billboard',label:'Banner Tracking'},
+      {key:'Attendance',fic:'attendance',label:'Attendance'}
     ]},
     {title:'Money',items:[
       ...(canManagePayments()?[{key:'Log Payment',fic:'payment',label:'Log Payment'}]:[]),
@@ -13382,6 +13498,11 @@ function mgrCompanySettingsHtml(){
   ${fld('Tax ID / TIN','<input id="cfg_companyTin" placeholder="e.g. C0012345678" value="'+esc(CONFIG.companyTin||'')+'"/>','shown on payment receipts — leave blank to hide it')}
   ${fld('Company address','<textarea id="cfg_companyAddress" rows="2">'+esc(CONFIG.companyAddress||'')+'</textarea>','used on memo letterheads and other formal correspondence')}
   <div class="formactions"><button class="btn primary" id="saveCompanyContact">Save company contact info</button></div>
+  </div>
+  ${settingsSectionHead('clock','Attendance','when a sign-in counts as late')}
+  <div class="formwrap">
+  ${fld('Cutoff time','<input id="cfg_attendanceCutoff" type="time" value="'+esc(CONFIG.attendanceCutoffTime||'09:00')+'"/>','signing in after this time flags as late on the Team Today view')}
+  <div class="formactions"><button class="btn primary" id="saveAttendanceCutoff">Save cutoff time</button></div>
   </div>`;
 }
 function bindCompanySettingsCtrls(){
@@ -13392,6 +13513,12 @@ function bindCompanySettingsCtrls(){
       toast('Company contact info saved');
     }catch(e){ toast('Failed: '+(e.message||e)); }
     btn.disabled=false; btn.textContent='Save company contact info';
+  };
+  document.getElementById('saveAttendanceCutoff').onclick=async()=>{
+    const btn=document.getElementById('saveAttendanceCutoff'); btn.disabled=true; btn.textContent='Saving…';
+    try{ await apiSaveConfig({attendanceCutoffTime:val('cfg_attendanceCutoff')||'09:00'}); toast('Cutoff time saved'); }
+    catch(e){ toast('Failed: '+(e.message||e)); }
+    btn.disabled=false; btn.textContent='Save cutoff time';
   };
 }
 function mgrSystemHtml(){
