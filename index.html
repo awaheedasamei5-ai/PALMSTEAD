@@ -723,7 +723,13 @@ body.dark .starBtn{color:#3A4048}
 .achTile.won{border-color:#C9A227;background:linear-gradient(180deg,#FDF6E3,var(--card) 60%);box-shadow:0 6px 16px -8px rgba(201,162,39,.4)}
 .achIcon{font-size:28px;line-height:1;margin-bottom:6px;transition:opacity 1s ease,filter 1s ease}
 .achLabel{font-size:11px;font-weight:700;color:var(--text);line-height:1.3;margin-bottom:6px}
-.achEarned{font-size:9.5px;color:#8A6E12;font-weight:700}
+.achEarned{display:flex;flex-direction:column;gap:2px;font-size:10.5px;color:#8A6E12;font-weight:700;line-height:1.35;text-align:center;word-break:break-word}
+.achEarnedDate{font-size:10px}
+.achEarnedPts{font-size:11px;font-weight:800}
+@media(max-width:480px){
+  .achGrid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+  .achEarned{font-size:11px}
+}
 .achProgressTrack{height:5px;border-radius:6px;background:#EEF1F6;overflow:hidden;margin-bottom:4px}
 .achProgressBar{height:100%;background:var(--leaf);width:0;transition:width 1s cubic-bezier(.22,1,.36,1)}
 .achProgressText{font-size:9.5px;color:var(--muted);font-weight:700}
@@ -11831,7 +11837,7 @@ async function paintAchievementGrid(){
       return `<div class="achTile${won?' won':''}">
         <div class="achIcon"${won?'':` style="opacity:${Math.max(.25,pct/100)};filter:grayscale(${100-pct}%)"`}>${esc(d.icon||'🏅')}</div>
         <div class="achLabel">${esc(d.label)}</div>
-        ${won?`<div class="achEarned">Earned ${esc((won.earnedAt||'').slice(0,10))}${d.points?' · +'+d.points+' pts':''}</div>`
+        ${won?`<div class="achEarned"><span class="achEarnedDate">Earned ${esc((won.earnedAt||'').slice(0,10))}</span>${d.points?`<span class="achEarnedPts">+${d.points} pts</span>`:''}</div>`
           :`<div class="achProgressTrack"><div class="achProgressBar" data-pct="${pct}"></div></div><div class="achProgressText">${val}/${threshold}</div>`}
       </div>`;
     }).join('')}</div>`;
