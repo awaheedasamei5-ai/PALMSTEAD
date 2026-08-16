@@ -78,6 +78,10 @@ a{color:var(--green2)}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes shimmer{0%{background-position:-300px 0}100%{background-position:300px 0}}
 @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+/* Gradient angle/stops aren't natively animatable, so the hero gradients (sign-in
+   wave + homeHero/profileHero/attClockCard) are painted oversized and drifted via
+   background-position instead -- a slow, subtle wash rather than a moving stripe. */
+@keyframes waveShift{0%{background-position:0% 30%}50%{background-position:100% 70%}100%{background-position:0% 30%}}
 @keyframes ringPulse{0%{box-shadow:0 0 0 0 rgba(132,204,22,.45)}100%{box-shadow:0 0 0 14px rgba(132,204,22,0)}}
 @keyframes logoRevealIn{0%{opacity:0;transform:scale(.25) rotate(-14deg)}60%{opacity:1}100%{opacity:1;transform:scale(1) rotate(0)}}
 @keyframes glowPulseOnce{0%{opacity:0;transform:scale(.6)}40%{opacity:1}100%{opacity:0;transform:scale(1.5)}}
@@ -90,6 +94,7 @@ a{color:var(--green2)}
 /* ---------- LOGIN ---------- */
 #login{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;justify-content:center;align-items:center;
   padding:32px 20px;background:var(--wave-bg,radial-gradient(130% 100% at 50% -10%, #163B7A 0%, var(--ink) 52%, #050E1F 100%));
+  background-size:220% 220%;animation:waveShift 28s ease-in-out infinite;
   color:#EAF0FB;position:relative;overflow:hidden;transition:background 1.2s ease}
 
 @keyframes kenburns{0%{transform:scale(1.02) translate(0,0)}100%{transform:scale(1.13) translate(-1.5%,-1.5%)}}
@@ -626,7 +631,8 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
    family as sign-in rather than a plain white card like every other screen. */
 .homeHero{position:relative;overflow:hidden;border-radius:24px;padding:24px 20px 22px;margin-bottom:20px;color:#fff;
   background:var(--hero-bg,linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%));
-  box-shadow:0 20px 44px -14px rgba(11,30,61,.5);animation:fadeUp .4s ease both}
+  background-size:220% 220%;
+  box-shadow:0 20px 44px -14px rgba(11,30,61,.5);animation:fadeUp .4s ease both,waveShift 24s ease-in-out infinite}
 .homeHero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 88% -15%,rgba(103,232,249,.4),transparent 55%);pointer-events:none}
 .homeHero::after{content:'';position:absolute;left:-10%;bottom:-30%;width:60%;padding-bottom:60%;border-radius:50%;background:radial-gradient(circle,rgba(201,162,39,.22),transparent 70%);pointer-events:none}
 .homeHero .heroTop{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1;gap:10px}
@@ -648,7 +654,8 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
    "Change password" header, and a small colored icon per section instead of bare
    text -- same premium-anchor idea as the home hero, scaled down for forms. */
 .profileHero{display:flex;align-items:center;gap:15px;padding:18px;border-radius:20px;margin-bottom:22px;color:#fff;position:relative;overflow:hidden;
-  background:var(--hero-bg,linear-gradient(135deg,var(--ink) 0%,#0F3A52 55%,var(--green) 100%));box-shadow:0 16px 36px -14px rgba(11,30,61,.45);animation:fadeUp .4s ease both}
+  background:var(--hero-bg,linear-gradient(135deg,var(--ink) 0%,#0F3A52 55%,var(--green) 100%));background-size:220% 220%;
+  box-shadow:0 16px 36px -14px rgba(11,30,61,.45);animation:fadeUp .4s ease both,waveShift 24s ease-in-out infinite}
 .profileHero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 88% -15%,rgba(103,232,249,.35),transparent 55%);pointer-events:none}
 .profileHero .avatar{width:60px;height:60px;border-radius:100px;flex:0 0 auto;overflow:hidden;background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.3);
   display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;position:relative;z-index:1}
@@ -658,7 +665,8 @@ a:hover>.contactTileIcon{transform:translateY(-2px) scale(1.05)}
 .profileHero .role{font-size:11.5px;color:rgba(255,255,255,.7);margin-top:2px;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
 .profileHero .email{font-size:11.5px;color:rgba(255,255,255,.55);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .attClockCard{position:relative;overflow:hidden;border-radius:24px;padding:26px 20px 22px;margin-bottom:18px;color:#fff;text-align:center;
-  background:var(--hero-bg,linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%));box-shadow:0 20px 44px -14px rgba(11,30,61,.5);animation:fadeUp .4s ease both}
+  background:var(--hero-bg,linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%));background-size:220% 220%;
+  box-shadow:0 20px 44px -14px rgba(11,30,61,.5);animation:fadeUp .4s ease both,waveShift 24s ease-in-out infinite}
 .attClockCard::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 88% -15%,rgba(103,232,249,.4),transparent 55%);pointer-events:none}
 .attClockTime{font-size:32px;font-weight:800;font-family:'IBM Plex Mono',monospace;letter-spacing:-.01em;position:relative;z-index:1}
 .attClockDate{font-size:12px;color:rgba(255,255,255,.65);margin-top:2px;position:relative;z-index:1}
@@ -1101,12 +1109,12 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
    Linear gradients only vary along their angle axis, so they blend smoothly at
    any aspect ratio. */
 const WAVE_VARIANTS=[
-  {bg:'linear-gradient(165deg,#050B14 0%,#0A2A3A 30%,#0C7A93 55%,#22D3EE 74%,#BAE6E8 90%,#F2F6F7 100%)',orb1:'rgba(14,165,183,.55)',orb2:'rgba(34,211,238,.5)',orb3:'rgba(201,162,39,.3)',heroBg:'linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%)'},
-  {bg:'linear-gradient(170deg,#050B14 0%,#0B1E3D 42%,#123F52 72%,#22D3EE 100%)',orb1:'rgba(34,211,238,.5)',orb2:'rgba(14,165,183,.45)',orb3:'rgba(103,232,249,.3)',heroBg:'linear-gradient(135deg,#050B14 0%,#0B1E3D 45%,#0C7A93 100%)'},
-  {bg:'linear-gradient(135deg,#0B1E3D 0%,#0A2A3A 35%,#0C7A93 70%,#67E8F9 100%)',orb1:'rgba(103,232,249,.5)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(201,162,39,.28)',heroBg:'linear-gradient(135deg,#0B1E3D 0%,#0A2A3A 45%,#0C7A93 100%)'},
-  {bg:'linear-gradient(180deg,#050B14 0%,#0B1E3D 55%,#0A3E4E 78%,#14C7D6 100%)',orb1:'rgba(20,199,214,.5)',orb2:'rgba(11,30,61,.6)',orb3:'rgba(34,211,238,.35)',heroBg:'linear-gradient(135deg,#050B14 0%,#0B1E3D 45%,#0A3E4E 100%)'},
-  {bg:'linear-gradient(160deg,#050B14 0%,#0B1E3D 30%,#0C7A93 60%,#C9A227 85%,#67E8F9 100%)',orb1:'rgba(201,162,39,.4)',orb2:'rgba(14,165,183,.5)',orb3:'rgba(103,232,249,.3)',heroBg:'linear-gradient(135deg,#0B1E3D 0%,#0C7A93 55%,#C9A227 100%)'},
-  {bg:'linear-gradient(0deg,#050B14 0%,#0B1E3D 28%,#0C7A93 62%,#67E8F9 85%,#F2F6F7 100%)',orb1:'rgba(103,232,249,.45)',orb2:'rgba(12,122,147,.5)',orb3:'rgba(34,211,238,.35)',heroBg:'linear-gradient(135deg,#050B14 0%,#0C7A93 50%,#22D3EE 100%)'}
+  {name:'Classic Navy',bg:'linear-gradient(165deg,#050B14 0%,#0A2A3A 30%,#0C7A93 55%,#22D3EE 74%,#BAE6E8 90%,#F2F6F7 100%)',orb1:'rgba(14,165,183,.55)',orb2:'rgba(34,211,238,.5)',orb3:'rgba(201,162,39,.3)',heroBg:'linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%)'},
+  {name:'Emerald Forest',bg:'linear-gradient(165deg,#051710 0%,#0F3D2E 30%,#1B7A5B 55%,#3FA66B 74%,#C9E8D2 90%,#F2F7F4 100%)',orb1:'rgba(27,122,91,.55)',orb2:'rgba(63,166,107,.45)',orb3:'rgba(201,162,39,.3)',heroBg:'linear-gradient(135deg,#051710 0%,#123D2C 45%,#1B7A5B 100%)'},
+  {name:'Charcoal & Gold',bg:'linear-gradient(170deg,#0A0A0C 0%,#1C1C22 35%,#4A3B1E 65%,#C9A227 85%,#F2EBD8 100%)',orb1:'rgba(201,162,39,.5)',orb2:'rgba(232,199,102,.4)',orb3:'rgba(74,59,30,.35)',heroBg:'linear-gradient(135deg,#0A0A0C 0%,#2A2118 50%,#C9A227 100%)'},
+  {name:'Wine & Rose Gold',bg:'linear-gradient(160deg,#1A050C 0%,#3D0F22 32%,#7A2645 58%,#C97A8C 80%,#F4E3DE 100%)',orb1:'rgba(201,122,140,.5)',orb2:'rgba(122,38,69,.5)',orb3:'rgba(201,162,39,.25)',heroBg:'linear-gradient(135deg,#1A050C 0%,#3D0F22 50%,#7A2645 100%)'},
+  {name:'Indigo & Amethyst',bg:'linear-gradient(155deg,#0A0821 0%,#1E1650 32%,#4A2F8C 60%,#8F6FCC 82%,#EDE7F9 100%)',orb1:'rgba(143,111,204,.5)',orb2:'rgba(74,47,140,.5)',orb3:'rgba(201,162,39,.22)',heroBg:'linear-gradient(135deg,#0A0821 0%,#241B5E 50%,#4A2F8C 100%)'},
+  {name:'Espresso & Copper',bg:'linear-gradient(160deg,#140B06 0%,#331D10 32%,#7A4620 58%,#C97D3E 80%,#F5E6D3 100%)',orb1:'rgba(201,125,62,.5)',orb2:'rgba(122,70,32,.45)',orb3:'rgba(201,162,39,.3)',heroBg:'linear-gradient(135deg,#140B06 0%,#331D10 50%,#7A4620 100%)'}
 ];
 // Was an IIFE that only ever ran once at script load -- so within one browser tab,
 // signing out and back in (no real page reload happens) kept showing the exact same
@@ -1130,7 +1138,7 @@ function applyWaveVariant(){
 applyWaveVariant();
 function themeSwatchesHtml(){
   let cur='auto'; try{ cur=localStorage.getItem('pep_theme_variant')||'auto'; }catch(e){}
-  const swatches=WAVE_VARIANTS.map((v,i)=>`<button type="button" class="themeSwatch ${cur===String(i)?'on':''}" data-themevariant="${i}" style="background:${v.heroBg}" title="Theme ${i+1}"></button>`).join('');
+  const swatches=WAVE_VARIANTS.map((v,i)=>`<button type="button" class="themeSwatch ${cur===String(i)?'on':''}" data-themevariant="${i}" style="background:${v.heroBg}" title="${esc(v.name||('Theme '+(i+1)))}"></button>`).join('');
   return swatches+`<button type="button" class="themeSwatch themeSwatchAuto ${cur==='auto'?'on':''}" data-themevariant="auto" title="Shuffle a new look each time you sign in">🎲</button>`;
 }
 function bindThemeSwatches(){
