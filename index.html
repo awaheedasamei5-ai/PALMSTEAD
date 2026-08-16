@@ -4295,12 +4295,26 @@ function ensureClientDbSubscribed(){
       const clList=document.getElementById('companyLeadsList');
       if(clList){ clList.innerHTML=companyLeadsListHtml(); bindCompanyLeadsRows(document.getElementById('companyLeadsBody')||document); }
     };
+    const removeLeadLocal=oldRow=>{
+      const id=oldRow&&oldRow.id; if(!id) return;
+      CLIENTDB_LIST=CLIENTDB_LIST.filter(x=>x.id!==id);
+      COMPANY_LEADS_LIST=COMPANY_LEADS_LIST.filter(x=>x.id!==id);
+      DB.leads=DB.leads.filter(x=>x.id!==id);
+      const list=document.getElementById('cdbList');
+      if(list){ list.innerHTML=clientDatabaseListHtml(); bindClientDbRows(document.getElementById('cdbBody')||document); }
+      const clList=document.getElementById('companyLeadsList');
+      if(clList){ clList.innerHTML=companyLeadsListHtml(); bindCompanyLeadsRows(document.getElementById('companyLeadsBody')||document); }
+    };
     CLIENTDB_CHANNEL=sb.channel('clientdb-live')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'leads'},payload=>upsertLocal(mapLead(payload.new)))
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'leads'},payload=>upsertLocal(mapLead(payload.new)))
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'leads'},payload=>removeLeadLocal(payload.old))
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'payments'},payload=>{
         const p={id:payload.new.id,leadId:payload.new.lead_id,agentKey:payload.new.agent_key,clientName:payload.new.client_name,amount:payload.new.amount,date:payload.new.payment_date};
         if(!DB.payments.some(x=>x.id===p.id)) DB.payments.push(p);
+      })
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'payments'},payload=>{
+        const id=payload.old&&payload.old.id; if(id) DB.payments=DB.payments.filter(x=>x.id!==id);
       })
       .subscribe();
   }catch(e){}
@@ -5278,6 +5292,8 @@ async function enterApp(){
   ensureReferralsLiveSubscribed();
   ensureContractRequestsLiveSubscribed();
   ensureSiteVisitFeedbackLiveSubscribed();
+  ensureMemosLiveSubscribed();
+  ensureBannersLiveSubscribed();
   ensurePresenceSubscribed();
   if(PROFILE.role!=='manager') evaluateMyAchievements();
   startInactivityTimer();
@@ -5356,9 +5372,16 @@ function ensureLeaveLiveSubscribed(){
       if(document.getElementById('leaveBody')) paintLeaveApp();
       if(document.getElementById('attBody')) paintAttendanceBody();
     };
+    const removeLocal=oldRow=>{
+      const id=oldRow&&oldRow.id; if(!id) return;
+      DB.leaveRequests=(DB.leaveRequests||[]).filter(x=>x.id!==id);
+      if(document.getElementById('leaveBody')) paintLeaveApp();
+      if(document.getElementById('attBody')) paintAttendanceBody();
+    };
     LEAVE_LIVE_CHANNEL=sb.channel('leave-live')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'leave_requests'},payload=>upsertLocal(payload.new))
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'leave_requests'},payload=>upsertLocal(payload.new))
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'leave_requests'},payload=>removeLocal(payload.old))
       .subscribe();
   }catch(e){}
 }
@@ -5375,9 +5398,22 @@ function ensureAttendanceLiveSubscribed(){
       }
       if(document.getElementById('attBody')) paintAttendanceBody();
     };
+    // DELETE matters here specifically because management can now delete/correct
+    // a staff member's record (see apiDeleteAttendanceRecord) -- without this, a
+    // deleted row would keep showing as stale data to anyone else viewing
+    // Attendance until they reloaded, exactly the "flag it and refresh, don't
+    // keep using the old data" behaviour asked for.
+    const removeLocal=oldRow=>{
+      const id=oldRow&&oldRow.id; if(!id) return;
+      ATTENDANCE_TEAM_TODAY=ATTENDANCE_TEAM_TODAY.filter(x=>x.id!==id);
+      ATTENDANCE_HISTORY=ATTENDANCE_HISTORY.filter(x=>x.id!==id);
+      if(ATTENDANCE_TODAY&&ATTENDANCE_TODAY.id===id) ATTENDANCE_TODAY=null;
+      if(document.getElementById('attBody')) paintAttendanceBody();
+    };
     ATTENDANCE_LIVE_CHANNEL=sb.channel('attendance-live')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'attendance_log'},payload=>upsertLocal(payload.new))
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'attendance_log'},payload=>upsertLocal(payload.new))
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'attendance_log'},payload=>removeLocal(payload.old))
       .subscribe();
   }catch(e){}
 }
@@ -5405,9 +5441,20 @@ function ensureReferralsLiveSubscribed(){
         if(CURRENT_ROUTE_NAME==='clientreferrals') viewClientReferrals();
       }
     };
+    const removeLocal=oldRow=>{
+      const id=oldRow&&oldRow.id; if(!id) return;
+      if(!IS_CLIENT){
+        REFERRALS_LIST=REFERRALS_LIST.filter(x=>x.id!==id);
+        if(document.getElementById('mbody')&&mgrTab==='Referrals'){ document.getElementById('mbody').innerHTML=mgrReferralsHtml(); bindReferralsCtrls(); }
+      } else {
+        CLIENT_REFERRALS_LIST=CLIENT_REFERRALS_LIST.filter(x=>x.id!==id);
+        if(CURRENT_ROUTE_NAME==='clientreferrals') viewClientReferrals();
+      }
+    };
     REFERRALS_LIVE_CHANNEL=sb.channel('referrals-live')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'referrals'},payload=>upsertLocal(payload.new))
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'referrals'},payload=>upsertLocal(payload.new))
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'referrals'},payload=>removeLocal(payload.old))
       .subscribe();
   }catch(e){}
 }
@@ -5427,9 +5474,20 @@ function ensureContractRequestsLiveSubscribed(){
         else if(CURRENT_ROUTE_NAME==='clienthome') clientHome();
       }
     };
+    const removeLocal=oldRow=>{
+      const id=oldRow&&oldRow.id; if(!id) return;
+      if(!IS_CLIENT){
+        DB.contractRequests=(DB.contractRequests||[]).filter(x=>x.id!==id);
+        if(document.getElementById('contractAppBody')) paintContractAppBody();
+      } else {
+        if(CURRENT_ROUTE_NAME==='clientcontractsale') viewClientContractSale();
+        else if(CURRENT_ROUTE_NAME==='clienthome') clientHome();
+      }
+    };
     CONTRACT_REQUESTS_LIVE_CHANNEL=sb.channel('contract-requests-live')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'contract_requests'},payload=>upsertLocal(payload.new))
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'contract_requests'},payload=>upsertLocal(payload.new))
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'contract_requests'},payload=>removeLocal(payload.old))
       .subscribe();
   }catch(e){}
 }
@@ -5444,6 +5502,67 @@ function ensureSiteVisitFeedbackLiveSubscribed(){
       .on('postgres_changes',{event:'*',schema:'public',table:'site_visit_feedback'},()=>{
         if(IS_CLIENT&&CURRENT_ROUTE_NAME==='clientvisitexperience') viewClientSiteVisitExperience();
       })
+      .subscribe();
+  }catch(e){}
+}
+/* ---- cross-app realtime, round 3: memos + banners -- staff-only (no client leg
+   for either), same shape as every channel above. These two were named directly
+   ("stuck in a loading loop for Elias/Elizabeth/Emmanuel") -- while that turned
+   out to be a timeout/UX issue (see the loading-loop fix), neither table had ever
+   gotten live sync either, so a memo/banner edited on one device still needed a
+   full reload to appear on another. */
+let MEMOS_LIVE_CHANNEL=null;
+function ensureMemosLiveSubscribed(){
+  if(DEMO_MODE || !sb || MEMOS_LIVE_CHANNEL || IS_CLIENT) return;
+  try{
+    const repaintMemos=()=>{ if(document.getElementById('memoBody')) paintMemoApp(); };
+    const upsertMemo=row=>{
+      const m=mapMemo(row); DB.memos=DB.memos||[];
+      const i=DB.memos.findIndex(x=>x.id===m.id);
+      if(i>=0){ m.cc=DB.memos[i].cc||[]; DB.memos[i]=m; } else { m.cc=[]; DB.memos.unshift(m); }
+      repaintMemos();
+    };
+    const removeMemo=oldRow=>{
+      const id=oldRow&&oldRow.id; if(!id) return;
+      DB.memos=(DB.memos||[]).filter(x=>x.id!==id);
+      repaintMemos();
+    };
+    const upsertRecipient=row=>{
+      const r=mapMemoRecipient(row); DB.memos=DB.memos||[];
+      const m=DB.memos.find(x=>x.id===r.memoId); if(!m) return;
+      m.cc=m.cc||[]; const i=m.cc.findIndex(x=>x.id===r.id);
+      if(i>=0) m.cc[i]=r; else m.cc.push(r);
+      repaintMemos();
+    };
+    MEMOS_LIVE_CHANNEL=sb.channel('memos-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'memos'},payload=>upsertMemo(payload.new))
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'memos'},payload=>upsertMemo(payload.new))
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'memos'},payload=>removeMemo(payload.old))
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'memo_recipients'},payload=>upsertRecipient(payload.new))
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'memo_recipients'},payload=>upsertRecipient(payload.new))
+      .subscribe();
+  }catch(e){}
+}
+let BANNERS_LIVE_CHANNEL=null;
+function ensureBannersLiveSubscribed(){
+  if(DEMO_MODE || !sb || BANNERS_LIVE_CHANNEL || IS_CLIENT) return;
+  try{
+    const repaintBanners=()=>{ if(document.getElementById('bannerBody')) paintBannerApp(); };
+    const upsertBanner=row=>{
+      const b=mapBanner(row); DB.banners=DB.banners||[];
+      const i=DB.banners.findIndex(x=>x.id===b.id);
+      if(i>=0) DB.banners[i]=b; else DB.banners.unshift(b);
+      repaintBanners();
+    };
+    const removeBanner=oldRow=>{
+      const id=oldRow&&oldRow.id; if(!id) return;
+      DB.banners=(DB.banners||[]).filter(x=>x.id!==id);
+      repaintBanners();
+    };
+    BANNERS_LIVE_CHANNEL=sb.channel('banners-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'banners'},payload=>upsertBanner(payload.new))
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'banners'},payload=>upsertBanner(payload.new))
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'banners'},payload=>removeBanner(payload.old))
       .subscribe();
   }catch(e){}
 }
@@ -5586,6 +5705,8 @@ document.getElementById('logoutBtn').onclick=async()=>{
   if(REFERRALS_LIVE_CHANNEL){ try{ sb.removeChannel(REFERRALS_LIVE_CHANNEL); }catch(e){} REFERRALS_LIVE_CHANNEL=null; }
   if(CONTRACT_REQUESTS_LIVE_CHANNEL){ try{ sb.removeChannel(CONTRACT_REQUESTS_LIVE_CHANNEL); }catch(e){} CONTRACT_REQUESTS_LIVE_CHANNEL=null; }
   if(SITE_VISIT_FEEDBACK_LIVE_CHANNEL){ try{ sb.removeChannel(SITE_VISIT_FEEDBACK_LIVE_CHANNEL); }catch(e){} SITE_VISIT_FEEDBACK_LIVE_CHANNEL=null; }
+  if(MEMOS_LIVE_CHANNEL){ try{ sb.removeChannel(MEMOS_LIVE_CHANNEL); }catch(e){} MEMOS_LIVE_CHANNEL=null; }
+  if(BANNERS_LIVE_CHANNEL){ try{ sb.removeChannel(BANNERS_LIVE_CHANNEL); }catch(e){} BANNERS_LIVE_CHANNEL=null; }
   if(PRESENCE_LIVE_CHANNEL){ try{ await apiTouchLastSeen(); sb.removeChannel(PRESENCE_LIVE_CHANNEL); }catch(e){} PRESENCE_LIVE_CHANNEL=null; PRESENCE_ONLINE_KEYS=new Set(); clearInterval(PRESENCE_HEARTBEAT_TIMER); }
   CLIENTDB_LOADED=false; CLIENTDB_LIST=[];
   CLIENT_NOTIFICATIONS=[];
