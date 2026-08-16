@@ -1258,6 +1258,13 @@ function syncDemoBannerVisibility(){
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function today(){return new Date().toISOString().slice(0,10);}
 function nowTime(){return new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}
+// Display-only 12-hour+AM/PM formatter -- nowTime() above is deliberately left
+// alone since it's used throughout to build stored "date time" strings, not just
+// for display, and those need to stay sortable 24-hour text. This is purely for
+// showing a sign-in/out (or the live clock) to a human, where AM/PM avoids the
+// "is that 9am or 9pm" confusion.
+function fmtTimeAmPm(iso){ if(!iso) return '--:--'; const d=new Date(iso); if(isNaN(d)) return '--:--'; return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
+function nowTimeAmPm(){ return new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
 function num(x){const n=Number(x);return isNaN(n)?0:n;}
 function ghs(x){return 'GHS '+num(x).toLocaleString('en-US',{maximumFractionDigits:0});}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -3312,6 +3319,27 @@ async function apiSignOut(lat,lng,offSiteReason,isOffSite){
   const {data,error}=await sb.from('attendance_log').upsert(row,{onConflict:'staff_key,work_date'}).select().single();
   if(error) throw error; return mapAttendance(data);
 }
+// Management-only correction path (typos, device errors, disputed entries) --
+// gated server-side by the al_upd_own_or_mgr/al_del_mgr RLS policies, not just
+// hidden in the UI, same as every other money/HR-adjacent edit in this app.
+async function apiUpdateAttendanceRecord(id,patch){
+  if(DEMO_MODE) return;
+  const dbPatch={};
+  if('signInAt' in patch) dbPatch.sign_in_at=patch.signInAt;
+  if('signOutAt' in patch) dbPatch.sign_out_at=patch.signOutAt;
+  const {error}=await sb.from('attendance_log').update(dbPatch).eq('id',id); if(error) throw error;
+}
+async function apiDeleteAttendanceRecord(id){
+  if(DEMO_MODE) return;
+  const {error}=await sb.from('attendance_log').delete().eq('id',id); if(error) throw error;
+}
+// Scoped ONLY to attendance_log -- explicitly does not touch any other table.
+// For clearing out test/demo sign-ins before real day-to-day use starts, so the
+// days-present/absent counters begin from zero instead of carrying test data.
+async function apiResetAllAttendance(){
+  if(DEMO_MODE) return;
+  const {error}=await sb.from('attendance_log').delete().gte('work_date','1900-01-01'); if(error) throw error;
+}
 // Great-circle distance in metres -- used to decide whether a sign-in/out is
 // "at the office" against CONFIG.officeLat/officeLng/officeRadiusMeters.
 function haversineMeters(lat1,lng1,lat2,lng2){
@@ -3443,7 +3471,7 @@ function paintAttendanceBody(){
   const btnState=!signedIn?'in':!signedOut?'out':'done';
   body.innerHTML=`
   <div class="attClockCard">
-    <div class="attClockTime" id="attLiveClock">${esc(nowTime())}</div>
+    <div class="attClockTime" id="attLiveClock">${esc(nowTimeAmPm())}</div>
     <div class="attClockDate">${esc(fmtLongDate(today()))}</div>
     <button class="attClockBtn ${btnState}" id="attClockBtn" ${btnState==='done'?'disabled':''}>
       <span class="lbl">${btnState==='in'?'Sign In':btnState==='out'?'Sign Out':'✓ Done'}</span>
@@ -3451,8 +3479,8 @@ function paintAttendanceBody(){
     </button>
     ${signedIn&&t.lateReason?`<div class="mini" style="position:relative;z-index:1;color:rgba(255,255,255,.75);margin:-10px 0 14px">Late reason: ${esc(t.lateReason)}</div>`:''}
     <div class="attClockStats">
-      <div class="attClockStat"><div class="l">Clock in</div><div class="v">${signedIn?esc(t.signInAt.slice(11,16)):'--:--'}</div></div>
-      <div class="attClockStat"><div class="l">Clock out</div><div class="v">${signedOut?esc(t.signOutAt.slice(11,16)):'--:--'}</div></div>
+      <div class="attClockStat"><div class="l">Clock in</div><div class="v">${signedIn?esc(fmtTimeAmPm(t.signInAt)):'--:--'}</div></div>
+      <div class="attClockStat"><div class="l">Clock out</div><div class="v">${signedOut?esc(fmtTimeAmPm(t.signOutAt)):'--:--'}</div></div>
       <div class="attClockStat"><div class="l">Hours</div><div class="v">${attHoursWorkedStr(t)}</div></div>
     </div>
   </div>
@@ -3461,9 +3489,19 @@ function paintAttendanceBody(){
   ${isMgr?`<div class="sectitle" style="margin-top:0"><h3>Team today</h3><span class="cnt">${ATTENDANCE_TEAM_TODAY.filter(a=>a.signInAt).length} of ${STAFF_LIST.length} signed in</span></div>
   <div class="list" style="margin-bottom:18px">${teamAttendanceTodayHtml()}</div>`:''}
   <div class="sectitle" style="margin-top:0"><h3>Your recent history</h3></div>
-  <div class="list">${ATTENDANCE_HISTORY.length?ATTENDANCE_HISTORY.map(attendanceHistoryRowHtml).join(''):emptyState(ic.grid,'No history yet','')}</div>`;
+  <div class="list">${ATTENDANCE_HISTORY.length?ATTENDANCE_HISTORY.map(attendanceHistoryRowHtml).join(''):emptyState(ic.grid,'No history yet','')}</div>
+  ${isMgr?`<div class="dangerzone" style="margin-top:18px"><div class="dz-text"><b>Reset attendance data</b><br>Clears every sign-in/out record for every staff member so days-present/absent counts start at zero. Only affects attendance -- no other app or data is touched. This can't be undone.</div>
+  <button class="btn danger" id="attResetAllBtn">Reset attendance data</button></div>`:''}`;
   bindAttendanceCtrls();
   bindAttendanceRowClicks();
+  const resetBtn=document.getElementById('attResetAllBtn');
+  if(resetBtn) resetBtn.onclick=async()=>{
+    if(!confirm("Reset ALL attendance data for every staff member? This permanently deletes every sign-in/out record and can't be undone."))return;
+    if(!confirm("Are you absolutely sure? Days-present/absent history for the whole team will be gone."))return;
+    resetBtn.disabled=true; resetBtn.textContent='Resetting…';
+    try{ await apiResetAllAttendance(); toast('Attendance data reset'); viewAttendanceApp(); }
+    catch(e){ toast('Could not reset: '+(e.message||e)); resetBtn.disabled=false; resetBtn.textContent='Reset attendance data'; }
+  };
   clearInterval(ATTENDANCE_CLOCK_TIMER);
   if(btnState!=='done'){
     ATTENDANCE_CLOCK_TIMER=setInterval(()=>{
@@ -3482,7 +3520,7 @@ function teamAttendanceTodayHtml(){
     let statusTag, metaText;
     if(rec&&rec.signInAt){
       statusTag=late?`<span class="tag warnt">Late</span>`:`<span class="tag ok">On time</span>`;
-      metaText='In '+esc(rec.signInAt.slice(11,16))+(rec.signOutAt?(' · Out '+esc(rec.signOutAt.slice(11,16))):'')+(late&&rec.lateReason?' · '+esc(rec.lateReason):'');
+      metaText='In '+esc(fmtTimeAmPm(rec.signInAt))+(rec.signOutAt?(' · Out '+esc(fmtTimeAmPm(rec.signOutAt))):'')+(late&&rec.lateReason?' · '+esc(rec.lateReason):'');
     }else if(onLeave){
       statusTag=onLeave.status==='approved'?`<span class="tag ghost">On leave</span>`:`<span class="tag warnt">Leave pending</span>`;
       metaText='Not expected in today';
@@ -3506,7 +3544,7 @@ function attendanceHistoryRowHtml(a){
   return `<div class="rowcard"${a.signInAt?` data-attdate="${esc(a.workDate)}" style="cursor:pointer"`:''}><div class="top">
     <div style="display:flex;gap:10px;min-width:0">
       ${a.signInPhoto?`<img src="${a.signInPhoto}" style="width:38px;height:38px;border-radius:100%;object-fit:cover;flex:0 0 auto"/>`:''}
-      <div style="min-width:0"><div class="nm">${esc(fmtLongDate(a.workDate))}</div><div class="meta">${a.signInAt?('In '+esc(a.signInAt.slice(11,16))+(a.lateReason?' · '+esc(a.lateReason):'')):(onLeave?'On leave':'—')}${a.signOutAt?(' · Out '+esc(a.signOutAt.slice(11,16))):''}</div>
+      <div style="min-width:0"><div class="nm">${esc(fmtLongDate(a.workDate))}</div><div class="meta">${a.signInAt?('In '+esc(fmtTimeAmPm(a.signInAt))+(a.lateReason?' · '+esc(a.lateReason):'')):(onLeave?'On leave':'—')}${a.signOutAt?(' · Out '+esc(fmtTimeAmPm(a.signOutAt))):''}</div>
       ${a.signInAt?attLocationTagHtml(a.isOffSiteIn,a.signInReason):''}
       ${a.signOutAt&&a.isOffSiteOut?`<div class="mini" style="color:#B4472F">📍 Signed out off-site${a.signOutReason?': '+esc(a.signOutReason):''}</div>`:''}
       </div>
@@ -3540,20 +3578,51 @@ function openAttendanceDetailModal(rec,staffName){
   const sect=(label,at,lat,lng,isOffSite,reason,photo)=>{
     if(!at) return '';
     return `<div class="rowcard" style="margin-bottom:12px;padding:14px">
-      <div style="font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">${esc(label)} · ${esc(at.slice(11,16))}</div>
+      <div style="font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">${esc(label)} · ${esc(fmtTimeAmPm(at))}</div>
       ${photo?`<img src="${photo}" style="width:100%;max-height:280px;object-fit:cover;border-radius:12px;margin-bottom:10px"/>`:''}
       ${hasOffice?`<div class="mini" style="margin-bottom:8px;font-weight:700;color:${isOffSite?'#B4472F':'#1E7A56'}">📍 ${isOffSite?'Off-site':'At the office'}${reason?' — '+esc(reason):''}</div>`:''}
       ${lat!=null&&lng!=null?`<iframe src="${attMapEmbedUrl(lat,lng)}" style="width:100%;height:200px;border:0;border-radius:12px" loading="lazy"></iframe>`:`<div class="mini">No location captured for this entry.</div>`}
     </div>`;
   };
+  const isMgr=PROFILE.role==='manager';
+  const toTimeInput=iso=>iso?new Date(iso).toTimeString().slice(0,5):'';
   ov.innerHTML=`<div id="announceModal">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(staffName)} — ${esc(fmtLongDate(rec.workDate))}</div><button id="closeAttDetail" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
     ${sect('Sign-in',rec.signInAt,rec.signInLat,rec.signInLng,rec.isOffSiteIn,rec.signInReason,rec.signInPhoto)}
     ${sect('Sign-out',rec.signOutAt,rec.signOutLat,rec.signOutLng,rec.isOffSiteOut,rec.signOutReason,null)}
+    ${isMgr?`<div class="sectitle" style="margin-top:0"><h3 style="font-size:13px">Correct this record</h3></div>
+    <div class="grid2">${fld('Sign-in time','<input id="att_editIn" type="time" value="'+esc(toTimeInput(rec.signInAt))+'"/>')}${fld('Sign-out time','<input id="att_editOut" type="time" value="'+esc(toTimeInput(rec.signOutAt))+'"/>')}</div>
+    <button class="btn primary" id="att_saveEdit" style="width:100%;margin-bottom:14px">Save changes</button>
+    <div class="dangerzone" style="margin:0"><div class="dz-text"><b>Delete this record</b><br>Removes ${esc(staffName)}'s entire attendance entry for ${esc(fmtLongDate(rec.workDate))}. This can't be undone.</div>
+    <button class="btn danger" id="att_deleteRec">Delete record</button></div>`:''}
   </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
   document.getElementById('closeAttDetail').onclick=()=>ov.remove();
+  if(isMgr){
+    document.getElementById('att_saveEdit').onclick=async()=>{
+      const btn=document.getElementById('att_saveEdit'); btn.disabled=true; btn.textContent='Saving…';
+      const inVal=val('att_editIn'), outVal=val('att_editOut');
+      const patch={};
+      if(inVal) patch.signInAt=rec.workDate+'T'+inVal+':00';
+      if(outVal) patch.signOutAt=rec.workDate+'T'+outVal+':00';
+      try{
+        await apiUpdateAttendanceRecord(rec.id,patch);
+        Object.assign(rec,patch);
+        toast('Attendance record updated'); ov.remove();
+        if(typeof viewAttendanceApp==='function') viewAttendanceApp();
+      }catch(e){ toast('Could not update: '+(e.message||e)); btn.disabled=false; btn.textContent='Save changes'; }
+    };
+    document.getElementById('att_deleteRec').onclick=async()=>{
+      if(!confirm("Delete "+staffName+"'s attendance record for "+fmtLongDate(rec.workDate)+"? This can't be undone.")) return;
+      const btn=document.getElementById('att_deleteRec'); btn.disabled=true; btn.textContent='Deleting…';
+      try{
+        await apiDeleteAttendanceRecord(rec.id);
+        toast('Attendance record deleted'); ov.remove();
+        if(typeof viewAttendanceApp==='function') viewAttendanceApp();
+      }catch(e){ toast('Could not delete: '+(e.message||e)); btn.disabled=false; btn.textContent='Delete record'; }
+    };
+  }
 }
 function promptLateReason(){
   return new Promise(resolve=>{
