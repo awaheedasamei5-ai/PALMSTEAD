@@ -1528,6 +1528,19 @@ function withLoadTimeout(promise,ms,label){
     new Promise((_,reject)=>setTimeout(()=>reject(new Error((label||'This')+' is taking too long — check your connection and try again')),ms))
   ]);
 }
+// A toast alone (2.6s, easy to miss on a real device) isn't enough signal when a
+// load genuinely fails -- this renders a persistent, un-missable banner with a
+// retry button instead, so a failed load never looks indistinguishable from "just
+// empty" or "still loading". retryFnCall is a literal JS call expression string
+// (e.g. "viewLeaveApp()"), used the same way the codebase already uses inline
+// onclick="" strings elsewhere.
+function loadFailBannerHtml(label,retryFnCall){
+  return `<div class="rowcard" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #B4472F">
+    <div style="font-weight:700;font-size:13.5px;color:#B4472F">⚠ Couldn't load ${esc(label)}</div>
+    <div class="mini" style="margin-top:2px">Check your connection, then try again.</div>
+    <button class="chip" style="margin-top:10px" onclick="${retryFnCall}">Retry</button>
+  </div>`;
+}
 function fld(l,inner,hint){return `<div class="field"><label>${l}${hint?` <span class="hint">— ${hint}</span>`:''}</label>${inner}</div>`;}
 function sel(id,opts,cur){return `<select id="${id}">`+opts.map(o=>`<option ${o===cur?'selected':''}>${o}</option>`).join('')+`</select>`;}
 function back(to){return `<button class="backlink" onclick="goBack('${to}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button>`;}
@@ -3324,14 +3337,14 @@ async function viewAttendanceApp(){
     const isMgr=PROFILE.role==='manager';
     if(!LEAVE_REQUESTS_LOADED){
       if(!LEAVE_REQUESTS_LOAD_PROMISE){
-        LEAVE_REQUESTS_LOAD_PROMISE=withLoadTimeout(apiLoadLeaveRequests(),15000,'Leave requests')
-          .then(rows=>{ DB.leaveRequests=rows; LEAVE_REQUESTS_LOADED=true; })
-          .catch(()=>{})
+        LEAVE_REQUESTS_LOAD_PROMISE=withLoadTimeout(apiLoadLeaveRequests(),8000,'Leave requests')
+          .then(rows=>{ DB.leaveRequests=rows; LEAVE_REQUESTS_LOADED=true; LEAVE_REQUESTS_LOAD_FAILED=false; })
+          .catch(()=>{ LEAVE_REQUESTS_LOAD_FAILED=true; })
           .finally(()=>{ LEAVE_REQUESTS_LOAD_PROMISE=null; });
       }
       await LEAVE_REQUESTS_LOAD_PROMISE;
     }
-    const [hist,team,monthRows]=await withLoadTimeout(Promise.all([apiLoadMyAttendance(from,today()),isMgr?apiLoadTeamAttendanceToday():Promise.resolve([]),apiLoadLeaderboardRows(monthStart,today()).catch(()=>[])]),15000,'Attendance');
+    const [hist,team,monthRows]=await withLoadTimeout(Promise.all([apiLoadMyAttendance(from,today()),isMgr?apiLoadTeamAttendanceToday():Promise.resolve([]),apiLoadLeaderboardRows(monthStart,today()).catch(()=>[])]),8000,'Attendance');
     ATTENDANCE_HISTORY=hist;
     ATTENDANCE_TODAY=hist.find(a=>a.workDate===today())||null;
     ATTENDANCE_TEAM_TODAY=team;
@@ -8724,7 +8737,7 @@ function bindTodoCtrls(){
   const reportBtn=document.getElementById('todoReportBtn'); if(reportBtn) reportBtn.onclick=openTodoReportModal;
 }
 async function todoEnsureRangeLoaded(){
-  try{ TODO_LIST=await withLoadTimeout(apiLoadTodos(isoPlusDays(TODO_DATE,-3),isoPlusDays(TODO_DATE,3)),15000,'To-dos'); TODO_LOADED=true; todoArmAlarms(); }
+  try{ TODO_LIST=await withLoadTimeout(apiLoadTodos(isoPlusDays(TODO_DATE,-3),isoPlusDays(TODO_DATE,3)),8000,'To-dos'); TODO_LOADED=true; todoArmAlarms(); }
   catch(e){ toast('Could not load to-dos: '+(e.message||e)); }
 }
 function paintTodoTab(){
@@ -9144,7 +9157,7 @@ async function paintMonthTab(){
   const fromDate=MONTH_CURSOR+'-01';
   const toDate=MONTH_CURSOR+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0');
   let counts;
-  try{ counts=await withLoadTimeout(apiLoadMonthCounts(fromDate,toDate,[PROFILE.key]),15000,'Month view'); }
+  try{ counts=await withLoadTimeout(apiLoadMonthCounts(fromDate,toDate,[PROFILE.key]),8000,'Month view'); }
   catch(e){ body.innerHTML=`<div class="empty">Could not load the month view: ${esc(e.message||e)}</div><button class="chip" id="monthRetryBtn" style="margin-top:10px">Retry</button>`; const rb=document.getElementById('monthRetryBtn'); if(rb) rb.onclick=()=>paintMonthTab(); return; }
   body.innerHTML=`
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -9216,7 +9229,7 @@ async function paintMyDayTab(){
   const isToday=date===today();
   let blocks,dueTasks,weekItems;
   try{
-    const [agenda,week]=await withLoadTimeout(Promise.all([apiLoadDayAgenda(date,[PROFILE.key]),apiLoadWeekAgenda(date,[PROFILE.key])]),15000,'My Day');
+    const [agenda,week]=await withLoadTimeout(Promise.all([apiLoadDayAgenda(date,[PROFILE.key]),apiLoadWeekAgenda(date,[PROFILE.key])]),8000,'My Day');
     blocks=agenda.blocks; dueTasks=agenda.dueTasks; weekItems=week;
   }catch(e){
     body.innerHTML=`<div class="empty">Could not load My Day: ${esc(e.message||e)}</div><button class="chip" id="mydayRetryBtn" style="margin-top:10px">Retry</button>`;
@@ -9250,7 +9263,7 @@ async function paintTeamTab(){
   const date=today();
   const staffKeys=STAFF_LIST.map(s=>s.key);
   let blocks,dueTasks;
-  try{ ({blocks,dueTasks}=await withLoadTimeout(apiLoadDayAgenda(date,staffKeys),15000,'Team view')); }
+  try{ ({blocks,dueTasks}=await withLoadTimeout(apiLoadDayAgenda(date,staffKeys),8000,'Team view')); }
   catch(e){
     body.innerHTML=`<div class="empty">Could not load the team view: ${esc(e.message||e)}</div><button class="chip" id="teamRetryBtn" style="margin-top:10px">Retry</button>`;
     const rb=document.getElementById('teamRetryBtn'); if(rb) rb.onclick=()=>paintTeamTab();
@@ -13805,11 +13818,18 @@ async function managerView(){
   }
   else if(mgrTab==='Data Check'){ const renderMgrDataCheck=()=>{ body.innerHTML=renderDataCheck(null); bindDataCheckCtrls(null,renderMgrDataCheck); }; renderMgrDataCheck(); }
   else if(mgrTab==='Leaderboard'){
-    if(!LEADERBOARD_TODOS_LOADED){ try{ LEADERBOARD_TODOS_LIST=await withLoadTimeout(apiLoadAllTodosForLeaderboard(isoPlusDays(today(),-90),today()),15000,'Leaderboard'); LEADERBOARD_TODOS_LOADED=true; }catch(e){} }
+    // Previously two SEQUENTIAL 15s-timeout awaits with a silent empty catch --
+    // worst case a 30s wait with zero feedback, which is exactly what reads as
+    // "the icon doesn't respond" on a slow connection. Now runs concurrently
+    // (halving the worst case) and actually surfaces a failure instead of
+    // swallowing it silently.
+    const jobs=[];
+    if(!LEADERBOARD_TODOS_LOADED) jobs.push(withLoadTimeout(apiLoadAllTodosForLeaderboard(isoPlusDays(today(),-90),today()),8000,'Leaderboard').then(rows=>{ LEADERBOARD_TODOS_LIST=rows; LEADERBOARD_TODOS_LOADED=true; }));
     // deals_closed_year is scoped to the selected year, so this reloads whenever slYear
     // changes -- everything else the RPC returns (site visits, tasks/to-dos, attendance)
     // is a fixed 90-day/all-time window independent of slYear.
-    if(LEADERBOARD_ROWS_YEAR!==slYear){ try{ LEADERBOARD_ROWS=await withLoadTimeout(apiLoadLeaderboardRows(slYear+'-01-01',slYear+'-12-31'),15000,'Leaderboard'); LEADERBOARD_ROWS_YEAR=slYear; }catch(e){} }
+    if(LEADERBOARD_ROWS_YEAR!==slYear) jobs.push(withLoadTimeout(apiLoadLeaderboardRows(slYear+'-01-01',slYear+'-12-31'),8000,'Leaderboard').then(rows=>{ LEADERBOARD_ROWS=rows; LEADERBOARD_ROWS_YEAR=slYear; }));
+    if(jobs.length){ try{ await Promise.all(jobs); }catch(e){ toast(e.message||'Could not load leaderboard'); } }
     body.innerHTML=mgrLeaderboard(); bindLeagueCtrls();
   }
   else if(mgrTab==='Reports'){ body.innerHTML=mgrReports(); bindReportCtrls(); }
@@ -16950,6 +16970,7 @@ function bindNewsCtrls(){
    letter. */
 let LEAVE_REQUESTS_LOADED=false;
 let LEAVE_REQUESTS_LOAD_PROMISE=null;
+let LEAVE_REQUESTS_LOAD_FAILED=false;
 let leaveAppTab='mine';
 let leaveCalYear=new Date(today()).getFullYear();
 let leaveCalMonth=new Date(today()).getMonth();
@@ -17163,9 +17184,9 @@ async function viewLeaveApp(){
   <div id="leaveBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!LEAVE_REQUESTS_LOADED){
     if(!LEAVE_REQUESTS_LOAD_PROMISE){
-      LEAVE_REQUESTS_LOAD_PROMISE=withLoadTimeout(apiLoadLeaveRequests(),15000,'Leave requests')
-        .then(rows=>{ DB.leaveRequests=rows; LEAVE_REQUESTS_LOADED=true; })
-        .catch(e=>{ toast(e.message||'Could not load leave requests'); })
+      LEAVE_REQUESTS_LOAD_PROMISE=withLoadTimeout(apiLoadLeaveRequests(),8000,'Leave requests')
+        .then(rows=>{ DB.leaveRequests=rows; LEAVE_REQUESTS_LOADED=true; LEAVE_REQUESTS_LOAD_FAILED=false; })
+        .catch(e=>{ LEAVE_REQUESTS_LOAD_FAILED=true; toast(e.message||'Could not load leave requests'); })
         .finally(()=>{ LEAVE_REQUESTS_LOAD_PROMISE=null; });
     }
     await LEAVE_REQUESTS_LOAD_PROMISE;
@@ -17185,7 +17206,7 @@ function paintLeaveApp(){
   if(leaveAppTab==='requests'&&isMgr) content=leaveRequestsHtml();
   else if(leaveAppTab==='settings'&&isMgr) content=leaveSettingsHtml();
   else content=leaveMineHtml();
-  body.innerHTML=tabs+content;
+  body.innerHTML=(LEAVE_REQUESTS_LOAD_FAILED?loadFailBannerHtml('leave data','viewLeaveApp()'):'')+tabs+content;
   body.querySelectorAll('[data-leavetab]').forEach(b=>b.onclick=()=>{ leaveAppTab=b.dataset.leavetab; paintLeaveApp(); });
   if(leaveAppTab==='requests'&&isMgr) bindLeaveRequestsCtrls();
   else if(leaveAppTab==='settings'&&isMgr) bindLeaveSettingsCtrls();
@@ -17610,6 +17631,7 @@ function bindLeaveSettingsCtrls(){
    PDF renderer tractable). */
 let MEMOS_LOADED=false;
 let MEMOS_LOAD_PROMISE=null;
+let MEMOS_LOAD_FAILED=false;
 let memoAppTab='compose';
 let memoComposeSeed=null;
 let MEMO_CC_STATE=[];
@@ -17734,9 +17756,9 @@ async function viewMemoApp(){
   <div id="memoBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!MEMOS_LOADED){
     if(!MEMOS_LOAD_PROMISE){
-      MEMOS_LOAD_PROMISE=withLoadTimeout(apiLoadMemos(),15000,'Memos')
-        .then(rows=>{ DB.memos=rows; MEMOS_LOADED=true; })
-        .catch(e=>{ toast(e.message||'Could not load memos'); })
+      MEMOS_LOAD_PROMISE=withLoadTimeout(apiLoadMemos(),8000,'Memos')
+        .then(rows=>{ DB.memos=rows; MEMOS_LOADED=true; MEMOS_LOAD_FAILED=false; })
+        .catch(e=>{ MEMOS_LOAD_FAILED=true; toast(e.message||'Could not load memos'); })
         .finally(()=>{ MEMOS_LOAD_PROMISE=null; });
     }
     await MEMOS_LOAD_PROMISE;
@@ -17759,7 +17781,7 @@ function paintMemoApp(){
   else if(memoAppTab==='sent') content=memoSentHtml();
   else if(memoAppTab==='drafts') content=memoDraftsHtml();
   else content=memoComposeHtml();
-  body.innerHTML=tabs+content;
+  body.innerHTML=(MEMOS_LOAD_FAILED?loadFailBannerHtml('memos','viewMemoApp()'):'')+tabs+content;
   body.querySelectorAll('[data-memotab]').forEach(b=>b.onclick=()=>{ memoAppTab=b.dataset.memotab; paintMemoApp(); });
   if(memoAppTab==='inbox'||memoAppTab==='sent') bindMemoListCtrls();
   else if(memoAppTab==='drafts') bindMemoDraftCtrls();
@@ -17959,6 +17981,7 @@ function openMemoEscalatePicker(m){
    chained as waypoints. */
 let BANNERS_LOADED=false;
 let BANNERS_LOAD_PROMISE=null;
+let BANNERS_LOAD_FAILED=false;
 let BANNER_LEAD_COUNTS_LOADED=false;
 let BANNER_LEAD_COUNTS_LOAD_PROMISE=null;
 let bannerAppTab='dashboard';
@@ -17990,16 +18013,16 @@ async function viewBannerApp(){
   <div id="bannerBody"><div style="padding:40px 0"><div class="skel" style="height:80px;border-radius:16px"></div></div></div>`;
   if(!BANNERS_LOADED){
     if(!BANNERS_LOAD_PROMISE){
-      BANNERS_LOAD_PROMISE=withLoadTimeout(apiLoadBanners(),15000,'Banners')
-        .then(rows=>{ DB.banners=rows; BANNERS_LOADED=true; })
-        .catch(e=>{ toast(e.message||'Could not load banners'); })
+      BANNERS_LOAD_PROMISE=withLoadTimeout(apiLoadBanners(),8000,'Banners')
+        .then(rows=>{ DB.banners=rows; BANNERS_LOADED=true; BANNERS_LOAD_FAILED=false; })
+        .catch(e=>{ BANNERS_LOAD_FAILED=true; toast(e.message||'Could not load banners'); })
         .finally(()=>{ BANNERS_LOAD_PROMISE=null; });
     }
     await BANNERS_LOAD_PROMISE;
   }
   if(!BANNER_LEAD_COUNTS_LOADED){
     if(!BANNER_LEAD_COUNTS_LOAD_PROMISE){
-      BANNER_LEAD_COUNTS_LOAD_PROMISE=withLoadTimeout(apiLoadLeadBannerCounts(),15000,'Banner lead counts')
+      BANNER_LEAD_COUNTS_LOAD_PROMISE=withLoadTimeout(apiLoadLeadBannerCounts(),8000,'Banner lead counts')
         .then(counts=>{ BANNER_LEAD_COUNTS=counts; BANNER_LEAD_COUNTS_LOADED=true; })
         .catch(()=>{})
         .finally(()=>{ BANNER_LEAD_COUNTS_LOAD_PROMISE=null; });
@@ -18021,7 +18044,7 @@ function paintBannerApp(){
   else if(bannerAppTab==='map') content=bannerMapHtml();
   else if(bannerAppTab==='reports') content=bannerReportsHtml();
   else content=bannerDashboardHtml();
-  body.innerHTML=tabs+content;
+  body.innerHTML=(BANNERS_LOAD_FAILED?loadFailBannerHtml('banner data','viewBannerApp()'):'')+tabs+content;
   body.querySelectorAll('[data-bntab]').forEach(b=>b.onclick=()=>{ bannerAppTab=b.dataset.bntab; paintBannerApp(); });
   if(bannerAppTab==='list') bindBannerListCtrls();
   else if(bannerAppTab==='map') bindBannerMapCtrls();
