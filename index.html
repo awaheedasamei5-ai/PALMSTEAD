@@ -3305,8 +3305,16 @@ async function viewAttendanceApp(){
     const from=isoPlusDays(today(),-13);
     const monthStart=today().slice(0,7)+'-01';
     const isMgr=PROFILE.role==='manager';
-    if(!LEAVE_REQUESTS_LOADED){ try{ DB.leaveRequests=await apiLoadLeaveRequests(); LEAVE_REQUESTS_LOADED=true; }catch(e){} }
-    const [hist,team,monthRows]=await Promise.all([apiLoadMyAttendance(from,today()),isMgr?apiLoadTeamAttendanceToday():Promise.resolve([]),apiLoadLeaderboardRows(monthStart,today()).catch(()=>[])]);
+    if(!LEAVE_REQUESTS_LOADED){
+      if(!LEAVE_REQUESTS_LOAD_PROMISE){
+        LEAVE_REQUESTS_LOAD_PROMISE=withLoadTimeout(apiLoadLeaveRequests(),15000,'Leave requests')
+          .then(rows=>{ DB.leaveRequests=rows; LEAVE_REQUESTS_LOADED=true; })
+          .catch(()=>{})
+          .finally(()=>{ LEAVE_REQUESTS_LOAD_PROMISE=null; });
+      }
+      await LEAVE_REQUESTS_LOAD_PROMISE;
+    }
+    const [hist,team,monthRows]=await withLoadTimeout(Promise.all([apiLoadMyAttendance(from,today()),isMgr?apiLoadTeamAttendanceToday():Promise.resolve([]),apiLoadLeaderboardRows(monthStart,today()).catch(()=>[])]),15000,'Attendance');
     ATTENDANCE_HISTORY=hist;
     ATTENDANCE_TODAY=hist.find(a=>a.workDate===today())||null;
     ATTENDANCE_TEAM_TODAY=team;
@@ -8654,7 +8662,7 @@ function bindTodoCtrls(){
   const reportBtn=document.getElementById('todoReportBtn'); if(reportBtn) reportBtn.onclick=openTodoReportModal;
 }
 async function todoEnsureRangeLoaded(){
-  try{ TODO_LIST=await apiLoadTodos(isoPlusDays(TODO_DATE,-3),isoPlusDays(TODO_DATE,3)); TODO_LOADED=true; todoArmAlarms(); }
+  try{ TODO_LIST=await withLoadTimeout(apiLoadTodos(isoPlusDays(TODO_DATE,-3),isoPlusDays(TODO_DATE,3)),15000,'To-dos'); TODO_LOADED=true; todoArmAlarms(); }
   catch(e){ toast('Could not load to-dos: '+(e.message||e)); }
 }
 function paintTodoTab(){
@@ -9073,7 +9081,9 @@ async function paintMonthTab(){
   const [y,m]=MONTH_CURSOR.split('-').map(Number);
   const fromDate=MONTH_CURSOR+'-01';
   const toDate=MONTH_CURSOR+'-'+String(new Date(y,m,0).getDate()).padStart(2,'0');
-  const counts=await apiLoadMonthCounts(fromDate,toDate,[PROFILE.key]);
+  let counts;
+  try{ counts=await withLoadTimeout(apiLoadMonthCounts(fromDate,toDate,[PROFILE.key]),15000,'Month view'); }
+  catch(e){ body.innerHTML=`<div class="empty">Could not load the month view: ${esc(e.message||e)}</div><button class="chip" id="monthRetryBtn" style="margin-top:10px">Retry</button>`; const rb=document.getElementById('monthRetryBtn'); if(rb) rb.onclick=()=>paintMonthTab(); return; }
   body.innerHTML=`
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
     <button class="chip" id="monthPrevBtn">‹</button>
@@ -9142,7 +9152,15 @@ async function paintMyDayTab(){
   const body=document.getElementById('dutiesMyDayBody'); if(!body) return;
   const date=MYDAY_DATE||today();
   const isToday=date===today();
-  const [{blocks,dueTasks},weekItems]=await Promise.all([apiLoadDayAgenda(date,[PROFILE.key]),apiLoadWeekAgenda(date,[PROFILE.key])]);
+  let blocks,dueTasks,weekItems;
+  try{
+    const [agenda,week]=await withLoadTimeout(Promise.all([apiLoadDayAgenda(date,[PROFILE.key]),apiLoadWeekAgenda(date,[PROFILE.key])]),15000,'My Day');
+    blocks=agenda.blocks; dueTasks=agenda.dueTasks; weekItems=week;
+  }catch(e){
+    body.innerHTML=`<div class="empty">Could not load My Day: ${esc(e.message||e)}</div><button class="chip" id="mydayRetryBtn" style="margin-top:10px">Retry</button>`;
+    const rb=document.getElementById('mydayRetryBtn'); if(rb) rb.onclick=()=>paintMyDayTab();
+    return;
+  }
   const mine=(DB.tasks||[]).filter(t=>t.assignedTo===PROFILE.key);
   const summary=computeDutiesSummary(mine);
   const escalatedToMe=mine.filter(t=>t.escalatedTo===PROFILE.key).length;
@@ -9169,7 +9187,13 @@ async function paintTeamTab(){
   const body=document.getElementById('dutiesTeamBody'); if(!body) return;
   const date=today();
   const staffKeys=STAFF_LIST.map(s=>s.key);
-  const {blocks,dueTasks}=await apiLoadDayAgenda(date,staffKeys);
+  let blocks,dueTasks;
+  try{ ({blocks,dueTasks}=await withLoadTimeout(apiLoadDayAgenda(date,staffKeys),15000,'Team view')); }
+  catch(e){
+    body.innerHTML=`<div class="empty">Could not load the team view: ${esc(e.message||e)}</div><button class="chip" id="teamRetryBtn" style="margin-top:10px">Retry</button>`;
+    const rb=document.getElementById('teamRetryBtn'); if(rb) rb.onclick=()=>paintTeamTab();
+    return;
+  }
   const byStaff=groupItemsByStaff(blocks,STAFF_LIST);
   const teamSummary=computeDutiesSummary(DB.tasks||[]);
   body.innerHTML=`
