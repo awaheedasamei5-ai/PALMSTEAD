@@ -12014,7 +12014,7 @@ async function clientHome(){
       ${a.body?`<div class="mini" style="margin-top:4px;line-height:1.5">${esc(a.body)}</div>`:''}
       <div class="mini" style="margin-top:8px;opacity:.7">${esc((a.createdAt||'').slice(0,10))}</div>
     </div>`).join('')}</div>`:''}
-    <div class="sectitle" style="margin-top:0"><h3>Your purchases</h3></div>
+    <div class="sectitle" style="margin-top:0"><h3>📐 Your purchases</h3></div>
     <div class="formwrap">
       ${leads.length? leads.map(l=>{
         const c=computeLead(l); const grand=l.grandTotal!=null?num(l.grandTotal):c.grand; const paid=num(l.amtPaid); const bal=Math.max(grand-paid,0);
@@ -12025,7 +12025,8 @@ async function clientHome(){
         const alloc=(CLIENT_ALLOCATIONS||[]).find(a=>a.leadId===l.id);
         return `<div class="rowcard" style="padding:16px;margin-bottom:12px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
-            <div><div style="font-weight:700;font-size:14px">${esc(l.plotType||'Plot')} · ${l.noPlots||1} plot(s)</div><div class="mini" style="margin-top:2px">${esc(clientStageLabel(l.stage))}</div></div>
+            <div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;flex:0 0 auto;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;background:linear-gradient(135deg,var(--green),var(--leaf));box-shadow:0 6px 14px -6px rgba(12,122,147,.5)">📐</span>
+            <div><div style="font-weight:700;font-size:14px">${esc(l.plotType||'Plot')} · ${l.noPlots||1} plot(s)</div><div class="mini" style="margin-top:2px">${esc(clientStageLabel(l.stage))}</div></div></div>
             <div style="text-align:right"><div style="font-weight:800;font-size:15px">${ghs(paid)}</div><div class="mini">of ${ghs(grand)}</div></div>
           </div>
           <div style="height:6px;border-radius:6px;background:#EEF1F6;margin-top:10px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--leaf)"></div></div>
@@ -12035,12 +12036,12 @@ async function clientHome(){
             <span style="font-size:11px;color:#1E7A56">View →</span>
           </button>`:''}
           ${stageIdx>=0?`<div style="margin-top:10px">
-            <div class="mini" style="margin-bottom:5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10px">Documentation progress</div>
+            <div class="mini" style="margin-bottom:5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10px">📋 Documentation progress</div>
             <div style="display:flex;gap:3px">${DOC_STAGES.map((d,i)=>`<div style="flex:1;height:5px;border-radius:4px;background:${i<=stageIdx?'var(--leaf)':'#EEF1F6'}" title="${esc(d.label)}"></div>`).join('')}</div>
             <div class="mini" style="margin-top:5px">${esc(DOC_STAGES[stageIdx].label)}</div>
           </div>`:''}
           ${sched?`<div style="margin-top:8px;padding:8px 10px;border-radius:10px;font-size:11.5px;font-weight:600;background:${sched.arrears>0?'#FDECEA':'#EAF6EC'};color:${sched.arrears>0?'#B4472F':'#1E7A56'}">
-            ${sched.arrears>0?`Overdue ${ghs(sched.arrears)} — `:''}Next payment ${ghs(sched.expectedThisMonth||sched.monthlyInstallment)} due ${new Date(sched.nextDueDate+'T00:00:00').toLocaleDateString('en-GB')}
+            ${sched.arrears>0?`⚠ Overdue ${ghs(sched.arrears)} — `:'📅 '}Next payment ${ghs(sched.expectedThisMonth||sched.monthlyInstallment)} due ${new Date(sched.nextDueDate+'T00:00:00').toLocaleDateString('en-GB')}
           </div>`:''}
           <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn ghost" data-quote="${l.id}" style="padding:7px 14px;font-size:11.5px">Download quotation</button>
@@ -12049,14 +12050,14 @@ async function clientHome(){
         </div>`;
       }).join('') : emptyState(ic.lead,'No purchases on file yet','Once your agent records your purchase, it will show up here.')}
     </div>
-    <div class="sectitle"><h3>Payment history</h3></div>
+    <div class="sectitle"><h3>🧾 Payment history</h3></div>
     <div class="formwrap">
       ${payments.length? payments.map(p=>`<div class="rowcard" style="padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
         <div><div style="font-weight:700">${ghs(p.amount)}</div><div class="mini">${esc(p.date||'')}</div></div>
         <button class="btn ghost" data-receipt="${p.id}" style="padding:6px 12px;font-size:11.5px">Receipt</button>
       </div>`).join('') : emptyState(ic.update,'No payments recorded yet','')}
     </div>
-    <div class="sectitle"><h3>Documents</h3></div>
+    <div class="sectitle"><h3>📁 Documents</h3></div>
     <div class="formwrap" style="display:flex;flex-direction:column;gap:10px">
       <button class="btn ghost" id="dlStatement" style="width:100%">⬇ Download account statement</button>
       <button class="btn ghost" id="dlAllReceipts" style="width:100%"${payments.length?'':' disabled'}>⬇ Download all receipts</button>
@@ -12065,7 +12066,7 @@ async function clientHome(){
         <button class="btn ghost" id="dlMonthReceipt" style="white-space:nowrap">⬇ Receipt</button>
       </div>`:''}
     </div>
-    ${leads.length?`<div class="sectitle"><h3>Buy another plot?</h3></div>
+    ${leads.length?`<div class="sectitle"><h3>➕ Buy another plot?</h3></div>
     <div class="formwrap"><button class="btn gold" id="reqPlotBtn" style="width:100%">+ Request an additional plot</button></div>`:''}`;
   V.querySelectorAll('[data-receipt]').forEach(b=>b.onclick=()=>{
     const pay=payments.find(p=>p.id===b.dataset.receipt);
