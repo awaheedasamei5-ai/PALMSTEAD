@@ -462,6 +462,7 @@ a{color:var(--green2)}
 .vaultCard[open] .vaultChevron{transform:rotate(180deg)}
 .vaultCard[open] .vaultSummary{border-bottom:1px solid var(--line)}
 .vaultContents{padding:16px;margin:0!important;animation:fadeUp .3s ease both}
+.vaultFormContents{padding:18px 16px 20px;margin:0!important;animation:fadeUp .3s ease both;display:flex;flex-direction:column;gap:14px}
 .clauseList{border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .clauseItem{border-bottom:1px solid var(--line)}
 .clauseItem:last-child{border-bottom:none}
@@ -6066,7 +6067,7 @@ function groupedAppGridHtml(groups){
     <div class="appGridGroupLabel">${esc(g.title)}</div>
     <div class="appGrid">${g.items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>`).join('');
 }
-const VAULT_ICONS={'Documents':'📁','Operations':'🗂️','Money':'💰','Insights':'📊','My pipeline':'📈','Client touchpoints':'🤝','Inventory & records':'🏘️','Leads & referrals':'🎯','Pricing & money':'💳','Team & company':'🏢','System':'⚙️','Documents & tools':'🧰','Referrals':'🎁'};
+const VAULT_ICONS={'Documents':'📁','Operations':'🗂️','Money':'💰','Insights':'📊','My pipeline':'📈','Client touchpoints':'🤝','Inventory & records':'🏘️','Leads & referrals':'🎯','Pricing & money':'💳','Team & company':'🏢','System':'⚙️','Documents & tools':'🧰','Referrals':'🎁','Client':'👤','Plot & pricing':'📐','Deposit & schedule':'💳','Stage & follow-up':'📌','Documentation & allocation':'📋','Payment history':'🧾','Contract':'📄','Danger zone':'⚠️'};
 // A vault is a collapsed <details> card -- tap it and the apps inside expand in
 // place. Cuts a 13-tile flat grid down to 4 tiles up front, instead of just
 // labelling the same flat grid (which is what the section-header version did).
@@ -6077,20 +6078,21 @@ const VAULT_ICONS={'Documents':'📁','Operations':'🗂️','Money':'💰','Ins
 const VAULT_OPEN_STATE={};
 function vaultGridHtml(groups,opts){
   opts=opts||{};
-  const visible=groups.filter(g=>g.items.length);
+  const visible=groups.filter(g=>g.bodyHtml!=null?true:g.items.length);
   const remembered=opts.hubId?VAULT_OPEN_STATE[opts.hubId]:undefined;
   const openTitle=remembered!==undefined?remembered:(opts.openFirst&&visible[0]?visible[0].title:null);
   return visible.map((g,i)=>{
-    const badgeTotal=g.items.reduce((s,a)=>s+(a.badgeKind?unreadByKind(a.badgeKind):0)+(a.badgeCountKey?((DB.badgeCounts&&DB.badgeCounts[a.badgeCountKey])||0):0),0);
+    const isBody=g.bodyHtml!=null;
+    const badgeTotal=isBody?0:g.items.reduce((s,a)=>s+(a.badgeKind?unreadByKind(a.badgeKind):0)+(a.badgeCountKey?((DB.badgeCounts&&DB.badgeCounts[a.badgeCountKey])||0):0),0);
     const isOpen=opts.hubId?g.title===openTitle:(opts.openFirst&&i===0);
     return `<details class="vaultCard" data-vaulttitle="${esc(g.title)}" ${isOpen?'open':''}>
       <summary class="vaultSummary">
         <span class="vaultIcon">${VAULT_ICONS[g.title]||'📁'}</span>
-        <span class="vaultInfo"><span class="vaultTitle">${esc(g.title)}</span><span class="vaultCount">${g.items.length} app${g.items.length===1?'':'s'}</span></span>
+        <span class="vaultInfo"><span class="vaultTitle">${esc(g.title)}</span>${isBody?(g.subtitle?`<span class="vaultCount">${esc(g.subtitle)}</span>`:''):`<span class="vaultCount">${g.items.length} app${g.items.length===1?'':'s'}</span>`}</span>
         ${badgeTotal?`<span class="vaultBadge">${badgeTotal>9?'9+':badgeTotal}</span>`:''}
         <svg class="vaultChevron" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </summary>
-      <div class="appGrid vaultContents">${g.items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
+      <div class="${isBody?'vaultFormContents':'appGrid vaultContents'}">${isBody?g.bodyHtml:g.items.map(a=>`<button class="appGridIcon" data-moreapp="${esc(a.key)}"><span class="appGridGlyph">${fic(a.fic)}${appGridBadgeHtml(a.badgeKind,a.badgeCountKey)}</span><span class="appGridLabel">${esc(a.label)}</span></button>`).join('')}</div>
     </details>`;
   }).join('');
 }
@@ -10080,22 +10082,18 @@ function formUpdate(id){ const l=findLeadById(id); if(!l){ route('home'); return
   const myDep=onPlan?computeDepositStatus(l,myPayments):null;
   const mySched=onPlan?computeMonthlySchedule(l,myPayments):null;
   const updInitials=(l.name||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
-  V.innerHTML=`${back('update')}<div class="pagehead"><div style="display:flex;align-items:center;gap:12px"><div class="pipeAvatar" style="width:46px;height:46px;font-size:16px;border-radius:14px">${esc(updInitials)}</div><div><div class="eyebrow">Updating</div><h2>${esc(l.name)}</h2><p>${esc(l.contact||'')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''}</p></div></div></div>
-  ${priceMismatch?`<div class="rowcard" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #B4472F"><div style="font-weight:700;font-size:13.5px;color:#B4472F">⚠ Price check</div><div class="mini" style="margin-top:2px">This lead's unit price (${ghs(num(l.unitPrice))}) doesn't match the current ${esc(l.plotType)} price (${ghs(expectedUnit)}). This can be legitimate (a past promo) — but worth confirming it's correct.</div></div>`:''}
-  ${overpaid?`<div class="rowcard" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #B4472F"><div style="font-weight:700;font-size:13.5px;color:#B4472F">⚠ Amount paid exceeds grand total</div><div class="mini" style="margin-top:2px">Paid ${ghs(num(l.amtPaid))} against a grand total of ${ghs(g)}. Check the numbers below.</div></div>`:''}
-  <div class="pipeStatStrip"><div class="pipeStat"><div class="v">${ghs(g)}</div><div class="l">Pipeline value</div></div><div class="pipeStat"><div class="v">${ghs(num(l.amtPaid))}</div><div class="l">Collected</div></div><div class="pipeStat"><div class="v">${ghs(bal)}</div><div class="l">Balance</div></div></div>
-  <div class="formwrap">
-  <div class="sectitle" style="margin-top:0"><h3>Client</h3></div>
-  <div class="grid2">${fld('Full name','<input id="u_name" value="'+esc(l.name)+'"/>')}${fld('Contact','<input id="u_contact" value="'+esc(l.contact||'')+'"/>')}</div>
-  <div class="mini" style="margin:-6px 0 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">📍 ${l.leadSource?`Heard about us via <b>${esc(l.leadSource)}</b>${(()=>{ const b=l.bannerId?(DB.banners||[]).find(x=>x.id===l.bannerId):null; return b?' — '+esc(b.name):''; })()}`:'How did this client hear about us?'}<button class="chip" id="u_sourceBtn" type="button" style="margin-left:auto">${l.leadSource?'Change':'Add source'}</button></div>
-  <div class="sectitle"><h3>Plot &amp; pricing</h3><span class="cnt">editable — recalculates live</span></div>
-  <div class="grid2">${fld('Plot type',sel('u_plottype',['Full Plot','Half Plot'],l.plotType))}${fld('No. of plots','<input id="u_noplots" type="number" step="0.5" min="0.5" value="'+num(l.noPlots)+'"/>')}</div>
+
+  const clientHtml=`<div class="grid2">${fld('Full name','<input id="u_name" value="'+esc(l.name)+'"/>')}${fld('Contact','<input id="u_contact" value="'+esc(l.contact||'')+'"/>')}</div>
+  <div class="mini" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">📍 ${l.leadSource?`Heard about us via <b>${esc(l.leadSource)}</b>${(()=>{ const b=l.bannerId?(DB.banners||[]).find(x=>x.id===l.bannerId):null; return b?' — '+esc(b.name):''; })()}`:'How did this client hear about us?'}<button class="chip" id="u_sourceBtn" type="button" style="margin-left:auto">${l.leadSource?'Change':'Add source'}</button></div>`;
+
+  const plotPricingHtml=`<div class="grid2">${fld('Plot type',sel('u_plottype',['Full Plot','Half Plot'],l.plotType))}${fld('No. of plots','<input id="u_noplots" type="number" step="0.5" min="0.5" value="'+num(l.noPlots)+'"/>')}</div>
   <div class="grid2">${fld('Unit price (GHS)','<input id="u_unitprice" type="number" value="'+num(l.unitPrice)+'"/>','current standard price: '+ghs(expectedUnit))}${fld('Discount given (GHS)','<input id="u_discount" type="number" value="'+num(l.discount)+'"/>')}</div>
   ${discModeToggleHtml('upd',UPD_DISC_MODE)}
   ${fld('Payment plan',sel('u_plan',['Full Payment','3 Months','6 Months','9 Months','12 Months'],l.paymentPlan||'Full Payment'))}
   ${onPlan?fld('Deposit target (GHS)','<input id="u_deptarget" type="number" value="'+num(myDep.target)+'"/>','default is 30% of grand total — edit if this deal has a different agreed deposit'):''}
-  <div class="calcbox" id="u_calc"></div>
-  ${myDep&&!myDep.complete?`<div class="rowcard" style="margin:2px 0 14px;padding:14px 16px;background:linear-gradient(135deg,#FFF8EC,#F4F6F5);border:1px solid var(--line)">
+  <div class="calcbox" id="u_calc"></div>`;
+
+  const depositScheduleHtml=`${myDep&&!myDep.complete?`<div class="rowcard" style="margin:0;padding:14px 16px;background:linear-gradient(135deg,#FFF8EC,#F4F6F5);border:1px solid var(--line)">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <div><div class="mini" style="font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:10.5px">Deposit in progress</div>
       <div style="font-size:20px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-top:2px">${ghs(myDep.paid)} <span style="font-size:13px;font-weight:600;color:var(--muted)">of ${ghs(myDep.target)}</span></div></div>
@@ -10103,7 +10101,7 @@ function formUpdate(id){ const l=findLeadById(id); if(!l){ route('home'); return
     </div>
     <div class="mini" style="margin-top:9px;padding-top:9px;border-top:1px solid var(--line)">The monthly plan begins once this is fully paid — no installment schedule exists yet.</div>
   </div>`:''}
-  ${mySched?`<div class="rowcard" style="margin:2px 0 14px;padding:14px 16px;background:linear-gradient(135deg,#EEF4FF,#F4F6F5);border:1px solid var(--line)">
+  ${mySched?`<div class="rowcard" style="margin:0;padding:14px 16px;background:linear-gradient(135deg,#EEF4FF,#F4F6F5);border:1px solid var(--line)">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <div><div class="mini" style="font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:10.5px">This month's installment</div>
       <div style="font-size:20px;font-weight:800;font-family:'IBM Plex Mono',monospace;margin-top:2px">${ghs(mySched.expectedThisMonth)}</div></div>
@@ -10115,33 +10113,47 @@ function formUpdate(id){ const l=findLeadById(id); if(!l){ route('home'); return
   </div>`:''}
   ${fld('Total paid to date (GHS)','<input id="u_paidtotal" type="number" value="'+num(l.amtPaid)+'"'+(canEnterPayments?'':' disabled')+'/>',canEnterPayments?'only for a lump sum not yet itemized below — to correct or remove a specific logged payment, use Payment schedule instead':'only Elias or Management can record payments — ask them to log it')}
   ${fld(mySched?"This month's payment (GHS)":(myDep&&!myDep.complete?'Deposit payment (GHS)':'...or add a new payment now (GHS)'),'<input id="u_pay" type="number" placeholder="0"'+(canEnterPayments?'':' disabled')+'/>'+(mySched?'<div id="u_payCompare" class="mini" style="margin-top:7px;font-weight:700"></div>':''),canEnterPayments?(mySched?('expected '+ghs(mySched.monthlyInstallment)+' this month — enter what they actually paid'):(myDep&&!myDep.complete?(ghs(myDep.remaining)+' left on the deposit'):'adds on top of the total above')):'only Elias or Management can record payments — ask them to log it')}
-  ${canEnterPayments?fld('Payment method',sel('u_paymethod',PAYMENT_METHODS)):''}
-  <div class="sectitle"><h3>Stage &amp; follow-up</h3></div>
-  <div class="grid2">${fld('Move stage to',stageSel('u_stage',l.stage))}${fld('Contact method',sel('u_method',['Phone Call','WhatsApp','Email','In-person']))}</div>
+  ${canEnterPayments?fld('Payment method',sel('u_paymethod',PAYMENT_METHODS)):''}`;
+
+  const stageFollowUpHtml=`<div class="grid2">${fld('Move stage to',stageSel('u_stage',l.stage))}${fld('Contact method',sel('u_method',['Phone Call','WhatsApp','Email','In-person']))}</div>
   ${fld('What was discussed / outcome','<textarea id="u_disc" placeholder="Summary of the interaction"></textarea>')}
   ${fld('Next step agreed','<input id="u_next" value="'+esc(l.nextAction||'')+'"/>')}
   ${fld('Notes','<textarea id="u_notes">'+esc(l.notes||'')+'</textarea>')}
   ${fld('Tags','<input id="u_tags" value="'+esc(l.tags||'')+'" placeholder="e.g. VIP, Referral, Diaspora"/>','comma-separated — shows as chips on the pipeline list')}
   ${fld('Follow-up date','<input id="u_follow" type="date"/>')}
-  ${fld('Update site visit?',sel('u_sv',['No change','Mark as visited']))}
-  <div class="formactions"><button class="btn ghost" onclick="route('update')">Back</button><button class="btn gold" id="saveUpd">Save update</button></div></div>
+  ${fld('Update site visit?',sel('u_sv',['No change','Mark as visited']))}`;
 
-  ${canViewClientDatabase()?`<div class="sectitle"><h3>Documentation &amp; allocation stage</h3><span class="cnt">visible to the client</span></div>
-  <div class="formwrap" style="margin-bottom:18px">
-    <div class="mini" style="margin-bottom:12px">${l.docStage?('Currently: <b>'+esc(docStageLabel(l.docStage)||l.docStage)+'</b>'+(l.docStageUpdatedAt?(' · updated '+esc(String(l.docStageUpdatedAt).slice(0,10))):'')):'Not started yet — the client sees no progress bar until this is set.'}</div>
-    ${fld('Move to stage','<select id="u_docstage"><option value="">— Not started —</option>'+DOC_STAGES.map(d=>`<option value="${d.key}" ${d.key===l.docStage?'selected':''}>${esc(d.label)}</option>`).join('')+'</select>')}
-    <button class="btn primary" id="saveDocStage" style="width:100%">Update stage</button>
-  </div>`:''}
+  const docAllocHtml=`<div class="mini" style="margin-bottom:2px">${l.docStage?('Currently: <b>'+esc(docStageLabel(l.docStage)||l.docStage)+'</b>'+(l.docStageUpdatedAt?(' · updated '+esc(String(l.docStageUpdatedAt).slice(0,10))):'')):'Not started yet — the client sees no progress bar until this is set.'}</div>
+  ${fld('Move to stage','<select id="u_docstage"><option value="">— Not started —</option>'+DOC_STAGES.map(d=>`<option value="${d.key}" ${d.key===l.docStage?'selected':''}>${esc(d.label)}</option>`).join('')+'</select>')}
+  <button class="btn primary" id="saveDocStage" style="width:100%">Update stage</button>`;
 
-  <div class="sectitle"><h3>Payment history</h3><span class="cnt">${myPayments.length} payment${myPayments.length===1?'':'s'}</span></div>
-  <div class="formwrap" style="padding:6px 15px;margin-bottom:12px">${myPayments.length?myPayments.map(p=>`<div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">${esc(p.date||'')}</div></div></div><div class="amt mono" style="font-weight:700;color:#1E7A56">+${ghs(num(p.amount))}</div></div>`).join(''):'<div class="empty">No individual payments logged yet — only a starting total.</div>'}</div>
-  <div style="margin-bottom:18px"><button class="chip" id="viewLedgerBtn" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.calendar}</span>Log payment for a specific month →</button></div>
-  <div style="margin-bottom:18px"><button class="btn primary" id="dlUpdPdf" style="width:100%">⬇ Download this client's pipeline (PDF)</button></div>
-  <div style="margin-bottom:18px"><button class="btn ghost" id="dlUpdQuote" style="width:100%">⬇ Download quotation</button></div>
-  ${contractSectionHtml(l)}
+  const paymentHistoryHtml=`<div class="rowcard" style="padding:6px 15px;margin:0">${myPayments.length?myPayments.map(p=>`<div class="agentrow"><div class="ai"><div><div class="nm" style="font-weight:700">${esc(p.date||'')}</div></div></div><div class="amt mono" style="font-weight:700;color:#1E7A56">+${ghs(num(p.amount))}</div></div>`).join(''):'<div class="empty">No individual payments logged yet — only a starting total.</div>'}</div>
+  <button class="chip" id="viewLedgerBtn" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.calendar}</span>Log payment for a specific month →</button>
+  <button class="btn primary" id="dlUpdPdf" style="width:100%">⬇ Download this client's pipeline (PDF)</button>
+  <button class="btn ghost" id="dlUpdQuote" style="width:100%">⬇ Download quotation</button>`;
 
-  <div class="dangerzone"><div class="dz-text"><b>Delete this client</b><br>Permanently removes ${esc(l.name)} and their record from the pipeline. This can't be undone.</div>
+  const contractHtml=contractSectionHtml(l);
+  const dangerHtml=`<div class="dangerzone" style="margin:0"><div class="dz-text"><b>Delete this client</b><br>Permanently removes ${esc(l.name)} and their record from the pipeline. This can't be undone.</div>
   <button class="btn danger" id="delLead">Delete client</button></div>`;
+
+  const updGroups=[
+    {title:'Client',bodyHtml:clientHtml},
+    {title:'Plot & pricing',subtitle:'editable — recalculates live',bodyHtml:plotPricingHtml},
+    {title:'Deposit & schedule',bodyHtml:depositScheduleHtml},
+    {title:'Stage & follow-up',bodyHtml:stageFollowUpHtml},
+    ...(canViewClientDatabase()?[{title:'Documentation & allocation',subtitle:'visible to the client',bodyHtml:docAllocHtml}]:[]),
+    {title:'Payment history',subtitle:myPayments.length+' payment'+(myPayments.length===1?'':'s'),bodyHtml:paymentHistoryHtml},
+    ...(contractHtml.trim()?[{title:'Contract',bodyHtml:contractHtml}]:[]),
+    {title:'Danger zone',bodyHtml:dangerHtml}
+  ];
+
+  V.innerHTML=`${back('update')}<div class="pagehead"><div style="display:flex;align-items:center;gap:12px"><div class="pipeAvatar" style="width:46px;height:46px;font-size:16px;border-radius:14px">${esc(updInitials)}</div><div><div class="eyebrow">Updating</div><h2>${esc(l.name)}</h2><p>${esc(l.contact||'')} · ${esc(l.plotType||'')}${l.noPlots?' ×'+esc(l.noPlots):''}</p></div></div></div>
+  ${priceMismatch?`<div class="rowcard" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #B4472F"><div style="font-weight:700;font-size:13.5px;color:#B4472F">⚠ Price check</div><div class="mini" style="margin-top:2px">This lead's unit price (${ghs(num(l.unitPrice))}) doesn't match the current ${esc(l.plotType)} price (${ghs(expectedUnit)}). This can be legitimate (a past promo) — but worth confirming it's correct.</div></div>`:''}
+  ${overpaid?`<div class="rowcard" style="margin-bottom:14px;padding:14px 16px;border-left:4px solid #B4472F"><div style="font-weight:700;font-size:13.5px;color:#B4472F">⚠ Amount paid exceeds grand total</div><div class="mini" style="margin-top:2px">Paid ${ghs(num(l.amtPaid))} against a grand total of ${ghs(g)}. Check the numbers below.</div></div>`:''}
+  <div class="pipeStatStrip"><div class="pipeStat"><div class="v">${ghs(g)}</div><div class="l">Pipeline value</div></div><div class="pipeStat"><div class="v">${ghs(num(l.amtPaid))}</div><div class="l">Collected</div></div><div class="pipeStat"><div class="v">${ghs(bal)}</div><div class="l">Balance</div></div></div>
+  <div class="formactions" style="margin-bottom:16px"><button class="btn ghost" onclick="route('update')">Back</button><button class="btn gold" id="saveUpd">Save update</button></div>
+  ${vaultGridHtml(updGroups,{hubId:'pipelineUpdate',openFirst:true})}`;
+  bindVaultAccordion(V,'pipelineUpdate');
   const paintUCalc=()=>{
     const tmp={...l,plotType:val('u_plottype'),noPlots:num(val('u_noplots')),unitPrice:num(val('u_unitprice')),discount:discForMode(val('u_discount'),val('u_noplots')||1,UPD_DISC_MODE),paymentPlan:val('u_plan')};
     const cc=computeLead(tmp);
