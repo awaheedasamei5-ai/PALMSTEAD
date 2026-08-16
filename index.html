@@ -231,7 +231,7 @@ a{color:var(--green2)}
 
 /* ---------- APP SHELL ---------- */
 #app{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
-.topbar{position:sticky;top:0;z-index:40;background:linear-gradient(115deg,var(--ink) 0%,#123262 45%,#0F2A52 100%);color:#fff;
+.topbar{position:sticky;top:0;z-index:40;background:var(--hero-bg,linear-gradient(115deg,var(--ink) 0%,#123262 45%,#0F2A52 100%));color:#fff;
   padding:calc(env(safe-area-inset-top) + 12px) 16px 12px;display:flex;align-items:center;gap:11px;box-shadow:0 2px 24px rgba(0,0,0,.28);
   overflow:hidden}
 .topbar::after{content:"";position:absolute;inset:0;pointer-events:none;
@@ -353,7 +353,7 @@ a{color:var(--green2)}
   border:1.5px solid var(--line);transform:rotate(18deg);opacity:.35}
 .kpi-ic{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;color:#fff;margin-bottom:10px;box-shadow:0 6px 14px -6px rgba(11,30,61,.4);position:relative;z-index:1}
 .kpi-ic svg{width:16px;height:16px}
-.kpi-ic.blue{background:linear-gradient(150deg,#3B82F6,#1D4ED8)}
+.kpi-ic.blue{background:linear-gradient(150deg,var(--accent,#3B82F6),var(--accent-dark,#1D4ED8))}
 .kpi-ic.lime{background:linear-gradient(150deg,#A3E635,#4D7C0F)}
 .kpi-ic.green{background:linear-gradient(150deg,#34D399,#16A34A)}
 .kpi-ic.amber{background:linear-gradient(150deg,#F5B94F,#B8791E)}
@@ -829,7 +829,7 @@ input[type="file"]{max-width:100%;box-sizing:border-box}
   background-size:250% 100%;background-position:150% 0;transition:background-position .55s ease}
 .btn:hover:not(:disabled)::before{background-position:-50% 0}
 .btn.primary{background:linear-gradient(180deg,var(--leaf),var(--green));color:#fff;box-shadow:0 10px 24px -8px rgba(37,99,235,.5)}
-.btn.gold{background:linear-gradient(180deg,var(--gold),#4D7C0F);color:#152106;box-shadow:0 10px 24px -8px rgba(132,204,22,.5)}
+.btn.gold{background:linear-gradient(180deg,var(--gold),var(--accent-dark,#4D7C0F));color:#152106;box-shadow:0 10px 24px -8px rgba(132,204,22,.5)}
 .btn.ghost{background:#EEF1F6;color:#3c433c;flex:0 0 auto;padding-left:22px;padding-right:22px}
 .btn:hover:not(:disabled){transform:translateY(-1.5px)}
 .btn:active:not(:disabled){transform:translateY(0) scale(.98)}
@@ -1122,12 +1122,14 @@ select.assign{padding:8px 10px;border:1.5px solid var(--line);border-radius:10px
    Linear gradients only vary along their angle axis, so they blend smoothly at
    any aspect ratio. */
 const WAVE_VARIANTS=[
-  {name:'Classic Navy',bg:'linear-gradient(165deg,#050B14 0%,#0A2A3A 30%,#0C7A93 55%,#22D3EE 74%,#BAE6E8 90%,#F2F6F7 100%)',orb1:'rgba(14,165,183,.55)',orb2:'rgba(34,211,238,.5)',orb3:'rgba(201,162,39,.3)',heroBg:'linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%)'},
-  {name:'Emerald Forest',bg:'linear-gradient(165deg,#051710 0%,#0F3D2E 30%,#1B7A5B 55%,#3FA66B 74%,#C9E8D2 90%,#F2F7F4 100%)',orb1:'rgba(27,122,91,.55)',orb2:'rgba(63,166,107,.45)',orb3:'rgba(201,162,39,.3)',heroBg:'linear-gradient(135deg,#051710 0%,#123D2C 45%,#1B7A5B 100%)'},
-  {name:'Charcoal & Gold',bg:'linear-gradient(170deg,#0A0A0C 0%,#1C1C22 35%,#4A3B1E 65%,#C9A227 85%,#F2EBD8 100%)',orb1:'rgba(201,162,39,.5)',orb2:'rgba(232,199,102,.4)',orb3:'rgba(74,59,30,.35)',heroBg:'linear-gradient(135deg,#0A0A0C 0%,#2A2118 50%,#C9A227 100%)'},
-  {name:'Wine & Rose Gold',bg:'linear-gradient(160deg,#1A050C 0%,#3D0F22 32%,#7A2645 58%,#C97A8C 80%,#F4E3DE 100%)',orb1:'rgba(201,122,140,.5)',orb2:'rgba(122,38,69,.5)',orb3:'rgba(201,162,39,.25)',heroBg:'linear-gradient(135deg,#1A050C 0%,#3D0F22 50%,#7A2645 100%)'},
-  {name:'Indigo & Amethyst',bg:'linear-gradient(155deg,#0A0821 0%,#1E1650 32%,#4A2F8C 60%,#8F6FCC 82%,#EDE7F9 100%)',orb1:'rgba(143,111,204,.5)',orb2:'rgba(74,47,140,.5)',orb3:'rgba(201,162,39,.22)',heroBg:'linear-gradient(135deg,#0A0821 0%,#241B5E 50%,#4A2F8C 100%)'},
-  {name:'Espresso & Copper',bg:'linear-gradient(160deg,#140B06 0%,#331D10 32%,#7A4620 58%,#C97D3E 80%,#F5E6D3 100%)',orb1:'rgba(201,125,62,.5)',orb2:'rgba(122,70,32,.45)',orb3:'rgba(201,162,39,.3)',heroBg:'linear-gradient(135deg,#140B06 0%,#331D10 50%,#7A4620 100%)'}
+  {name:'Classic Navy',bg:'linear-gradient(165deg,#050B14 0%,#0A2A3A 30%,#0C7A93 55%,#22D3EE 74%,#BAE6E8 90%,#F2F6F7 100%)',orb1:'rgba(14,165,183,.55)',orb2:'rgba(34,211,238,.5)',orb3:'rgba(201,162,39,.3)',heroBg:'linear-gradient(135deg,var(--ink) 0%,#0F3A52 45%,var(--green) 100%)',accent:'#22D3EE',accentDark:'#0C7A93'},
+  {name:'Emerald Forest',bg:'linear-gradient(165deg,#051710 0%,#0F3D2E 30%,#1B7A5B 55%,#3FA66B 74%,#C9E8D2 90%,#F2F7F4 100%)',orb1:'rgba(27,122,91,.55)',orb2:'rgba(63,166,107,.45)',orb3:'rgba(201,162,39,.3)',heroBg:'linear-gradient(135deg,#051710 0%,#123D2C 45%,#1B7A5B 100%)',accent:'#3FA66B',accentDark:'#1B7A5B'},
+  {name:'Charcoal & Gold',bg:'linear-gradient(170deg,#0A0A0C 0%,#1C1C22 35%,#4A3B1E 65%,#C9A227 85%,#F2EBD8 100%)',orb1:'rgba(201,162,39,.5)',orb2:'rgba(232,199,102,.4)',orb3:'rgba(74,59,30,.35)',heroBg:'linear-gradient(135deg,#0A0A0C 0%,#2A2118 50%,#C9A227 100%)',accent:'#E8C766',accentDark:'#C9A227'},
+  {name:'Wine & Rose Gold',bg:'linear-gradient(160deg,#1A050C 0%,#3D0F22 32%,#7A2645 58%,#C97A8C 80%,#F4E3DE 100%)',orb1:'rgba(201,122,140,.5)',orb2:'rgba(122,38,69,.5)',orb3:'rgba(201,162,39,.25)',heroBg:'linear-gradient(135deg,#1A050C 0%,#3D0F22 50%,#7A2645 100%)',accent:'#C97A8C',accentDark:'#7A2645'},
+  {name:'Indigo & Amethyst',bg:'linear-gradient(155deg,#0A0821 0%,#1E1650 32%,#4A2F8C 60%,#8F6FCC 82%,#EDE7F9 100%)',orb1:'rgba(143,111,204,.5)',orb2:'rgba(74,47,140,.5)',orb3:'rgba(201,162,39,.22)',heroBg:'linear-gradient(135deg,#0A0821 0%,#241B5E 50%,#4A2F8C 100%)',accent:'#8F6FCC',accentDark:'#4A2F8C'},
+  {name:'Espresso & Copper',bg:'linear-gradient(160deg,#140B06 0%,#331D10 32%,#7A4620 58%,#C97D3E 80%,#F5E6D3 100%)',orb1:'rgba(201,125,62,.5)',orb2:'rgba(122,70,32,.45)',orb3:'rgba(201,162,39,.3)',heroBg:'linear-gradient(135deg,#140B06 0%,#331D10 50%,#7A4620 100%)',accent:'#C97D3E',accentDark:'#7A4620'},
+  {name:'Ocean Blue',bg:'linear-gradient(165deg,#050B18 0%,#0B2A5C 30%,#1D4ED8 55%,#3B82F6 74%,#93C5FD 90%,#EFF6FF 100%)',orb1:'rgba(59,130,246,.55)',orb2:'rgba(29,78,216,.5)',orb3:'rgba(147,197,253,.3)',heroBg:'linear-gradient(135deg,#050B18 0%,#0B2A5C 45%,#1D4ED8 100%)',accent:'#3B82F6',accentDark:'#1D4ED8'},
+  {name:'Lime & Charcoal',bg:'linear-gradient(165deg,#0A0A0C 0%,#1C1C22 30%,#4D7C0F 55%,#A3E635 78%,#E5F9C0 92%,#F7FDF0 100%)',orb1:'rgba(163,230,53,.5)',orb2:'rgba(77,124,15,.5)',orb3:'rgba(229,249,192,.3)',heroBg:'linear-gradient(135deg,#0A0A0C 0%,#2B3A0F 45%,#4D7C0F 100%)',accent:'#A3E635',accentDark:'#4D7C0F'}
 ];
 // Was an IIFE that only ever ran once at script load -- so within one browser tab,
 // signing out and back in (no real page reload happens) kept showing the exact same
@@ -1147,6 +1149,8 @@ function applyWaveVariant(){
   root.setProperty('--wave-orb2',v.orb2);
   root.setProperty('--wave-orb3',v.orb3);
   root.setProperty('--hero-bg',v.heroBg);
+  root.setProperty('--accent',v.accent);
+  root.setProperty('--accent-dark',v.accentDark);
 }
 applyWaveVariant();
 function themeSwatchesHtml(){
