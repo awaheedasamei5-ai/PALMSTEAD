@@ -11792,7 +11792,10 @@ function formAccount(){
 // stays gated the same way paintPerformanceSection() always was.
 async function viewPortfolioApp(){
   if(PROFILE.role==='manager'){ V.innerHTML=back('more')+emptyState(ic.grid,'See the Leaderboard instead','Portfolio is for individual staff tracking — as Management you already see everyone on the Leaderboard.'); return; }
+  const myProfileRow=(DB.profiles||[]).find(p=>(p.agent_key||p.agentKey)===PROFILE.key)||{};
+  const positionLabel=myProfileRow.position||'Sales Agent';
   V.innerHTML=`${back('more')}<div class="pagehead"><div><h2>Portfolio</h2><p>Your rank, your progress, and what you've earned</p></div></div>
+  ${profileHeroHtml({name:PROFILE.name,avatar:PROFILE.avatar||myProfileRow.avatar,email:PROFILE.email},positionLabel)}
   ${settingsSectionHead('pulse','Performance','how you compare across the team')}
   <div class="formwrap" id="perfSectionBody"><div class="skel" style="height:110px;border-radius:16px"></div></div>
   ${settingsSectionHead('leaderboard','Achievements','earned automatically as you hit each milestone')}
