@@ -4627,7 +4627,8 @@ async function apiLoadMessages(){
   }catch(e){ return []; }
 }
 function mapMsg(r){ return {id:r.id,senderKey:r.sender_key,senderName:r.sender_name,recipientKey:r.recipient_key,body:r.body,read:!!r.read,
-  attachData:r.attachment_data,attachType:r.attachment_type,attachName:r.attachment_name,createdAt:r.created_at,kind:r.kind||null}; }
+  attachData:r.attachment_data,attachType:r.attachment_type,attachName:r.attachment_name,createdAt:r.created_at,kind:r.kind||null,
+  refType:r.ref_type||null,refId:r.ref_id||null}; }
 async function apiSendMessage(recipientKey,body,attachment){
   const att=attachment||{};
   if(DEMO_MODE){ const d=await demoLoad(); const rec={id:uid(),senderKey:PROFILE.key,senderName:PROFILE.name,recipientKey,body,read:false,
@@ -8011,10 +8012,17 @@ function renderChatLog(otherKey){
     if(day!==lastDay){ dayHtml=`<div class="chatday">${esc(day)}</div>`; lastDay=day; }
     const mine=m.senderKey===PROFILE.key;
     const att=m.attachType?attachmentBubble(m):'';
+    // Ops Tracker invite brief -- clickable card (ref_type/ref_id -> the real
+    // schedule_items row, unlike the static eventCard attachment type above which
+    // is just a shared snapshot) instead of plain body text.
+    const scheduleCard=(m.kind==='schedule_invite'&&m.refId)?`<div class="eventCard" data-openscheduleitem="${esc(m.refId)}" style="cursor:pointer">
+      <div class="eventCardHeader" style="display:flex;align-items:center;gap:7px"><span style="width:15px;height:15px;display:inline-flex">${ic.calendar}</span>Meeting/task invite</div>
+      <div class="eventCardBody">${linkifyText(m.body||'')}<div class="mini" style="color:#1D4ED8;margin-top:4px">Tap to open in My Day →</div></div>
+    </div>`:'';
     // Read receipt (mine only): single grey check = sent, double blue check = read
     // by the recipient -- the `read` column already existed, just wasn't surfaced.
     const receipt=mine?`<span class="msgReceipt ${m.read?'read':''}" title="${m.read?'Read':'Sent'}">${m.read?'✓✓':'✓'}</span>`:'';
-    return dayHtml+`<div class="bubblerow ${mine?'me':''}"><div class="bubble" data-msgid="${m.id}">${att}${m.body?linkifyText(m.body):''}<div class="time">${chatTimeLabel(m.createdAt)}${receipt}
+    return dayHtml+`<div class="bubblerow ${mine?'me':''}"><div class="bubble" data-msgid="${m.id}">${att}${scheduleCard||(m.body?linkifyText(m.body):'')}<div class="time">${chatTimeLabel(m.createdAt)}${receipt}
       <span class="msgActions"><button class="msgActBtn" data-fwdmsg="${m.id}" title="Forward">↗</button>${m.body?`<button class="msgActBtn" data-copymsg="${m.id}" title="Copy">⧉</button>`:''}${mine?`<button class="msgActBtn" data-delmsg="${m.id}" title="Delete">${ic.trash}</button>`:''}</span>
       </div></div></div>`;
   }).join('');
@@ -8125,6 +8133,11 @@ function bindChatMediaCtrls(otherKey){
   document.querySelectorAll('[data-previewfile]').forEach(b=>b.onclick=()=>{
     const m=DB.messages.find(x=>x.id===b.dataset.previewfile); if(!m) return;
     openFilePreview(m.attachData,m.attachName||'File',guessFileKind(m.attachName));
+  });
+  document.querySelectorAll('[data-openscheduleitem]').forEach(card=>card.onclick=()=>{
+    route('duties'); DUTIES_TAB='myday';
+    const t=(TODO_LIST||[]).find(x=>x.id===card.dataset.openscheduleitem)||(DB.tasks||[]).find(x=>x.id===card.dataset.openscheduleitem);
+    if(t&&t.date) MYDAY_DATE=t.date;
   });
   document.querySelectorAll('[data-fwdmsg]').forEach(b=>b.onclick=()=>openForwardPicker(b.dataset.fwdmsg));
   document.querySelectorAll('[data-copymsg]').forEach(b=>b.onclick=async()=>{
@@ -8482,6 +8495,27 @@ async function apiInviteToScheduleItem(itemId,staffKeys){
   const {data,error}=await sb.from('schedule_item_invitees').upsert(rows,{onConflict:'schedule_item_id,staff_key'}).select();
   if(error) throw error; return (data||[]).map(mapScheduleItemInvitee);
 }
+// Ops Tracker <-> Chat integration: when someone's invited to a meeting/task, drop
+// a clickable brief into their chat (reusing the existing messages table/insert
+// path, just with ref_type/ref_id so the bubble renderer can turn it into a card
+// instead of plain text) AND fire an SMS via the existing send-sms backbone
+// (already used for login-details broadcast/payment-due reminders) -- no new
+// notification plumbing, no new SMS provider. Both are best-effort per invitee:
+// one failing (e.g. no phone on file) never blocks the others or the invite itself.
+async function apiSendScheduleInviteBrief(itemId,itemTitle,itemDate,startTime,endTime,staffKeys){
+  if(DEMO_MODE||!staffKeys||!staffKeys.length) return;
+  const when=fmtLongDate(itemDate)+' · '+startTime+'–'+endTime;
+  const body='📅 You\'ve been invited: '+itemTitle+'\n'+when;
+  await Promise.all(staffKeys.map(async key=>{
+    try{
+      await sb.from('messages').insert({sender_key:PROFILE.key,sender_name:PROFILE.name,recipient_key:key,body,kind:'schedule_invite',ref_type:'schedule_item',ref_id:itemId});
+    }catch(e){}
+    try{
+      const phone=phoneForStaffKey(key);
+      if(phone) await apiSendSms(phone,'PEP Landbank: You\'ve been invited to "'+itemTitle+'" on '+when+'. Check your PEP Landbank chat for details.','schedule_invite');
+    }catch(e){}
+  }));
+}
 async function apiLoadInviteesForItems(itemIds){
   if(!itemIds||!itemIds.length||DEMO_MODE) return [];
   try{ const {data,error}=await sb.from('schedule_item_invitees').select('*').in('schedule_item_id',itemIds); if(error) throw error;
@@ -8675,7 +8709,10 @@ function openTodoNewModal(){
         const freq=repeatChoice==='Daily'?'daily':repeatChoice==='Weekly'?'weekly':'monthly';
         recs=await apiInsertRecurringTodo(t,{freq,interval:1,until:val('td_repeatUntil')||null});
       }
-      if(invited.size) await apiInviteToScheduleItem(recs[0].id,[...invited]).catch(()=>{});
+      if(invited.size){
+        await apiInviteToScheduleItem(recs[0].id,[...invited]).catch(()=>{});
+        apiSendScheduleInviteBrief(recs[0].id,title,date,start,end,[...invited]).catch(()=>{});
+      }
       TODO_LIST.push(...recs); TODO_LIST.sort((a,b)=>a.date===b.date?a.startTime.localeCompare(b.startTime):a.date.localeCompare(b.date));
       toast(recs.length>1?recs.length+' occurrences saved':'To-do saved'); ov.remove(); todoArmAlarms(); paintTodoTab();
     }catch(e){ toast('Failed: '+(e.message||e)); btn.disabled=false; btn.textContent='Save to-do'; }
