@@ -3444,6 +3444,7 @@ function paintAttendanceBody(){
   <div class="sectitle" style="margin-top:0"><h3>Your recent history</h3></div>
   <div class="list">${ATTENDANCE_HISTORY.length?ATTENDANCE_HISTORY.map(attendanceHistoryRowHtml).join(''):emptyState(ic.grid,'No history yet','')}</div>`;
   bindAttendanceCtrls();
+  bindAttendanceRowClicks();
   clearInterval(ATTENDANCE_CLOCK_TIMER);
   if(btnState!=='done'){
     ATTENDANCE_CLOCK_TIMER=setInterval(()=>{
@@ -3471,7 +3472,8 @@ function teamAttendanceTodayHtml(){
       metaText='Not signed in';
     }
     const kpi=attendanceMonthStatsFor(s.key);
-    return `<div class="rowcard"><div class="top">
+    const clickable=rec&&rec.signInAt;
+    return `<div class="rowcard"${clickable?` data-attkey="${esc(s.key)}" style="cursor:pointer"`:''}><div class="top">
       <div style="display:flex;gap:10px;min-width:0">
         ${rec&&rec.signInPhoto?`<img src="${rec.signInPhoto}" style="width:38px;height:38px;border-radius:100%;object-fit:cover;flex:0 0 auto"/>`:''}
         <div style="min-width:0"><div class="nm">${esc(s.name)}</div><div class="meta">${metaText}</div>${rec&&rec.signInAt?attLocationTagHtml(rec.isOffSiteIn,rec.signInReason):''}</div>
@@ -3482,7 +3484,7 @@ function teamAttendanceTodayHtml(){
 }
 function attendanceHistoryRowHtml(a){
   const onLeave=!a.signInAt?staffOnLeave(PROFILE.key,a.workDate):null;
-  return `<div class="rowcard"><div class="top">
+  return `<div class="rowcard"${a.signInAt?` data-attdate="${esc(a.workDate)}" style="cursor:pointer"`:''}><div class="top">
     <div style="display:flex;gap:10px;min-width:0">
       ${a.signInPhoto?`<img src="${a.signInPhoto}" style="width:38px;height:38px;border-radius:100%;object-fit:cover;flex:0 0 auto"/>`:''}
       <div style="min-width:0"><div class="nm">${esc(fmtLongDate(a.workDate))}</div><div class="meta">${a.signInAt?('In '+esc(a.signInAt.slice(11,16))+(a.lateReason?' · '+esc(a.lateReason):'')):(onLeave?'On leave':'—')}${a.signOutAt?(' · Out '+esc(a.signOutAt.slice(11,16))):''}</div>
@@ -3491,6 +3493,48 @@ function attendanceHistoryRowHtml(a){
       </div>
     </div>
   </div></div>`;
+}
+// Click-through on an attendance row -- full photo + a map pin, so management (or
+// the staff member themselves, for their own rows) can actually see where a
+// sign-in/out happened rather than trusting the on-site/off-site text tag alone.
+// Keyless Google Maps embed (same no-API-key approach Banner Tracker already uses
+// for its "paste a Google Maps link" flow) -- just a location pin, not a full
+// interactive map, which is all a single coordinate needs here.
+function attMapEmbedUrl(lat,lng){ return `https://www.google.com/maps?q=${lat},${lng}&z=16&output=embed`; }
+function bindAttendanceRowClicks(){
+  document.querySelectorAll('[data-attkey]').forEach(el=>{
+    const key=el.dataset.attkey;
+    const rec=ATTENDANCE_TEAM_TODAY.find(a=>a.staffKey===key);
+    const staff=STAFF_LIST.find(s=>s.key===key);
+    if(rec) el.onclick=()=>openAttendanceDetailModal(rec,staff?staff.name:key);
+  });
+  document.querySelectorAll('[data-attdate]').forEach(el=>{
+    const date=el.dataset.attdate;
+    const rec=ATTENDANCE_HISTORY.find(a=>a.workDate===date);
+    if(rec) el.onclick=()=>openAttendanceDetailModal(rec,PROFILE.name);
+  });
+}
+function openAttendanceDetailModal(rec,staffName){
+  let ov=document.getElementById('announceOverlay'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='announceOverlay';
+  const hasOffice=CONFIG.officeLat!=null&&CONFIG.officeLng!=null;
+  const sect=(label,at,lat,lng,isOffSite,reason,photo)=>{
+    if(!at) return '';
+    return `<div class="rowcard" style="margin-bottom:12px;padding:14px">
+      <div style="font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">${esc(label)} · ${esc(at.slice(11,16))}</div>
+      ${photo?`<img src="${photo}" style="width:100%;max-height:280px;object-fit:cover;border-radius:12px;margin-bottom:10px"/>`:''}
+      ${hasOffice?`<div class="mini" style="margin-bottom:8px;font-weight:700;color:${isOffSite?'#B4472F':'#1E7A56'}">📍 ${isOffSite?'Off-site':'At the office'}${reason?' — '+esc(reason):''}</div>`:''}
+      ${lat!=null&&lng!=null?`<iframe src="${attMapEmbedUrl(lat,lng)}" style="width:100%;height:200px;border:0;border-radius:12px" loading="lazy"></iframe>`:`<div class="mini">No location captured for this entry.</div>`}
+    </div>`;
+  };
+  ov.innerHTML=`<div id="announceModal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-weight:800;font-size:16px">${esc(staffName)} — ${esc(fmtLongDate(rec.workDate))}</div><button id="closeAttDetail" style="background:none;border:none;color:var(--muted);cursor:pointer;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0">${ic.close}</button></div>
+    ${sect('Sign-in',rec.signInAt,rec.signInLat,rec.signInLng,rec.isOffSiteIn,rec.signInReason,rec.signInPhoto)}
+    ${sect('Sign-out',rec.signOutAt,rec.signOutLat,rec.signOutLng,rec.isOffSiteOut,rec.signOutReason,null)}
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  document.getElementById('closeAttDetail').onclick=()=>ov.remove();
 }
 function promptLateReason(){
   return new Promise(resolve=>{
