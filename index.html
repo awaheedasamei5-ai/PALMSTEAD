@@ -4184,7 +4184,7 @@ async function setupPushNotifications(){
    installed PWA (the actual GitHub Pages deployment) got no push at all until
    now. Public key only -- safe to ship client-side, the private half lives as
    an Edge Function secret and never reaches the browser. */
-const VAPID_PUBLIC_KEY='BGHSQlbciq-x4N4ZOhXBhmIZZ7EEFrHdOBd1BEGPy6U2wQvV3KHaxE1pdprXBiBl7ryynSFI7bOFMMqGu1YvjWQ';
+const VAPID_PUBLIC_KEY='BN30BpsS59NsC9GikqT8_LPN1FQXIcPm4fz5IU8QE_ZXp7EGVHvRR4tZGw_AAj3GwfXEdeZD1-b-LC4Iwnh30pc';
 function urlBase64ToUint8Array(base64String){
   const padding='='.repeat((4-base64String.length%4)%4);
   const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
